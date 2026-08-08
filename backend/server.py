@@ -301,17 +301,25 @@ async def get_vcard(slug: str):
 
 @api_router.post("/cards/{slug}/leads")
 async def create_lead(slug: str, body: LeadIn):
-    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0, "id": 1})
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0, "id": 1, "workspace_id": 1})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
     if not body.name.strip() or not (body.email.strip() or body.phone.strip()):
         raise HTTPException(status_code=400, detail="Name and an email or phone are required")
+    now = datetime.now(timezone.utc).isoformat()
     lead = {
-        "id": str(uuid.uuid4()), "cardSlug": slug, "name": body.name.strip(),
-        "email": body.email.strip(), "phone": body.phone.strip(), "message": body.message.strip(),
-        "read": False, "created_at": datetime.now(timezone.utc).isoformat(),
+        "id": str(uuid.uuid4()), "cardSlug": slug, "workspace_id": card.get("workspace_id"),
+        "name": body.name.strip(), "email": body.email.strip(), "phone": body.phone.strip(),
+        "company": "", "title": "", "message": body.message.strip(), "interest": "",
+        "source": "inquiry", "campaign": "", "status": "NEW", "tags": [], "notes": "",
+        "read": False, "created_at": now, "updated_at": now, "last_activity": now,
     }
     await db.leads.insert_one(lead)
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
+        "title": f"New inquiry from {body.name.strip()}", "body": f"via /{slug}",
+        "read": False, "created_at": now,
+    })
     return {"ok": True}
 
 
