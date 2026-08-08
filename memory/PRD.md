@@ -39,11 +39,15 @@ Projects, Main CTA, Save Contact + QR, Footer.
 - JWT admin editor with live preview and full card CRUD.
 - Seeded published demo profile `feras-askar` (Beige Luxury).
 
-## Credentials
-Admin: `admin@ariadni.id` / `Ariadni@2026` (see `/app/memory/test_credentials.md`).
+## Implemented — Iteration 2 (2026-06-08)
+- **Lead Capture**: themed inquiry form on every profile → `POST /api/cards/{slug}/leads`; admin **Inbox** dialog (list, mark-read, delete) with unread badge.
+- **Profile Analytics**: view/scan/tap tracking (`POST /api/cards/{slug}/track`, scans via QR `?src=qr`); admin **Analytics** dialog shows views, scans, taps-by-action, inquiries.
+- **Accent Variants**: `accent` (gold/platinum/rose) selectable per card in the editor; each template recolors via CSS-var accents without layout change (`lib/accents.js`).
+- **Share Card**: one-tap Web Share / copy-link + downloadable branded **QR poster** PNG (`GET /api/cards/{slug}/poster`).
+- QA: 13/13 new backend tests + frontend flows 100%.
 
 ## Backlog / Next
-- P1: Lead-capture form + submissions inbox in admin.
-- P1: Per-profile analytics (views, action clicks, QR scans).
-- P2: Accent variants per template (gold/platinum/rose) and a 4th template.
-- P2: SEO/OpenGraph image per profile, WebP optimization pass.
+- P2: Aggregation-pipeline analytics + date-range charts for larger scale.
+- P2: Accent-aware QR poster (currently ivory/gold themed) and per-template poster styles.
+- P2: Email/webhook notification when a new lead arrives.
+- P2: SEO/OpenGraph image per profile, WebP optimization pass, 4th template.
