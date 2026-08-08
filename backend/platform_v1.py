@@ -779,6 +779,167 @@ async def integrations_status(user: dict = Depends(current_user)):
             "billing": {"stripe": cfg["stripe"], "revenuecat": cfg["revenuecat"]},
             "notes": "Adapters built; connect credentials to activate."}
 
+async def require_ws_admin(user: dict, wid: str):
+    if user.get("role") == "SUPER_ADMIN":
+        return "SUPER_ADMIN"
+    m = await db.memberships.find_one({"user_id": user["id"], "workspace_id": wid}, {"_id": 0})
+    if not m or m.get("role") not in ("WORKSPACE_OWNER", "WORKSPACE_ADMIN"):
+        raise HTTPException(403, "Workspace admin access required")
+    return m["role"]
+
+
+async def member_role(user_id: str, wid: str):
+    m = await db.memberships.find_one({"user_id": user_id, "workspace_id": wid}, {"_id": 0})
+    return m.get("role") if m else None
+
+
+class MemberIn(BaseModel):
+    email: EmailStr
+    name: str = ""
+    role: str = "MEMBER"
+
+
+class BrandingIn(BaseModel):
+    branding: dict = {}
+    locked_fields: List[str] = []
+
+
+WS_ROLES = {"WORKSPACE_OWNER", "WORKSPACE_ADMIN", "MANAGER", "MEMBER"}
+
+
+@platform_router.get("/workspaces/{wid}")
+async def get_workspace(wid: str, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    ws = await db.workspaces.find_one({"id": wid}, {"_id": 0})
+    if not ws:
+        raise HTTPException(404, "Workspace not found")
+    ws["member_count"] = await db.memberships.count_documents({"workspace_id": wid})
+    return ws
+
+
+@platform_router.get("/workspaces/{wid}/members")
+async def list_members(wid: str, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    ms = await db.memberships.find({"workspace_id": wid}, {"_id": 0}).to_list(1000)
+    uids = [m["user_id"] for m in ms]
+    users = {u["id"]: u for u in await db.users.find({"id": {"$in": uids}}, {"_id": 0, "password_hash": 0}).to_list(1000)}
+    return [{**m, "user": users.get(m["user_id"], {})} for m in ms]
+
+
+async def _create_member(wid: str, email: str, name: str, role: str):
+    email = email.strip().lower()
+    role = role if role in WS_ROLES else "MEMBER"
+    user = await db.users.find_one({"email": email})
+    if not user:
+        uid = str(uuid.uuid4())
+        user = {"id": uid, "email": email, "password_hash": hash_pw(secrets.token_urlsafe(16)),
+                "name": name.strip(), "role": "MEMBER", "email_verified": False,
+                "language": "en", "locale": "en-US", "timezone": "UTC", "created_at": now_iso()}
+        await db.users.insert_one(user)
+    if await db.memberships.find_one({"user_id": user["id"], "workspace_id": wid}):
+        return user, False
+    token = secrets.token_urlsafe(24)
+    await db.memberships.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "workspace_id": wid,
+                                     "role": role, "status": "invited", "invite_token": token, "created_at": now_iso()})
+    link = f"{PUBLIC_APP_URL}/register?invite={token}"
+    logger.info(f"[email{'' if _configured('EMAIL_API_KEY') else ':NOT_CONFIGURED'}] team invite for {email}: {link}")
+    return user, True
+
+
+@platform_router.post("/workspaces/{wid}/members")
+async def invite_member(wid: str, body: MemberIn, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    u, created = await _create_member(wid, body.email, body.name, body.role)
+    await db.notifications.insert_one({"id": str(uuid.uuid4()), "workspace_id": wid, "type": "team_invite",
+                                       "title": f"Invited {body.email}", "body": "", "read": False, "created_at": now_iso()})
+    await audit(wid, user["id"], "team.invite", {"email": body.email, "created_user": created})
+    return {"ok": True, "user_id": u["id"], "created": created}
+
+
+@platform_router.patch("/workspaces/{wid}/members/{uid}")
+async def update_member(wid: str, uid: str, body: dict, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    upd = {}
+    if body.get("role") in WS_ROLES:
+        upd["role"] = body["role"]
+    if body.get("status") in ("active", "invited", "deactivated"):
+        upd["status"] = body["status"]
+    if not upd:
+        raise HTTPException(400, "Nothing to update")
+    await db.memberships.update_one({"workspace_id": wid, "user_id": uid}, {"$set": upd})
+    await audit(wid, user["id"], "team.update_member", {"uid": uid, **upd})
+    return {"ok": True}
+
+
+@platform_router.delete("/workspaces/{wid}/members/{uid}")
+async def remove_member(wid: str, uid: str, user: dict = Depends(current_user)):
+    ws = await db.workspaces.find_one({"id": wid}, {"_id": 0, "owner_id": 1})
+    if ws and ws.get("owner_id") == uid:
+        raise HTTPException(400, "Cannot remove the workspace owner")
+    await require_ws_admin(user, wid)
+    await db.memberships.delete_one({"workspace_id": wid, "user_id": uid})
+    await audit(wid, user["id"], "team.remove_member", {"uid": uid})
+    return {"ok": True}
+
+
+@platform_router.put("/workspaces/{wid}/branding")
+async def set_branding(wid: str, body: BrandingIn, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    await db.workspaces.update_one({"id": wid}, {"$set": {"branding": body.branding, "locked_fields": body.locked_fields}})
+    await audit(wid, user["id"], "team.branding", {"locked": body.locked_fields})
+    return await db.workspaces.find_one({"id": wid}, {"_id": 0})
+
+
+class ImportIn(BaseModel):
+    csv: str
+    create_cards: bool = True
+
+
+@platform_router.post("/workspaces/{wid}/import")
+async def import_members(wid: str, body: ImportIn, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    ws = await db.workspaces.find_one({"id": wid}, {"_id": 0})
+    branding = (ws or {}).get("branding", {})
+    reader = csv.DictReader(io.StringIO(body.csv.strip()))
+    created_users, created_cards = 0, 0
+    for row in reader:
+        row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+        email = row.get("email")
+        if not email:
+            continue
+        u, is_new = await _create_member(wid, email, row.get("name", ""), row.get("role", "MEMBER"))
+        if is_new:
+            created_users += 1
+        if body.create_cards:
+            base = (row.get("name") or email.split("@")[0]).lower().replace(" ", "-")
+            slug = base
+            i = 1
+            while await db.digital_cards.find_one({"slug": slug}):
+                slug = f"{base}-{i}"; i += 1
+            card = CardData_min(slug, wid, branding, row, u["id"])
+            await db.digital_cards.insert_one(card)
+            created_cards += 1
+    await audit(wid, user["id"], "team.import", {"users": created_users, "cards": created_cards})
+    return {"ok": True, "created_users": created_users, "created_cards": created_cards}
+
+
+def CardData_min(slug, wid, branding, row, owner_user_id=None):
+    return {
+        "id": str(uuid.uuid4()), "slug": slug, "workspace_id": wid, "owner_user_id": owner_user_id,
+        "templateId": branding.get("template", "beige-luxury"), "accent": branding.get("accent", "gold"),
+        "status": "draft",
+        "identity": {"fullName": row.get("name", ""), "jobTitle": row.get("title", ""),
+                     "company": branding.get("company", ""), "companyLogo": branding.get("logo", ""),
+                     "profilePhoto": "", "bio": "", "city": "", "country": "", "availabilityBadge": ""},
+        "contact": {"phone": row.get("phone", ""), "whatsapp": "", "email": row.get("email", ""),
+                    "website": branding.get("company_website", ""), "address": "", "mapsUrl": "",
+                    "addressLine1": "", "addressLine2": "", "city": "", "adminArea": "", "postalCode": "", "countryCode": ""},
+        "social": {}, "actions": [], "services": [], "projects": [], "booking": {"bookingUrl": ""},
+        "languages": ["en"], "i18n": {},
+        "created_at": now_iso(), "updated_at": now_iso(),
+    }
+
+
 # ------------------------------------------------------------------ global markets & pricing
 @platform_router.get("/markets")
 async def markets():

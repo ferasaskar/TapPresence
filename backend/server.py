@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -195,6 +195,7 @@ class CardData(BaseModel):
     projects: List[Project] = Field(default_factory=list)
     booking: Booking = Field(default_factory=Booking)
     workspace_id: Optional[str] = None
+    owner_user_id: Optional[str] = None
     languages: List[str] = Field(default_factory=lambda: ["en"])
     i18n: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -249,6 +250,34 @@ async def _user_ws_ids(user: dict):
         return "ALL"
     ms = await db.memberships.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
     return [m["workspace_id"] for m in ms]
+
+
+ADMIN_WS_ROLES = ("WORKSPACE_OWNER", "WORKSPACE_ADMIN", "MANAGER")
+
+
+async def _card_query(user: dict):
+    """Cards visible to the caller: admins see whole workspace, members see only their own."""
+    if user.get("role") == "SUPER_ADMIN":
+        return {}
+    ms = await db.memberships.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
+    ors = []
+    for m in ms:
+        if m.get("role") in ADMIN_WS_ROLES:
+            ors.append({"workspace_id": m["workspace_id"]})
+        else:
+            ors.append({"workspace_id": m["workspace_id"], "owner_user_id": user["id"]})
+    return {"$or": ors} if ors else {"id": "__none__"}
+
+
+async def _can_access_card(user: dict, card: dict) -> bool:
+    if user.get("role") == "SUPER_ADMIN":
+        return True
+    m = await db.memberships.find_one({"user_id": user["id"], "workspace_id": card.get("workspace_id")}, {"_id": 0})
+    if not m:
+        return False
+    if m.get("role") in ADMIN_WS_ROLES:
+        return True
+    return card.get("owner_user_id") == user["id"]
 
 
 @api_router.get("/auth/me")
@@ -444,8 +473,7 @@ async def get_poster(slug: str):
 
 @api_router.get("/admin/cards")
 async def list_cards(user: dict = Depends(get_current_user)):
-    ws = await _user_ws_ids(user)
-    q = {} if ws == "ALL" else {"workspace_id": {"$in": ws}}
+    q = await _card_query(user)
     cards = await db.digital_cards.find(q, {"_id": 0}).to_list(1000)
     return cards
 
@@ -455,8 +483,7 @@ async def get_card_admin(card_id: str, user: dict = Depends(get_current_user)):
     card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    ws = await _user_ws_ids(user)
-    if ws != "ALL" and card.get("workspace_id") not in ws:
+    if not await _can_access_card(user, card):
         raise HTTPException(status_code=403, detail="Not your card")
     return card
 
@@ -471,6 +498,7 @@ async def create_card(body: CardUpsert, user: dict = Depends(get_current_user)):
     card = CardData(**body.model_dump())
     doc = card.model_dump()
     doc["workspace_id"] = wsid
+    doc["owner_user_id"] = user["id"]
     await db.digital_cards.insert_one(doc)
     return await db.digital_cards.find_one({"id": card.id}, {"_id": 0})
 
@@ -480,14 +508,25 @@ async def update_card(card_id: str, body: CardUpsert, user: dict = Depends(get_c
     existing = await db.digital_cards.find_one({"id": card_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Card not found")
-    ws = await _user_ws_ids(user)
-    if ws != "ALL" and existing.get("workspace_id") not in ws:
+    if not await _can_access_card(user, existing):
         raise HTTPException(status_code=403, detail="Not your card")
     slug_owner = await db.digital_cards.find_one({"slug": body.slug})
     if slug_owner and slug_owner["id"] != card_id:
         raise HTTPException(status_code=400, detail="Slug already used by another card")
     update = body.model_dump()
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Locked corporate branding: MEMBERs cannot change locked fields.
+    wsid = existing.get("workspace_id")
+    if user.get("role") != "SUPER_ADMIN" and wsid:
+        role = await member_role(user["id"], wsid)
+        if role == "MEMBER":
+            wsdoc = await db.workspaces.find_one({"id": wsid}, {"_id": 0, "locked_fields": 1})
+            for f in (wsdoc or {}).get("locked_fields", []):
+                if f in ("templateId", "accent"):
+                    update[f] = existing.get(f)
+                elif f in ("company", "companyLogo"):
+                    update.setdefault("identity", {})
+                    update["identity"][f] = existing.get("identity", {}).get(f, "")
     await db.digital_cards.update_one({"id": card_id}, {"$set": update})
     return await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
 
@@ -497,8 +536,7 @@ async def delete_card(card_id: str, user: dict = Depends(get_current_user)):
     existing = await db.digital_cards.find_one({"id": card_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Card not found")
-    ws = await _user_ws_ids(user)
-    if ws != "ALL" and existing.get("workspace_id") not in ws:
+    if not await _can_access_card(user, existing):
         raise HTTPException(status_code=403, detail="Not your card")
     await db.digital_cards.delete_one({"id": card_id})
     return {"ok": True}
