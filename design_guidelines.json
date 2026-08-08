@@ -1,0 +1,105 @@
+{
+  "theme": "Light mode strictly for this specific 'Beige Luxury Executive' profile to maintain the 'Ivory/Beige' editorial calm. Admin panel can be standard light mode or system preference.",
+  "typography": {
+    "headings": {
+      "font_family": "Cormorant Garamond, serif",
+      "weights": ["300", "400", "600"],
+      "usage": "H1, H2, user's name, section titles. Use tracking-tight."
+    },
+    "body": {
+      "font_family": "Outfit, sans-serif",
+      "weights": ["300", "400", "500"],
+      "usage": "Paragraphs, labels, button text. Use tracking-wide for overlines."
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none",
+      "h2": "text-2xl sm:text-3xl tracking-tight leading-snug",
+      "body": "text-base leading-relaxed"
+    }
+  },
+  "colors": {
+    "background": "#FAFAF8",
+    "surface": "#F4F1EB",
+    "surface_hover": "#EAE6DF",
+    "text_primary": "#2D2B2A",
+    "text_secondary": "#66615E",
+    "accent_gold": "#B89973",
+    "accent_gold_light": "#E0CDB4",
+    "border_subtle": "#E5E1D8",
+    "destructive": "#9C423E"
+  },
+  "visual_enhancers": {
+    "borders": "1px solid #E5E1D8 for subtle separation. Use #B89973 for elegant rules/dividers (gold rule).",
+    "shadows": "Minimalist. Avoid large drop shadows. Use subtle inset shadows or 1px border for card definitions.",
+    "masks": "Arch mask for portrait: Use Tailwind classes `rounded-t-[1000px] rounded-b-md` to form an architectural arch. Aspect ratio should be vertical (e.g., aspect-[3/4]).",
+    "textures": "Use flat surfaces over heavy gradients. Ivory background with subtle noise texture overlay (opacity 2-3%) to remove digital flatness."
+  },
+  "components": {
+    "hero": {
+      "layout": "Arched portrait at the top, centered or slightly asymmetrical offset. Name in large Cormorant Garamond, gold separator line under the name (`border-t border-[#B89973]`), title in Outfit. Availability badge as a pill (`rounded-full border border-accent_gold px-4 py-1 text-sm text-accent_gold`)."
+    },
+    "action_row": {
+      "layout": "2 large prominent buttons. Left: Secondary (outline). Right: Primary (solid deep charcoal background with ivory text). Use slight `rounded-md` or `rounded-none` for editorial feel."
+    },
+    "service_cards": {
+      "layout": "Grid of 4. Background `surface`. Gold Lucide icons (size 24, strokeWidth 1.5). Very generous padding (`p-8`). No heavy shadows. Use a subtle hover lift `-translate-y-1` and hover border change."
+    },
+    "project_rows": {
+      "layout": "Horizontal rows. Image thumbnail (`aspect-video` or `aspect-square`, soft rounded) on left, text in middle, elegant gold arrow (->) on right. `border-b border_subtle` between rows."
+    },
+    "cta_bar": {
+      "layout": "Framed box. Use `border border-accent_gold p-8`. Center aligned text with a main booking button. Optionally overlay the soft beige abstract texture here."
+    },
+    "save_qr_row": {
+      "layout": "Two-panel Bento layout (`grid-cols-2`). Left panel: 'Save Contact' with VCF download icon. Right panel: Minimalist QR code display. Both in `surface` color with `border_subtle`."
+    },
+    "admin_editor": {
+      "layout": "Use strict Shadcn JS components. Clean, utility-focused. Side-by-side on desktop (Form on left, live preview digital card on right). Card-less, sharp edges for the form fields. Avoid luxury styling here; focus on data entry usability."
+    }
+  },
+  "grids": {
+    "profile_spacing": "Max width `max-w-md` or `max-w-lg` for the public profile to keep it narrow, intimate, and mobile-optimized. Generous vertical spacing `gap-12` or `gap-16` between sections.",
+    "admin_spacing": "Standard fluid dashboard grid `grid-cols-1 lg:grid-cols-2`. `gap-8`."
+  },
+  "motion": {
+    "scroll": "Use Lenis for smooth momentum scrolling on the profile page.",
+    "animations": "Framer Motion for staggered fade-in up of the service cards and project rows (`initial={{opacity: 0, y: 20}}`).",
+    "interactions": "Hover states on projects must slide the arrow slightly to the right (`group-hover:translate-x-2 transition-transform`)."
+  },
+  "image_urls": {
+    "hero_portrait": {
+      "url": "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBleGVjdXRpdmUlMjBwb3J0cmFpdCUyMG1hbiUyMHN1aXQlMjBjYWxtfGVufDB8fHx8MTc4NjE5MTc4N3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Professional calm executive in a suit for the arched hero portrait."
+    },
+    "project_1": {
+      "url": "https://images.unsplash.com/photo-1591931681345-16b532514cde?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwzfHxsdXh1cnklMjBlZGl0b3JpYWwlMjBhcmNoaXRlY3R1cmUlMjBpbnRlcmlvcnxlbnwwfHx8fDE3ODYxOTE3ODd8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Luxury interior architecture with dark tones and a sculptural lamp, for project thumbnail 1."
+    },
+    "project_2": {
+      "url": "https://images.unsplash.com/photo-1518733057094-95b53143d2a7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwyfHxsdXh1cnklMjBlZGl0b3JpYWwlMjBhcmNoaXRlY3R1cmUlMjBpbnRlcmlvcnxlbnwwfHx8fDE3ODYxOTE3ODd8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Minimalist luxury staircase architecture, for project thumbnail 2."
+    },
+    "project_3": {
+      "url": "https://images.unsplash.com/photo-1599696848652-f0ff23bc911f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBlZGl0b3JpYWwlMjBhcmNoaXRlY3R1cmUlMjBpbnRlcmlvcnxlbnwwfHx8fDE3ODYxOTE3ODd8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Warm beige architectural living space, for project thumbnail 3."
+    },
+    "background_texture": {
+      "url": "https://images.unsplash.com/photo-1714636608872-048fc9231892?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1NzZ8MHwxfHNlYXJjaHwxfHxzb2Z0JTIwYmVpZ2UlMjBhYnN0cmFjdCUyMHRleHR1cmV8ZW58MHx8fHwxNzg2MTkxNzg3fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Soft beige abstract wave texture for optional subtle cta bar background or hero backdrop."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Initialize React with Vite, JavaScript, Tailwind, and Shadcn UI. DO NOT USE TYPESCRIPT.",
+    "Install lucide-react for icons. Set strokeWidth={1.5} for an elegant, thin look.",
+    "Install framer-motion and @studio-freight/lenis for smooth scrolling and staggered animations.",
+    "Define custom Tailwind colors in tailwind.config.js mapping to the ivory/beige palette.",
+    "Import Cormorant Garamond and Outfit fonts from Google Fonts.",
+    "Implement the /feras-askar route. The profile should be constrained to a max-width (e.g., max-w-lg) and centered horizontally on desktop to mimic a premium digital business card. The layout should flow beautifully on mobile.",
+    "Use the Arch Mask for the Hero Image: className='w-56 h-72 object-cover mx-auto rounded-t-[1000px] rounded-b-3xl'.",
+    "Build the Admin Editor route (e.g., /admin). Use Shadcn JS forms, inputs, and buttons. Do not apply the 'luxury' theme to the admin panel; keep it clean and utility-focused.",
+    "Ensure ALL interactive elements and key informational elements have data-testid attributes (e.g., data-testid='hero-book-call-button', data-testid='admin-save-button', data-testid='service-card-0').",
+    "Do NOT use complete transparent backgrounds in surfaces. Use solid ivory or beige.",
+    "Avoid the generic 'centered everything' look except for the Hero portrait/name. Content sections like Services and Projects should maintain strong left-alignment."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight. Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients. Don't make generic centered layouts, simplistic gradients, and uniform styling. Create depth through layered design elements with z-index hierarchy. Use glass-morphism effects with backdrop filters (12-24px blur). You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms. You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file. This disrupts the human natural reading flow of text. Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style. NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons. Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead. Use 2-3x more spacing than feels comfortable. Cramped designs look cheap. Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary. Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN. Prioritize using pre-existing components from src/components/ui when applicable. Create new components that match the style and conventions of existing components when needed. Examine existing components to understand the project's component patterns before creating new ones. Use sonner for toasts. Sonner component are located in /app/src/components/ui/sonner.jsx."
+}
