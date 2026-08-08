@@ -1,7 +1,9 @@
 import { getIcon } from "@/lib/cardHelpers";
+import { useProfile } from "@/context/ProfileContext";
 
 // Behaviour-only action button. Templates pass the visual className.
 export const ActionButton = ({ action, className = "", iconClassName = "", showSub = false, testId }) => {
+  const { track } = useProfile();
   if (!action) return null;
   const Icon = getIcon(action.icon);
   const external = action.href?.startsWith("http");
@@ -10,6 +12,7 @@ export const ActionButton = ({ action, className = "", iconClassName = "", showS
       href={action.href}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
+      onClick={() => track("tap", action.key)}
       data-testid={testId || `action-${action.key}`}
       className={className}
     >

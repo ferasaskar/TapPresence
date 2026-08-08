@@ -1,13 +1,20 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
+import { ProfileContext } from "@/context/ProfileContext";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { Loader2 } from "lucide-react";
 
 export default function PublicProfile() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
   const [card, setCard] = useState(null);
   const [state, setState] = useState("loading");
+
+  const track = useCallback(
+    (type, key = "") => { api.post(`/cards/${slug}/track`, { type, key }).catch(() => {}); },
+    [slug]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -20,10 +27,12 @@ export default function PublicProfile() {
         setState("ready");
         const id = res.data.identity || {};
         document.title = `${id.fullName || slug} — ${id.jobTitle || "ARIADNI ID"}`;
+        track("view");
+        if (searchParams.get("src") === "qr") track("scan");
       })
       .catch(() => alive && setState("notfound"));
     return () => { alive = false; };
-  }, [slug]);
+  }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (state === "loading") {
     return (
@@ -43,8 +52,10 @@ export default function PublicProfile() {
   }
 
   return (
-    <div data-testid="public-profile">
-      <TemplateRenderer data={card} />
-    </div>
+    <ProfileContext.Provider value={{ track }}>
+      <div data-testid="public-profile">
+        <TemplateRenderer data={card} />
+      </div>
+    </ProfileContext.Provider>
   );
 }

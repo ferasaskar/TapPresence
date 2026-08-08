@@ -14,6 +14,7 @@ import jwt
 import bcrypt
 import qrcode
 import requests
+from PIL import Image, ImageDraw, ImageFont
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -208,6 +209,18 @@ class LoginIn(BaseModel):
     email: str
     password: str
 
+
+class LeadIn(BaseModel):
+    name: str
+    email: str = ""
+    phone: str = ""
+    message: str = ""
+
+
+class TrackIn(BaseModel):
+    type: str  # view | scan | tap
+    key: str = ""
+
 # ------------------------------------------------------------------ auth routes
 
 @api_router.post("/auth/login")
@@ -278,9 +291,36 @@ async def get_vcard(slug: str):
     )
 
 
+@api_router.post("/cards/{slug}/leads")
+async def create_lead(slug: str, body: LeadIn):
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0, "id": 1})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not body.name.strip() or not (body.email.strip() or body.phone.strip()):
+        raise HTTPException(status_code=400, detail="Name and an email or phone are required")
+    lead = {
+        "id": str(uuid.uuid4()), "cardSlug": slug, "name": body.name.strip(),
+        "email": body.email.strip(), "phone": body.phone.strip(), "message": body.message.strip(),
+        "read": False, "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.leads.insert_one(lead)
+    return {"ok": True}
+
+
+@api_router.post("/cards/{slug}/track")
+async def track_event(slug: str, body: TrackIn):
+    if body.type not in ("view", "scan", "tap"):
+        return {"ok": False}
+    await db.analytics_events.insert_one({
+        "id": str(uuid.uuid4()), "cardSlug": slug, "type": body.type, "key": body.key,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"ok": True}
+
+
 @api_router.get("/cards/{slug}/qr")
 async def get_qr(slug: str):
-    url = f"{PUBLIC_APP_URL}/{slug}" if PUBLIC_APP_URL else f"/{slug}"
+    url = f"{PUBLIC_APP_URL}/{slug}?src=qr" if PUBLIC_APP_URL else f"/{slug}?src=qr"
     qr = qrcode.QRCode(version=None, box_size=10, border=2,
                        error_correction=qrcode.constants.ERROR_CORRECT_M)
     qr.add_data(url)
@@ -290,6 +330,62 @@ async def get_qr(slug: str):
     img.save(buf, format="PNG")
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")
+
+
+def _font(size, serif=True, bold=False):
+    candidates = [
+        f"/usr/share/fonts/truetype/dejavu/DejaVuSerif{'-Bold' if bold else ''}.ttf" if serif else None,
+        f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    for p in [c for c in candidates if c]:
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _center(draw, text, font, y, w, fill):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    draw.text(((w - tw) / 2, y), text, font=font, fill=fill)
+    return bbox[3] - bbox[1]
+
+
+@api_router.get("/cards/{slug}/poster")
+async def get_poster(slug: str):
+    card = await db.digital_cards.find_one({"slug": slug}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    idn = card.get("identity", {})
+    W, H = 1080, 1350
+    poster = Image.new("RGB", (W, H), "#FAFAF8")
+    d = ImageDraw.Draw(poster)
+    # top overline
+    d.rectangle([0, 0, W, 14], fill="#B89973")
+    _center(d, "ARIADNI ID", _font(30, serif=False), 70, W, "#B89973")
+    _center(d, idn.get("fullName", slug), _font(96, bold=True), 150, W, "#2D2B2A")
+    _center(d, idn.get("jobTitle", ""), _font(40, serif=False), 280, W, "#66615E")
+    d.line([(W / 2 - 90, 360), (W / 2 + 90, 360)], fill="#B89973", width=3)
+    # QR
+    qr = qrcode.QRCode(box_size=10, border=1, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    qr.add_data(f"{PUBLIC_APP_URL}/{slug}?src=qr" if PUBLIC_APP_URL else f"/{slug}?src=qr")
+    qr.make(fit=True)
+    qimg = qr.make_image(fill_color="#2D2B2A", back_color="#FAFAF8").convert("RGB").resize((560, 560), Image.NEAREST)
+    qx = int((W - 560) / 2)
+    d.rounded_rectangle([qx - 40, 440, qx + 600, 1080], radius=28, outline="#E5E1D8", width=3, fill="#F4F1EB")
+    poster.paste(qimg, (qx, 480))
+    _center(d, "Scan to connect", _font(46), 1120, W, "#2D2B2A")
+    company = idn.get("company", "")
+    if company:
+        _center(d, company, _font(34, serif=False), 1200, W, "#66615E")
+    _center(d, f"{PUBLIC_APP_URL}/{slug}".replace("https://", "").replace("http://", ""), _font(26, serif=False), 1270, W, "#B89973")
+    buf = io.BytesIO()
+    poster.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png",
+                             headers={"Content-Disposition": f'attachment; filename="{slug}-poster.png"'})
 
 # ------------------------------------------------------------------ admin cards
 
@@ -339,6 +435,50 @@ async def delete_card(card_id: str, user: dict = Depends(get_current_user)):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Card not found")
     return {"ok": True}
+
+
+@api_router.get("/admin/leads")
+async def list_leads(slug: str = None, user: dict = Depends(get_current_user)):
+    q = {"cardSlug": slug} if slug else {}
+    leads = await db.leads.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return leads
+
+
+@api_router.patch("/admin/leads/{lead_id}")
+async def mark_lead_read(lead_id: str, user: dict = Depends(get_current_user)):
+    await db.leads.update_one({"id": lead_id}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@api_router.delete("/admin/leads/{lead_id}")
+async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
+    await db.leads.delete_one({"id": lead_id})
+    return {"ok": True}
+
+
+@api_router.get("/admin/cards/{card_id}/analytics")
+async def card_analytics(card_id: str, user: dict = Depends(get_current_user)):
+    card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0, "slug": 1})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    slug = card["slug"]
+    events = await db.analytics_events.find({"cardSlug": slug}, {"_id": 0}).to_list(10000)
+    views = sum(1 for e in events if e["type"] == "view")
+    scans = sum(1 for e in events if e["type"] == "scan")
+    taps = [e for e in events if e["type"] == "tap"]
+    by_key = {}
+    for e in taps:
+        by_key[e["key"] or "other"] = by_key.get(e["key"] or "other", 0) + 1
+    leads_count = await db.leads.count_documents({"cardSlug": slug})
+    # last 7 day view timeseries
+    from collections import Counter
+    days = Counter()
+    for e in events:
+        if e["type"] in ("view", "scan"):
+            days[e["created_at"][:10]] += 1
+    series = sorted([{"date": k, "count": v} for k, v in days.items()], key=lambda x: x["date"])[-7:]
+    return {"views": views, "scans": scans, "taps": len(taps), "tapsByKey": by_key,
+            "leads": leads_count, "series": series}
 
 # ------------------------------------------------------------------ uploads
 

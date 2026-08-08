@@ -2,20 +2,26 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import CardEditor from "@/components/admin/CardEditor";
+import LeadsDialog from "@/components/admin/LeadsDialog";
+import AnalyticsDialog from "@/components/admin/AnalyticsDialog";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Admin() {
   const { user, logout } = useAuth();
   const [cards, setCards] = useState(null);
   const [editing, setEditing] = useState(null); // null | {} for new | card obj
+  const [leadsOpen, setLeadsOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const [statsCard, setStatsCard] = useState(null);
 
   const load = () => {
     setCards(null);
     api.get("/admin/cards").then((res) => setCards(res.data)).catch(() => setCards([]));
+    api.get("/admin/leads").then((res) => setUnread(res.data.filter((l) => !l.read).length)).catch(() => {});
   };
 
   useEffect(() => { load(); }, []);
@@ -56,6 +62,10 @@ export default function Admin() {
             <h1 className="text-lg font-semibold text-neutral-900">Card manager</h1>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => setLeadsOpen(true)} data-testid="inbox-button" className="relative">
+              <Inbox className="w-4 h-4 mr-1" /> Inbox
+              {unread > 0 ? <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-neutral-900 px-1 text-[10px] text-white" data-testid="inbox-unread">{unread}</span> : null}
+            </Button>
             <span className="text-sm text-neutral-500">{user?.email}</span>
             <Button variant="ghost" size="sm" onClick={logout} data-testid="logout-button"><LogOut className="w-4 h-4" /></Button>
           </div>
@@ -85,6 +95,7 @@ export default function Admin() {
                 <p className="mt-1 text-xs text-neutral-400">/{c.slug}</p>
                 <div className="mt-4 flex items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => setEditing(c)} data-testid={`edit-${c.slug}`}><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setStatsCard(c)} data-testid={`stats-${c.slug}`}><BarChart3 className="w-3.5 h-3.5" /></Button>
                   <a href={`/${c.slug}`} target="_blank" rel="noreferrer"><Button size="sm" variant="ghost" data-testid={`view-${c.slug}`}><ExternalLink className="w-3.5 h-3.5" /></Button></a>
                   <Button size="sm" variant="ghost" className="text-red-500 ml-auto" onClick={() => remove(c)} data-testid={`delete-${c.slug}`}><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
@@ -93,6 +104,9 @@ export default function Admin() {
           </div>
         )}
       </main>
+
+      <LeadsDialog open={leadsOpen} onOpenChange={setLeadsOpen} onCountChange={setUnread} />
+      <AnalyticsDialog card={statsCard} open={!!statsCard} onOpenChange={(v) => !v && setStatsCard(null)} />
     </div>
   );
 }

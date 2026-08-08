@@ -7,8 +7,9 @@ import { SocialIcons } from "@/components/profile/SocialIcons";
 import { SaveContactButton } from "@/components/profile/SaveContactButton";
 import { QRBlock } from "@/components/profile/QRBlock";
 import { ActionButton } from "@/components/profile/ActionButton";
-
-const GOLD = "#C9A24B";
+import { InquiryForm } from "@/components/profile/InquiryForm";
+import { ShareBar } from "@/components/profile/ShareBar";
+import { accentHex, accentGrad, hexToRgba } from "@/lib/accents";
 
 const fade = (i = 0) => ({
   initial: { opacity: 0, y: 24 },
@@ -18,7 +19,7 @@ const fade = (i = 0) => ({
 });
 
 const Overline = ({ children }) => (
-  <p className="text-[11px] uppercase tracking-[0.35em] mb-4" style={{ color: GOLD }}>{children}</p>
+  <p className="text-[11px] uppercase tracking-[0.35em] mb-4" style={{ color: "var(--ac)" }}>{children}</p>
 );
 
 export const ExecutiveBlackGold = ({ data }) => {
@@ -30,8 +31,14 @@ export const ExecutiveBlackGold = ({ data }) => {
 
   const iconRow = [actions.call, actions.whatsapp, actions.email, actions.meet, actions.message].filter(Boolean);
 
+  const GOLD = accentHex("executive-black-gold", data.accent);
+  const [g1, g2, g3] = accentGrad("executive-black-gold", data.accent);
+  const gBorder = hexToRgba(GOLD, 0.35);
+  const gBorder30 = hexToRgba(GOLD, 0.3);
+  const gGlow = hexToRgba(GOLD, 0.5);
+
   return (
-    <div className="relative min-h-screen font-sans text-neutral-200 overflow-hidden" style={{ backgroundColor: "#0B0B0C" }}>
+    <div className="relative min-h-screen font-sans text-neutral-200 overflow-hidden" style={{ backgroundColor: "#0B0B0C", "--ac": GOLD }}>
       <div className="grain-overlay" style={{ opacity: 0.06 }} />
       {/* soft gold radial glow behind hero */}
       <div className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full opacity-20 blur-3xl" style={{ background: GOLD }} />
@@ -98,7 +105,7 @@ export const ExecutiveBlackGold = ({ data }) => {
                     {...fade(i)}
                     data-testid={`service-card-${i}`}
                     className="group rounded-xl border p-7 transition-all duration-300 hover:-translate-y-1"
-                    style={{ borderColor: "rgba(201,162,75,0.35)", backgroundColor: "#111112" }}
+                    style={{ borderColor: gBorder, backgroundColor: "#111112" }}
                   >
                     <Icon className="w-6 h-6 mb-5" strokeWidth={1.5} style={{ color: GOLD }} />
                     <h3 className="font-serif text-xl tracking-tight mb-2 text-neutral-100">{s.title}</h3>
@@ -133,7 +140,7 @@ export const ExecutiveBlackGold = ({ data }) => {
                   </>
                 );
                 const cls = "group block overflow-hidden rounded-xl border transition-colors duration-300";
-                const st = { borderColor: "rgba(201,162,75,0.3)", backgroundColor: "#111112" };
+                const st = { borderColor: gBorder30, backgroundColor: "#111112" };
                 return (
                   <motion.div key={i} {...fade(i)} data-testid={`project-card-${i}`}>
                     {p.url ? (
@@ -159,7 +166,10 @@ export const ExecutiveBlackGold = ({ data }) => {
             />
           </motion.section>
         )}
-        <style>{`[data-testid="cta-book-button"]{background:linear-gradient(90deg,#E7C56B,#C9A24B,#8f7328);}`}</style>
+        <style>{`[data-testid="cta-book-button"]{background:linear-gradient(90deg,${g1},${g2},${g3});}`}</style>
+
+        {/* LEAD CAPTURE */}
+        <InquiryForm slug={slug} variant="black" accentColor={GOLD} />
 
         {/* SAVE CONTACT + QR */}
         <motion.section {...fade(0)} className="mt-6 grid grid-cols-2 gap-4">
@@ -178,6 +188,9 @@ export const ExecutiveBlackGold = ({ data }) => {
           />
         </motion.section>
 
+        {/* SHARE */}
+        <ShareBar slug={slug} name={id.fullName} variant="black" iconColor={GOLD} />
+
         {/* FOOTER */}
         <footer className="mt-16 border-t pt-8 text-center" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           <SocialIcons
@@ -192,12 +205,12 @@ export const ExecutiveBlackGold = ({ data }) => {
       </div>
 
       <style>{`
-        [data-testid="availability-badge"]{ color:${GOLD}; border:1px solid rgba(201,162,75,0.5); }
+        [data-testid="availability-badge"]{ color:${GOLD}; border:1px solid ${gGlow}; }
         [data-testid="availability-badge"] span{ background:${GOLD}; }
-        [data-testid="hero-action-call"],[data-testid="hero-action-whatsapp"],[data-testid="hero-action-email"],[data-testid="hero-action-meet"],[data-testid="hero-action-message"]{ border-color:rgba(201,162,75,0.35); background:#111112; }
-        [data-testid="save-contact-button"]{ border-color:rgba(201,162,75,0.35); background:#111112; color:#e5e5e5; }
+        [data-testid="hero-action-call"],[data-testid="hero-action-whatsapp"],[data-testid="hero-action-email"],[data-testid="hero-action-meet"],[data-testid="hero-action-message"]{ border-color:${gBorder}; background:#111112; }
+        [data-testid="save-contact-button"]{ border-color:${gBorder}; background:#111112; color:#e5e5e5; }
         [data-testid="save-contact-button"] svg{ color:${GOLD}; }
-        [data-testid="qr-block"]{ border-color:rgba(201,162,75,0.35); background:#111112; }
+        [data-testid="qr-block"]{ border-color:${gBorder}; background:#111112; }
         [data-testid="social-icons"] a{ border-color:rgba(255,255,255,0.12); }
         [data-testid="social-icons"] a:hover{ color:${GOLD}; border-color:${GOLD}; }
       `}</style>

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { ACCENT_OPTIONS } from "@/lib/accents";
 import { Plus, Trash2, Loader2, ArrowLeft, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
@@ -89,7 +90,7 @@ export default function CardEditor({ initial, onBack, onSaved }) {
           </div>
         </div>
 
-        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-lg border border-neutral-200 p-4">
+        <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-4 rounded-lg border border-neutral-200 p-4">
           <Field label="Slug (URL)">
             <Input value={form.slug} onChange={(e) => set("slug", e.target.value)} placeholder="feras-askar" data-testid="editor-slug" />
           </Field>
@@ -98,6 +99,14 @@ export default function CardEditor({ initial, onBack, onSaved }) {
               <SelectTrigger data-testid="editor-template"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {TEMPLATES.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Accent">
+            <Select value={form.accent} onValueChange={(v) => set("accent", v)}>
+              <SelectTrigger data-testid="editor-accent"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ACCENT_OPTIONS.map((a) => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>

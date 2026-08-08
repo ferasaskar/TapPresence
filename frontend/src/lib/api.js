@@ -21,3 +21,4 @@ export const resolveImg = (url) => {
 
 export const vcardUrl = (slug) => `${API_BASE}/cards/${slug}/vcard`;
 export const qrUrl = (slug) => `${API_BASE}/cards/${slug}/qr`;
+export const posterUrl = (slug) => `${API_BASE}/cards/${slug}/poster`;
