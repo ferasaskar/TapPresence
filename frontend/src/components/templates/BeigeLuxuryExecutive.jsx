@@ -35,12 +35,16 @@ export const BeigeLuxuryExecutive = ({ data }) => {
         <motion.header {...fade(0)} className="flex flex-col items-center text-center">
           <div className="relative mb-8">
             <div className="absolute -inset-3 rounded-t-[1000px] rounded-b-3xl border border-gold/40" />
-            <img
-              src={resolveImg(id.profilePhoto)}
-              alt={id.fullName}
-              data-testid="hero-portrait"
-              className="relative w-52 h-72 object-cover rounded-t-[1000px] rounded-b-3xl shadow-sm"
-            />
+            {id.profilePhoto ? (
+              <img
+                src={resolveImg(id.profilePhoto)}
+                alt={id.fullName}
+                data-testid="hero-portrait"
+                className="relative w-52 h-72 object-cover rounded-t-[1000px] rounded-b-3xl shadow-sm"
+              />
+            ) : (
+              <div data-testid="hero-portrait" className="relative w-52 h-72 rounded-t-[1000px] rounded-b-3xl bg-ivory-hover" />
+            )}
           </div>
           <AvailabilityBadge
             label={id.availabilityBadge}

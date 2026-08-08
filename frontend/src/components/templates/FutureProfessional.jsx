@@ -42,13 +42,17 @@ export const FutureProfessional = ({ data }) => {
           <div className="relative mb-8">
             <div className="absolute -inset-[6px] rounded-full opacity-80 blur-[6px]" style={{ background: "conic-gradient(from 90deg, #2ea6ff, #7a5cff, #2ea6ff)" }} />
             <div className="absolute -inset-[6px] rounded-full" style={{ background: "conic-gradient(from 90deg, #2ea6ff, #7a5cff, #2ea6ff)" }} />
-            <img
-              src={resolveImg(id.profilePhoto)}
-              alt={id.fullName}
-              data-testid="hero-portrait"
-              className="relative w-40 h-40 rounded-full object-cover"
-              style={{ border: "3px solid #070A16" }}
-            />
+            {id.profilePhoto ? (
+              <img
+                src={resolveImg(id.profilePhoto)}
+                alt={id.fullName}
+                data-testid="hero-portrait"
+                className="relative w-40 h-40 rounded-full object-cover"
+                style={{ border: "3px solid #070A16" }}
+              />
+            ) : (
+              <div data-testid="hero-portrait" className="relative w-40 h-40 rounded-full bg-slate-800" style={{ border: "3px solid #070A16" }} />
+            )}
           </div>
           <div className={`mb-5 rounded-full px-5 py-2 ${glass}`}>
             <AvailabilityBadge

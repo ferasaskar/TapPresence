@@ -43,13 +43,17 @@ export const ExecutiveBlackGold = ({ data }) => {
           <div className="relative mb-8">
             <div className="absolute -inset-2 rounded-full" style={{ background: `conic-gradient(from 180deg, ${GOLD}, #6b551f, ${GOLD})` }} />
             <div className="absolute -inset-2 rounded-full blur-md opacity-50" style={{ background: GOLD }} />
-            <img
-              src={resolveImg(id.profilePhoto)}
-              alt={id.fullName}
-              data-testid="hero-portrait"
-              className="relative w-40 h-40 rounded-full object-cover"
-              style={{ border: "3px solid #0B0B0C" }}
-            />
+            {id.profilePhoto ? (
+              <img
+                src={resolveImg(id.profilePhoto)}
+                alt={id.fullName}
+                data-testid="hero-portrait"
+                className="relative w-40 h-40 rounded-full object-cover"
+                style={{ border: "3px solid #0B0B0C" }}
+              />
+            ) : (
+              <div data-testid="hero-portrait" className="relative w-40 h-40 rounded-full bg-neutral-800" style={{ border: "3px solid #0B0B0C" }} />
+            )}
           </div>
           <AvailabilityBadge
             label={id.availabilityBadge}
