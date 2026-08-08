@@ -721,13 +721,34 @@ def _draft_followup(b: FollowupIn) -> str:
 @platform_router.post("/ai/followup")
 async def ai_followup(body: FollowupIn, user: dict = Depends(current_user)):
     """Drafts a follow-up. User must review + send (AI never auto-sends).
-    Provider abstraction: uses configured LLM if wired, else a high-quality
-    deterministic template. EMERGENT_LLM_KEY is available for future LLM wiring."""
+    Uses the configured LLM (Emergent universal key) with a deterministic
+    multilingual template as a guaranteed fallback."""
     provider = "template"
     text = _draft_followup(body)
+    key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
+    if key:
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage
+            lang_name = {"ar": "Arabic", "es": "Spanish", "en": "English"}.get(body.language, "English")
+            sys = (f"You are an elite networking & sales assistant writing on behalf of "
+                   f"{body.owner_name or 'a professional'}. Write ONE {body.tone} follow-up "
+                   f"{body.channel} message in {lang_name}. Be concise, warm and specific, "
+                   f"reference the meeting context, and end with a clear next step. "
+                   f"Output ONLY the message text — no preamble, no subject line, no quotes.")
+            prompt = (f"Lead name: {body.lead_name}\nCompany: {body.company}\n"
+                      f"Industry: {body.industry}\nMeeting notes: {body.notes}\n"
+                      f"Channel: {body.channel}\nTone: {body.tone}\nLanguage: {lang_name}")
+            chat = LlmChat(api_key=key, session_id=f"followup-{uuid.uuid4()}",
+                           system_message=sys).with_model("openai", "gpt-5.4")
+            resp = await chat.send_message(UserMessage(text=prompt))
+            if resp and str(resp).strip():
+                text = str(resp).strip()
+                provider = "openai:gpt-5.4"
+        except Exception as e:
+            logger.warning(f"AI follow-up LLM fallback to template: {e}")
     await db.ai_usage.insert_one({
         "id": str(uuid.uuid4()), "user_id": user["id"], "provider": provider,
-        "channel": body.channel, "tone": body.tone, "created_at": now_iso(),
+        "channel": body.channel, "tone": body.tone, "language": body.language, "created_at": now_iso(),
     })
     return {"provider": provider, "channel": body.channel, "language": body.language, "draft": text,
             "rtl": body.language in RTL_LANGUAGES,
@@ -775,8 +796,10 @@ def _price_for(plan: dict, market: str):
 @platform_router.get("/pricing")
 async def pricing(market: str = "US"):
     market = market.upper()
-    mkt = next((m for m in (await db.markets.find({}, {"_id": 0}).to_list(100) or DEFAULT_MARKETS)
-                if m["code"] == market), DEFAULT_MARKETS[0])
+    all_markets = await db.markets.find({}, {"_id": 0}).to_list(100) or DEFAULT_MARKETS
+    mkt = next((m for m in all_markets if m["code"] == market), None)
+    if not mkt:
+        raise HTTPException(400, f"Unknown market '{market}'. Supported: {[m['code'] for m in all_markets]}")
     plans = await db.plans.find({}, {"_id": 0}).to_list(50) or DEFAULT_PLANS
     out = []
     for p in plans:
