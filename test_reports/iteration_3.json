@@ -1,0 +1,42 @@
+{
+  "summary": "Comprehensive backend testing of ARIADNI ID Commercial V1. Wrote 35 pytest tests in test_commercial_v1.py covering regression, commercial auth, multi-tenant isolation, feature flags, NFC lifecycle+redirect, contact exchange, CRM, campaigns, and AI follow-up. Also re-ran prior 27 tests (test_new_features.py + backend_test.py) — all pass. Found 1 CRITICAL bug (POST /api/campaigns returned 500 due to Mongo ObjectId leak into response) which was fixed in platform_v1.py. Found 1 MINOR consistency issue (legacy POST /api/cards/{slug}/leads does not populate status/workspace_id/tags/source fields, so those leads appear in /crm/leads without status). Multi-tenancy is CORRECTLY enforced: freshly registered user sees 0 cards, cannot GET/PUT/DELETE another workspace's card (all 403), cannot PATCH another workspace's lead (403). NFC redirect flow works: unactivated -> 307 /activate?token=; activated -> 307 /{slug}?src=nfc with analytics nfctap event recorded. Refresh token rotation invalidates old refresh on reuse. Feature flags: ai=true, all other integrations false as expected. AI followup returns provider='template' with non-empty draft; ai/enrich returns configured:false with 'Not Configured' message. Total: 62/62 backend tests passing after fix.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/cards/{slug}/leads (legacy)", "issue": "Does not set status/workspace_id/tags/source on inserted lead. Those leads then appear in /crm/leads without a 'status' field, breaking CRM UI expectations. Compare with POST /api/cards/{slug}/exchange which sets status='NEW', tags=[], source, workspace_id, etc. Recommend main agent normalize the legacy endpoint or route it through the same insert helper."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_commercial_v1.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration_3_commercial.xml"
+  ],
+  "action_items": [
+    "REVIEW fix applied: platform_v1.py POST /api/campaigns now pops '_id' from motor-mutated doc before returning (was returning ObjectId -> 500).",
+    "Normalize legacy POST /api/cards/{slug}/leads in server.py to include status='NEW', workspace_id (from card), tags=[], source='inquiry', updated_at, last_activity so CRM data model is consistent between /leads and /exchange creation paths."
+  ],
+  "critical_code_review_comments": [
+    "platform_v1.py create_campaign returned '{**doc}' AFTER motor's insert_one mutated doc with '_id' ObjectId -> HTTP 500. Fixed by popping _id. Same anti-pattern to watch: any handler that inserts and returns the same dict must exclude _id.",
+    "POST /cards/{slug}/leads in server.py bypasses the commercial lead schema (no status/workspace_id/tags/source). Consider deprecating in favor of /cards/{slug}/exchange or unifying insertion.",
+    "current_user() re-queries db.users on every request — fine for now but a good candidate for a light cache when scaling.",
+    "resolve_entitlements picks the *first* membership (ms[0]) as the active workspace. If a user belongs to multiple workspaces there is no way to switch; consider an X-Workspace-Id header or a currentWorkspaceId on the user.",
+    "run_migration index creation ignores all errors via a broad try/except — will silently skip if the index definition conflicts with an existing one; acceptable for demo but log the specific index name for debuggability.",
+    "NFC mint accepts unbounded 'count' up to 500 with no rate limiting or idempotency key; low priority but tighten before production.",
+    "DELETE /account hard-deletes user's cards+workspaces+sessions but does NOT delete their leads/nfc_devices/campaigns/lead_activities/audit_logs. Consider a full-purge or GDPR export-then-delete flow.",
+    "Feature-flag config endpoint /api/config is public — fine; no secret leakage."
+  ],
+  "updated_files": [
+    "/app/backend/platform_v1.py (fixed create_campaign _id leak)",
+    "/app/backend/tests/test_commercial_v1.py (new)",
+    "/app/test_reports/iteration_3.json"
+  ],
+  "success_rate": {"backend": "100% (62/62)", "frontend": "not tested (backend-only per request)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN). Tenant users are auto-registered per-session with pattern test_<hex>@example.com and cleaned via DELETE /api/account.",
+  "seed_data_creation": "Test suite created transient TEST_-prefixed leads, TEST_C_ campaigns, and one throwaway user per pytest session. Cleaned up via fixture teardown + a post-run mongo purge of remaining TEST_-prefixed leads/campaigns and UNASSIGNED/DEACTIVATED nfc_devices from minting. feras-askar demo card is untouched and still published/beige-luxury/gold.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New commercial regression suite lives at /app/backend/tests/test_commercial_v1.py (35 tests). It uses two shared fixtures (admin_login, tenant_user) — the tenant_user fixture is session-scoped and self-cleans via DELETE /api/account, so test isolation depends on session teardown. Multi-tenant checks rely on the tenant seeing 0 cards after register — if the main agent later auto-provisions demo cards on register, update those assertions. NFC tap URL is /api/t/{token} (not /t/{token}). Refresh rotation: reusing a rotated refresh returns 401 correctly.",
+  "rca of the issue": "POST /api/campaigns 500 — RCA: motor's insert_one mutates the passed dict by adding an ObjectId '_id'. The handler returned '{**doc}' immediately after insert_one, propagating _id into the response body which FastAPI's jsonable_encoder cannot serialize -> TypeError -> 500. Reproduction: authenticated POST /api/campaigns {name,code}. Mitigation applied: pop '_id' before return (also could pass explicit doc without _id or fetch fresh via find_one with projection {_id:0})."
+}

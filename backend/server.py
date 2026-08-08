@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
+from platform_v1 import platform_router, run_migration, _auth_payload
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -187,6 +188,7 @@ class CardData(BaseModel):
     services: List[Service] = Field(default_factory=list)
     projects: List[Project] = Field(default_factory=list)
     booking: Booking = Field(default_factory=Booking)
+    workspace_id: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -224,13 +226,19 @@ class TrackIn(BaseModel):
 # ------------------------------------------------------------------ auth routes
 
 @api_router.post("/auth/login")
-async def login(body: LoginIn):
+async def login(body: LoginIn, request: Request):
     email = body.email.strip().lower()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_access_token(user["id"], user["email"])
-    return {"token": token, "user": {"id": user["id"], "email": user["email"], "name": user.get("name", "Admin")}}
+    return await _auth_payload(user, request)
+
+
+async def _user_ws_ids(user: dict):
+    if user.get("role") == "SUPER_ADMIN":
+        return "ALL"
+    ms = await db.memberships.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
+    return [m["workspace_id"] for m in ms]
 
 
 @api_router.get("/auth/me")
@@ -391,7 +399,9 @@ async def get_poster(slug: str):
 
 @api_router.get("/admin/cards")
 async def list_cards(user: dict = Depends(get_current_user)):
-    cards = await db.digital_cards.find({}, {"_id": 0}).to_list(1000)
+    ws = await _user_ws_ids(user)
+    q = {} if ws == "ALL" else {"workspace_id": {"$in": ws}}
+    cards = await db.digital_cards.find(q, {"_id": 0}).to_list(1000)
     return cards
 
 
@@ -400,6 +410,9 @@ async def get_card_admin(card_id: str, user: dict = Depends(get_current_user)):
     card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    ws = await _user_ws_ids(user)
+    if ws != "ALL" and card.get("workspace_id") not in ws:
+        raise HTTPException(status_code=403, detail="Not your card")
     return card
 
 
@@ -408,10 +421,13 @@ async def create_card(body: CardUpsert, user: dict = Depends(get_current_user)):
     existing = await db.digital_cards.find_one({"slug": body.slug})
     if existing:
         raise HTTPException(status_code=400, detail="Slug already exists")
+    ms = await db.memberships.find_one({"user_id": user["id"]}, {"_id": 0})
+    wsid = ms["workspace_id"] if ms else None
     card = CardData(**body.model_dump())
-    await db.digital_cards.insert_one(card.model_dump())
-    doc = await db.digital_cards.find_one({"id": card.id}, {"_id": 0})
-    return doc
+    doc = card.model_dump()
+    doc["workspace_id"] = wsid
+    await db.digital_cards.insert_one(doc)
+    return await db.digital_cards.find_one({"id": card.id}, {"_id": 0})
 
 
 @api_router.put("/admin/cards/{card_id}")
@@ -419,21 +435,27 @@ async def update_card(card_id: str, body: CardUpsert, user: dict = Depends(get_c
     existing = await db.digital_cards.find_one({"id": card_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Card not found")
+    ws = await _user_ws_ids(user)
+    if ws != "ALL" and existing.get("workspace_id") not in ws:
+        raise HTTPException(status_code=403, detail="Not your card")
     slug_owner = await db.digital_cards.find_one({"slug": body.slug})
     if slug_owner and slug_owner["id"] != card_id:
         raise HTTPException(status_code=400, detail="Slug already used by another card")
     update = body.model_dump()
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.digital_cards.update_one({"id": card_id}, {"$set": update})
-    doc = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
-    return doc
+    return await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
 
 
 @api_router.delete("/admin/cards/{card_id}")
 async def delete_card(card_id: str, user: dict = Depends(get_current_user)):
-    res = await db.digital_cards.delete_one({"id": card_id})
-    if res.deleted_count == 0:
+    existing = await db.digital_cards.find_one({"id": card_id})
+    if not existing:
         raise HTTPException(status_code=404, detail="Card not found")
+    ws = await _user_ws_ids(user)
+    if ws != "ALL" and existing.get("workspace_id") not in ws:
+        raise HTTPException(status_code=403, detail="Not your card")
+    await db.digital_cards.delete_one({"id": card_id})
     return {"ok": True}
 
 
@@ -544,6 +566,11 @@ async def startup():
         logger.info("Demo card seeded")
 
     try:
+        await run_migration()
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
+
+    try:
         init_storage()
         logger.info("Storage initialized")
     except Exception as e:
@@ -551,6 +578,7 @@ async def startup():
 
 
 app.include_router(api_router)
+app.include_router(platform_router)
 
 app.add_middleware(
     CORSMiddleware,

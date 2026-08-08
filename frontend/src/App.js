@@ -4,7 +4,11 @@ import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import PublicProfile from "@/pages/PublicProfile";
 import Login from "@/pages/Login";
+import Register from "@/pages/Register";
 import Admin from "@/pages/Admin";
+import Landing from "@/pages/Landing";
+import Activate from "@/pages/Activate";
+import Legal from "@/pages/Legal";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ children }) {
@@ -20,10 +24,6 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-function Landing() {
-  return <Navigate to="/feras-askar" replace />;
-}
-
 function App() {
   return (
     <div className="App">
@@ -32,6 +32,9 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/activate" element={<Activate />} />
+            <Route path="/legal/:doc" element={<Legal />} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/:slug" element={<PublicProfile />} />
           </Routes>
