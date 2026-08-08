@@ -9,6 +9,7 @@ import { QRBlock } from "@/components/profile/QRBlock";
 import { ActionButton } from "@/components/profile/ActionButton";
 import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
+import { WalletButtons } from "@/components/profile/WalletButtons";
 import { accentHex, accentGrad, hexToRgba } from "@/lib/accents";
 
 const fade = (i = 0) => ({
@@ -190,6 +191,7 @@ export const ExecutiveBlackGold = ({ data }) => {
 
         {/* SHARE */}
         <ShareBar slug={slug} name={id.fullName} variant="black" iconColor={GOLD} />
+        <WalletButtons slug={slug} variant="black" iconColor={GOLD} />
 
         {/* FOOTER */}
         <footer className="mt-16 border-t pt-8 text-center" style={{ borderColor: "rgba(255,255,255,0.08)" }}>

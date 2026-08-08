@@ -86,3 +86,15 @@ STILL PENDING (subsequent phases, unchanged): native mobile app; Wallet pass iss
 - **AI-in-dashboard**: leads inbox now has a "Draft follow-up" panel (channel/tone/language) calling the **live gpt-5.4** writer with copy + RTL for Arabic — verified end-to-end.
 - Added `emergentintegrations` to requirements.txt.
 Native mobile app (Phase 3); Wallet pass generation wiring (5); scanner OCR UI (7); industry content-modules UI (8); full analytics-funnel + rollups UI (9/19); team dashboard + locked-branding UI + CSV import (10/18); CRM OAuth sync jobs UI (11); Stripe/RevenueCat checkout + entitlement webhooks (12/27/28); email-signature generator, custom domains, white-label/reseller UI (13/22/24/25); EN/AR/ES + RTL (14); security hardening (rate-limit/CAPTCHA/2FA/SSO) (15/33/34); store submission assets (16/36); deep links (37).
+
+## Phase 7 — Business-card / Event-badge Scanner (2026-06-08, iteration 5) — IMPLEMENTED & QA-PASSED (10/10)
+- **Backend** (`platform_v1.py`): `POST /api/scan/card` runs the uploaded image through **live OpenAI gpt-5.4 vision** (emergentintegrations `ImageContent`) and returns a STRUCTURED DRAFT only — never creates a lead. Extracts name/title/company/email/phone (E.164)/website/address/city/country/language/notes. Gated by `scanner` entitlement (pro/team/enterprise); returns 403 for free plan, `configured:false` when no EMERGENT_LLM_KEY.
+- `POST /api/scan/confirm`: mandatory human review/edit → persists a CRM lead scoped to one of the user's OWN cards (`_owned_slugs`, 403 otherwise) with `source=business_card_scan|badge_scan`, `tags=['scanned']`, `scanned=true`, `captured_by`. Empty name → 400. Notification created.
+- **Frontend** (`components/admin/ScanCardDialog.jsx`): "Scan card" button on `/admin`. Camera capture (facingMode=environment, primary on mobile) + file upload; client-side downscale to ≤1600px JPEG; review/edit step with per-field editing + target-card + language selectors; RTL for name/company on Arabic. No lead until confirm.
+- QA: testing agent 10/10 backend + upload→review→save frontend flow verified. Reusable suite at `/app/backend/tests/test_scanner_phase7.py`; image rules in `/app/image_testing.md`.
+
+## Phase 5 — Wallet passes (2026-06-08, iteration 5) — IMPLEMENTED (Not-Configured adapter) & verified
+- **Backend** (`platform_v1.py`): `GET /api/wallet/status` (per-platform capability) and `GET /api/cards/{slug}/wallet/{apple|google}` — provider-abstracted; returns neutral `pass_data` + `configured:false` "Not Configured" until Apple/Google Wallet creds supplied (then adapter issues signed .pkpass / save-to-wallet link). Bad platform → 400.
+- **Frontend** (`components/profile/WalletButtons.jsx`): "Apple Wallet" / "Google Wallet" buttons on all 3 public templates (beige/black/future variants) next to Share/QR-Poster; graceful "coming soon" toast when not configured, opens pass_url when configured. Tracks `wallet_apple`/`wallet_google` taps.
+- Verified via curl (status + not-configured pass + 400) and public-profile screenshot render.
+

@@ -9,6 +9,7 @@ import { QRBlock } from "@/components/profile/QRBlock";
 import { ActionButton } from "@/components/profile/ActionButton";
 import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
+import { WalletButtons } from "@/components/profile/WalletButtons";
 import { accentValue, hexToRgba } from "@/lib/accents";
 
 const fade = (i = 0) => ({
@@ -201,6 +202,7 @@ export const FutureProfessional = ({ data }) => {
 
         {/* SHARE */}
         <ShareBar slug={slug} name={id.fullName} variant="future" iconColor={p} />
+        <WalletButtons slug={slug} variant="future" iconColor={p} />
 
         {/* FOOTER */}
         <footer className="mt-16 border-t border-white/10 pt-8 text-center">

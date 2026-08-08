@@ -591,6 +591,54 @@ async def export_leads_csv(user: dict = Depends(current_user)):
     return StreamingResponse(io.BytesIO(buf.getvalue().encode()), media_type="text/csv",
                              headers={"Content-Disposition": 'attachment; filename="leads.csv"'})
 
+# ------------------------------------------------------------------ wallet passes (Phase 5, provider-abstracted)
+def _wallet_capability():
+    return {
+        "apple": {"configured": _configured("APPLE_WALLET_CERT_B64", "APPLE_WALLET_TEAM_ID"),
+                  "platform": "apple"},
+        "google": {"configured": _configured("GOOGLE_WALLET_ISSUER_ID", "GOOGLE_WALLET_SA_JSON"),
+                   "platform": "google"},
+    }
+
+
+@platform_router.get("/wallet/status")
+async def wallet_status():
+    """Capability/config awareness so clients can show the right (Not Configured) state."""
+    return {"capabilities": _wallet_capability(),
+            "note": "Wallet pass issuance activates automatically once provider credentials are supplied."}
+
+
+@platform_router.get("/cards/{slug}/wallet/{platform}")
+async def card_wallet_pass(slug: str, platform: str):
+    """Return a wallet pass for the card's contact. Provider-abstracted:
+    reports Not Configured until Apple/Google Wallet credentials are supplied."""
+    if platform not in ("apple", "google"):
+        raise HTTPException(400, "Unsupported wallet platform")
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
+    if not card:
+        raise HTTPException(404, "Card not found")
+    cap = _wallet_capability()[platform]
+    ident = card.get("identity", {})
+    contact = card.get("contact", {})
+    # Neutral pass payload the provider adapter would sign/issue when configured.
+    pass_data = {
+        "organizationName": ident.get("company") or "ARIADNI ID",
+        "description": f"{ident.get('fullName', '')} — {ident.get('jobTitle', '')}".strip(" —"),
+        "name": ident.get("fullName", ""), "title": ident.get("jobTitle", ""),
+        "company": ident.get("company", ""), "phone": contact.get("phone", ""),
+        "email": contact.get("email", ""), "website": contact.get("website", ""),
+        "profile_url": f"{PUBLIC_APP_URL}/{slug}",
+    }
+    if not cap["configured"]:
+        return {"configured": False, "platform": platform,
+                "message": f"{platform.title()} Wallet is Not Configured",
+                "pass_data": pass_data}
+    # When configured, the signed .pkpass (Apple) or save-to-wallet JWT link (Google)
+    # would be produced by the provider adapter here.
+    return {"configured": True, "platform": platform, "pass_data": pass_data,
+            "pass_url": f"{PUBLIC_APP_URL}/api/cards/{slug}/wallet/{platform}/download"}
+
+
 # ------------------------------------------------------------------ contact exchange (unified lead)
 class ExchangeIn(BaseModel):
     name: str

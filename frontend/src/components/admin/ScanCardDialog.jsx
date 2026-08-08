@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -140,6 +140,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
           <DialogTitle className="flex items-center gap-2">
             <ScanLine className="w-5 h-5 text-[#B89973]" /> Scan a card
           </DialogTitle>
+          <DialogDescription>Capture or upload a business card or event badge, review the details, then save it as a lead.</DialogDescription>
         </DialogHeader>
 
         {step === "capture" && (
