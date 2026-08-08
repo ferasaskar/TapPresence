@@ -1,0 +1,40 @@
+{
+  "summary": "Phase 7 Business-card / Event-badge Scanner tested end-to-end. All 10 pytest cases pass (auth 401, missing image 400, free-plan 403, admin scan 200 with populated draft, no lead created from /scan/card, confirm empty-name 400, confirm free-plan blocked 403, confirm ok creates lead with source=business_card_scan / tags=['scanned'] / status=NEW / scanned=true, lead appears in /api/crm/leads and /api/admin/leads). Frontend flow verified in Playwright: /admin -> Scan card button -> upload synthetic UAE business-card PNG -> /scan/card returned fully-populated review fields (name 'Feras Askar', title 'Chief Executive Officer', company 'Ariadni Holdings LLC', email 'feras@ariadni.ae', phone normalized to +971501234567, website www.ariadni.ae, city Dubai, country United Arab Emirates, language English) -> selected target card 'Feras Askar (/feras-askar)' -> Save lead -> success toast 'Lead saved to your inbox' and Inbox badge incremented from 9 to 10.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ScanCardDialog", "issues": ["DialogContent missing aria-describedby / Description (a11y warning in console, non-blocking)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_scanner_phase7.py",
+    "/app/backend/tests/gen_card.py",
+    "/app/test_reports/pytest/phase7_results.xml",
+    "/app/test_reports/sample_card.png",
+    "/app/test_reports/scan_review.png",
+    "/app/test_reports/scan_after_save.png"
+  ],
+  "action_items": [
+    "(Optional) Add DialogDescription/aria-describedby to ScanCardDialog to silence Radix a11y warning."
+  ],
+  "critical_code_review_comments": [
+    "scan_confirm correctly enforces plan gate BEFORE ownership check, so free-plan users get 403 regardless of slug (verified).",
+    "scan_confirm returns lead with _id popped and correct workspace_id from the card record — good.",
+    "GET /api/admin/leads is not workspace-scoped (noted as pre-existing/out of scope by main agent).",
+    "scan_card wraps LLM call in try/except and raises 502 on failure — good defensive handling.",
+    "SUPER_ADMIN bypass on ownership check in scan_confirm is intentional; free-user negative test still exercised via plan gate. A dedicated non-admin paid user would be needed to explicitly assert the 403 'Not your card' path in future runs."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_scanner_phase7.py",
+    "/app/backend/tests/gen_card.py"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (upload->review->save verified)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN); temp free user auto-registered per run.",
+  "seed_data_creation": "Created one CRM lead named 'TEST Scanned Lead' on feras-askar via /scan/confirm and one 'Feras Askar' lead via UI. Both remain in DB for follow-up UI verification.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 7 scanner is fully functional. GPT-5.4 vision extraction is working live (name/title/company/email/phone-E.164/website/city/country/language). Reusable pytest suite at /app/backend/tests/test_scanner_phase7.py. Generator gen_card.py builds a real card PNG (do not use blank images).",
+  "rca of the issue": "N/A — no failures."
+}

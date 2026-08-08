@@ -18,6 +18,8 @@ on a missing credential.
 import os
 import csv
 import io
+import json
+import re
 import uuid
 import secrets
 import logging
@@ -753,6 +755,157 @@ async def ai_followup(body: FollowupIn, user: dict = Depends(current_user)):
     return {"provider": provider, "channel": body.channel, "language": body.language, "draft": text,
             "rtl": body.language in RTL_LANGUAGES,
             "note": "Review before sending. AI drafts only; it never sends automatically."}
+
+
+# ------------------------------------------------------------------ business-card / event-badge scanner (Phase 7)
+async def _user_entitlements(user: dict) -> dict:
+    if user.get("role") == "SUPER_ADMIN":
+        return PLAN_ENTITLEMENTS["enterprise"]
+    ms = await memberships_for(user["id"])
+    if not ms:
+        return PLAN_ENTITLEMENTS["free"]
+    return await resolve_entitlements(ms[0]["workspace_id"])
+
+
+SCAN_SOURCES = {"business_card_scan", "badge_scan"}
+
+
+class ScanIn(BaseModel):
+    image_base64: str
+    source: str = "business_card_scan"
+
+
+def _strip_data_url(b64: str) -> str:
+    b64 = (b64 or "").strip()
+    if b64.startswith("data:"):
+        b64 = b64.split(",", 1)[-1]
+    return b64
+
+
+def _parse_scan_json(raw: str) -> dict:
+    """Extract the first JSON object from an LLM response, tolerant of code fences."""
+    if not raw:
+        return {}
+    txt = raw.strip()
+    txt = re.sub(r"^```(?:json)?", "", txt).strip()
+    txt = re.sub(r"```$", "", txt).strip()
+    try:
+        return json.loads(txt)
+    except Exception:
+        m = re.search(r"\{.*\}", txt, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except Exception:
+                return {}
+    return {}
+
+
+@platform_router.post("/scan/card")
+async def scan_card(body: ScanIn, user: dict = Depends(current_user)):
+    """OCR a business card / event badge into a STRUCTURED DRAFT. Never creates a lead.
+    The user must review + confirm the draft via /scan/confirm to persist a CRM lead."""
+    ent = await _user_entitlements(user)
+    if not ent.get("scanner"):
+        raise HTTPException(403, "Scanner is not available on your plan")
+    source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
+    image_b64 = _strip_data_url(body.image_base64)
+    if not image_b64:
+        raise HTTPException(400, "No image provided")
+
+    key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
+    if not key:
+        return {"configured": False, "message": "Card scanning is Not Configured", "draft": {}}
+
+    empty = {"name": "", "title": "", "company": "", "email": "", "phone": "",
+             "website": "", "address": "", "city": "", "country": "", "language": "en", "notes": ""}
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        sys = (
+            "You are an OCR + information-extraction engine for business cards and event badges. "
+            "Read ALL text in the image (any language / script, including Arabic and Latin-accented) "
+            "and return ONLY a compact JSON object with these exact keys: "
+            "name, title, company, email, phone, website, address, city, country, language, notes. "
+            "Rules: format phone in international E.164 form when a country can be inferred (e.g. +9715...); "
+            "keep the original spelling and script for name/company; "
+            "'language' is the ISO-639-1 code of the card's primary language (en, ar, es, ...); "
+            "'notes' may hold any extra text (tagline, second phone). "
+            "Use empty strings for anything not present. Output JSON only — no prose, no code fences."
+        )
+        chat = LlmChat(api_key=key, session_id=f"scan-{uuid.uuid4()}",
+                       system_message=sys).with_model("openai", "gpt-5.4")
+        msg = UserMessage(text="Extract the contact details from this card/badge image as JSON.",
+                          file_contents=[ImageContent(image_base64=image_b64)])
+        resp = await chat.send_message(msg)
+        data = _parse_scan_json(str(resp))
+    except Exception as e:
+        logger.warning(f"scan_card LLM error: {e}")
+        raise HTTPException(502, "Could not read the card. Please retake the photo and try again.")
+
+    draft = {**empty, **{k: (str(data.get(k, "")).strip() if data.get(k) is not None else "")
+                          for k in empty}}
+    if draft["language"] not in SUPPORTED_LANGUAGES:
+        draft["language"] = "en" if not draft["language"] else draft["language"][:2].lower()
+    await db.ai_usage.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user["id"], "provider": "openai:gpt-5.4",
+        "channel": "scanner", "tone": source, "language": draft.get("language", "en"), "created_at": now_iso(),
+    })
+    return {"configured": True, "source": source, "draft": draft,
+            "note": "Review and edit before saving. No lead is created until you confirm."}
+
+
+class ScanConfirmIn(BaseModel):
+    cardSlug: str
+    source: str = "business_card_scan"
+    name: str
+    title: str = ""
+    company: str = ""
+    email: str = ""
+    phone: str = ""
+    website: str = ""
+    address: str = ""
+    city: str = ""
+    country: str = ""
+    language: str = "en"
+    interest: str = ""
+    notes: str = ""
+
+
+@platform_router.post("/scan/confirm")
+async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
+    """Persist a reviewed scan as a CRM lead scoped to one of the user's own cards."""
+    ent = await _user_entitlements(user)
+    if not ent.get("scanner"):
+        raise HTTPException(403, "Scanner is not available on your plan")
+    source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
+    if not body.name.strip():
+        raise HTTPException(400, "A name is required")
+    slugs = await _owned_slugs(user)
+    if body.cardSlug not in slugs and user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Not your card")
+    card = await db.digital_cards.find_one({"slug": body.cardSlug}, {"_id": 0})
+    if not card:
+        raise HTTPException(404, "Card not found")
+    lang = body.language if body.language in SUPPORTED_LANGUAGES else "en"
+    lead = {
+        "id": str(uuid.uuid4()), "cardSlug": body.cardSlug, "workspace_id": card.get("workspace_id"),
+        "name": body.name.strip(), "email": body.email.strip(), "phone": body.phone.strip(),
+        "company": body.company.strip(), "title": body.title.strip(),
+        "website": body.website.strip(), "message": body.notes.strip(), "interest": body.interest.strip(),
+        "address": body.address.strip(), "city": body.city.strip(), "country": body.country.strip(),
+        "language": lang, "source": source, "campaign": "", "consent": True,
+        "status": "NEW", "tags": ["scanned"], "notes": body.notes.strip(),
+        "scanned": True, "captured_by": user["id"],
+        "read": False, "created_at": now_iso(), "updated_at": now_iso(), "last_activity": now_iso(),
+    }
+    await db.leads.insert_one(lead)
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
+        "title": f"Scanned lead: {lead['name']}", "body": f"via {source}",
+        "read": False, "created_at": now_iso(),
+    })
+    lead.pop("_id", None)
+    return {"ok": True, "lead": lead}
 
 
 @platform_router.post("/ai/enrich")

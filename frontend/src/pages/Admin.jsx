@@ -4,10 +4,11 @@ import { useAuth } from "@/context/AuthContext";
 import CardEditor from "@/components/admin/CardEditor";
 import LeadsDialog from "@/components/admin/LeadsDialog";
 import AnalyticsDialog from "@/components/admin/AnalyticsDialog";
+import ScanCardDialog from "@/components/admin/ScanCardDialog";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3 } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Admin() {
@@ -15,6 +16,7 @@ export default function Admin() {
   const [cards, setCards] = useState(null);
   const [editing, setEditing] = useState(null); // null | {} for new | card obj
   const [leadsOpen, setLeadsOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [statsCard, setStatsCard] = useState(null);
 
@@ -62,6 +64,9 @@ export default function Admin() {
             <h1 className="text-lg font-semibold text-neutral-900">Card manager</h1>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => setScanOpen(true)} data-testid="scan-button">
+              <ScanLine className="w-4 h-4 mr-1 text-[#B89973]" /> Scan card
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setLeadsOpen(true)} data-testid="inbox-button" className="relative">
               <Inbox className="w-4 h-4 mr-1" /> Inbox
               {unread > 0 ? <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-neutral-900 px-1 text-[10px] text-white" data-testid="inbox-unread">{unread}</span> : null}
@@ -106,6 +111,7 @@ export default function Admin() {
       </main>
 
       <LeadsDialog open={leadsOpen} onOpenChange={setLeadsOpen} onCountChange={setUnread} />
+      <ScanCardDialog open={scanOpen} onOpenChange={setScanOpen} cards={cards || []} onSaved={load} />
       <AnalyticsDialog card={statsCard} open={!!statsCard} onOpenChange={(v) => !v && setStatsCard(null)} />
     </div>
   );
