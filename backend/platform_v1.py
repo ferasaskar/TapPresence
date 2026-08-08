@@ -48,6 +48,33 @@ bearer = HTTPBearer(auto_error=False)
 
 RESERVED_SLUGS = {"admin", "login", "register", "api", "app", "dashboard", "t", "tap", "settings", "pricing", "teams"}
 
+# ------------------------------------------------------------------ global markets / currency
+SUPPORTED_CURRENCIES = ["USD", "AED", "EUR", "GBP"]
+SUPPORTED_LANGUAGES = ["en", "ar", "es"]
+RTL_LANGUAGES = ["ar"]
+
+DEFAULT_MARKETS = [
+    {"code": "US", "name": "United States", "currency": "USD", "default_language": "en", "timezone": "America/New_York", "active": True},
+    {"code": "AE", "name": "United Arab Emirates", "currency": "AED", "default_language": "en", "timezone": "Asia/Dubai", "active": True},
+    {"code": "EU", "name": "European Union", "currency": "EUR", "default_language": "es", "timezone": "Europe/Madrid", "active": True},
+    {"code": "GB", "name": "United Kingdom", "currency": "GBP", "default_language": "en", "timezone": "Europe/London", "active": True},
+]
+
+# minor units; per-plan per-market {month, year}
+DEFAULT_REGIONAL_PRICES = {
+    "pro": {"US": {"month": 999, "year": 7999}, "AE": {"month": 3900, "year": 29900},
+            "EU": {"month": 999, "year": 7999}, "GB": {"month": 899, "year": 6999}},
+    "team": {"US": {"month": 699, "year": 6999}, "AE": {"month": 2600, "year": 24900},
+             "EU": {"month": 699, "year": 6999}, "GB": {"month": 599, "year": 5999}},
+}
+
+
+def default_region(country_code="US"):
+    m = next((m for m in DEFAULT_MARKETS if m["code"] == country_code), DEFAULT_MARKETS[0])
+    return {"country": m["name"], "country_code": m["code"], "region": "", "timezone": m["timezone"],
+            "locale": f"{m['default_language']}-{m['code']}", "default_language": m["default_language"],
+            "default_currency": m["currency"], "billing_country": m["code"]}
+
 # ------------------------------------------------------------------ entitlements
 PLAN_ENTITLEMENTS = {
     "free": {"max_cards": 1, "premium_templates": False, "analytics": "basic", "leads": True,
@@ -173,6 +200,10 @@ class RegisterIn(BaseModel):
     password: str
     name: str = ""
     workspace_name: str = ""
+    country_code: str = "US"
+    language: str = "en"
+    timezone: str = ""
+    currency: str = ""
 
 
 class RefreshIn(BaseModel):
@@ -213,7 +244,9 @@ async def _auth_payload(user, request):
     return {
         "token": access, "refresh_token": refresh,
         "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""),
-                 "role": user.get("role", "MEMBER"), "email_verified": user.get("email_verified", False)},
+                 "role": user.get("role", "MEMBER"), "email_verified": user.get("email_verified", False),
+                 "language": user.get("language", "en"), "locale": user.get("locale", "en-US"),
+                 "timezone": user.get("timezone", "UTC")},
         "workspace": ws, "memberships": ms, "entitlements": ent,
     }
 
@@ -225,9 +258,17 @@ async def register(body: RegisterIn, request: Request):
         raise HTTPException(400, "An account with this email already exists")
     uid = str(uuid.uuid4())
     verify_token = secrets.token_urlsafe(32)
+    lang = body.language if body.language in SUPPORTED_LANGUAGES else "en"
+    region = default_region(body.country_code if body.country_code else "US")
+    if body.currency in SUPPORTED_CURRENCIES:
+        region["default_currency"] = body.currency
+    if body.timezone:
+        region["timezone"] = body.timezone
+    region["default_language"] = lang
     user = {
         "id": uid, "email": email, "password_hash": hash_pw(body.password),
         "name": body.name.strip(), "role": "WORKSPACE_OWNER", "email_verified": False,
+        "language": lang, "locale": region["locale"], "timezone": region["timezone"],
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
@@ -235,6 +276,8 @@ async def register(body: RegisterIn, request: Request):
     await db.workspaces.insert_one({
         "id": ws_id, "name": body.workspace_name.strip() or (body.name.strip() or "My Workspace"),
         "type": "individual", "plan": "free", "owner_id": uid,
+        "region": region, "tax": {"tax_country": region["country_code"], "tax_inclusive": False,
+                                   "tax_id": "", "status": "unregistered"},
         "branding": {}, "locked_fields": [], "created_at": now_iso(),
     })
     await db.memberships.insert_one({
@@ -635,25 +678,44 @@ class FollowupIn(BaseModel):
     owner_name: str = ""
     tone: str = "professional"
     channel: str = "email"  # email | whatsapp | sms
+    language: str = "en"    # en | ar | es
 
 
 def _draft_followup(b: FollowupIn) -> str:
-    first = (b.lead_name or "there").split(" ")[0]
+    lang = b.language if b.language in SUPPORTED_LANGUAGES else "en"
+    first = (b.lead_name or "").split(" ")[0]
+    if lang == "ar":
+        first = first or "حضرتك"
+        ctx = f" بخصوص {b.notes}" if b.notes else ""
+        msg = f"مرحباً {first}،\n\nسعدت بالتواصل معك اليوم{ctx}. يسعدني مساعدتك في الخطوة التالية"
+        if b.company:
+            msg += f"، وأعتقد أن هناك توافقاً ممتازاً مع ما تعمل عليه {b.company}"
+        msg += ".\nهل يناسبك اتصال قصير هذا الأسبوع؟"
+        if b.owner_name:
+            msg += f"\n\nمع خالص التقدير،\n{b.owner_name}"
+        return msg
+    if lang == "es":
+        first = first or "hola"
+        ctx = f" sobre {b.notes}" if b.notes else ""
+        msg = f"Hola {first},\n\nFue un placer conectar hoy{ctx}. Me encantaría ayudarte con el siguiente paso"
+        if b.company:
+            msg += f" y creo que encaja muy bien con lo que están haciendo en {b.company}"
+        msg += ".\n¿Tienes disponibilidad para una llamada breve esta semana?"
+        if b.owner_name:
+            msg += f"\n\nUn saludo,\n{b.owner_name}"
+        return msg
+    first = first or "there"
     ctx = f" about {b.notes}" if b.notes else ""
     sign = f"\n\nBest,\n{b.owner_name}" if b.owner_name else ""
     if b.channel in ("whatsapp", "sms"):
         return f"Hi {first}! Great connecting today{ctx}. Happy to share more whenever suits you — just let me know.{(' — ' + b.owner_name) if b.owner_name else ''}"
-    tone = b.tone
-    opener = {
-        "warm": f"Hi {first},\n\nIt was a genuine pleasure meeting you",
-        "professional": f"Dear {first},\n\nThank you for taking the time to connect",
-        "short": f"Hi {first}, thanks for connecting",
-    }.get(tone, f"Hi {first},\n\nThank you for connecting")
+    opener = {"warm": f"Hi {first},\n\nIt was a genuine pleasure meeting you",
+              "professional": f"Dear {first},\n\nThank you for taking the time to connect",
+              "short": f"Hi {first}, thanks for connecting"}.get(b.tone, f"Hi {first},\n\nThank you for connecting")
     body = f"{opener}{(' — especially our chat' + ctx) if ctx else ''}. I'd love to help you take the next step."
     if b.company:
         body += f" I think there's a strong fit with what {b.company} is working toward."
-    body += " Would you be open to a short call this week?"
-    return body + sign
+    return body + " Would you be open to a short call this week?" + sign
 
 
 @platform_router.post("/ai/followup")
@@ -667,7 +729,8 @@ async def ai_followup(body: FollowupIn, user: dict = Depends(current_user)):
         "id": str(uuid.uuid4()), "user_id": user["id"], "provider": provider,
         "channel": body.channel, "tone": body.tone, "created_at": now_iso(),
     })
-    return {"provider": provider, "channel": body.channel, "draft": text,
+    return {"provider": provider, "channel": body.channel, "language": body.language, "draft": text,
+            "rtl": body.language in RTL_LANGUAGES,
             "note": "Review before sending. AI drafts only; it never sends automatically."}
 
 
@@ -695,6 +758,66 @@ async def integrations_status(user: dict = Depends(current_user)):
             "billing": {"stripe": cfg["stripe"], "revenuecat": cfg["revenuecat"]},
             "notes": "Adapters built; connect credentials to activate."}
 
+# ------------------------------------------------------------------ global markets & pricing
+@platform_router.get("/markets")
+async def markets():
+    ms = await db.markets.find({}, {"_id": 0}).to_list(100)
+    return {"markets": ms or DEFAULT_MARKETS, "currencies": SUPPORTED_CURRENCIES,
+            "languages": SUPPORTED_LANGUAGES, "rtl_languages": RTL_LANGUAGES}
+
+
+def _price_for(plan: dict, market: str):
+    rp = (plan.get("regional_prices") or {})
+    entry = rp.get(market) or rp.get("US") or {}
+    return entry
+
+
+@platform_router.get("/pricing")
+async def pricing(market: str = "US"):
+    market = market.upper()
+    mkt = next((m for m in (await db.markets.find({}, {"_id": 0}).to_list(100) or DEFAULT_MARKETS)
+                if m["code"] == market), DEFAULT_MARKETS[0])
+    plans = await db.plans.find({}, {"_id": 0}).to_list(50) or DEFAULT_PLANS
+    out = []
+    for p in plans:
+        if not p.get("public"):
+            continue
+        pr = _price_for(p, market)
+        out.append({"id": p["id"], "name": p["name"], "currency": mkt["currency"],
+                    "price_month": pr.get("month", p.get("price_month")),
+                    "price_year": pr.get("year", p.get("price_year")),
+                    "custom": p.get("custom", False), "per_seat": p.get("per_seat", False)})
+    return {"market": mkt, "plans": out}
+
+
+@platform_router.get("/admin/markets")
+async def admin_list_markets(user: dict = Depends(current_user)):
+    if user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Super admin only")
+    return await db.markets.find({}, {"_id": 0}).to_list(100) or DEFAULT_MARKETS
+
+
+@platform_router.put("/admin/markets/{code}")
+async def admin_update_market(code: str, body: dict, user: dict = Depends(current_user)):
+    if user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Super admin only")
+    body.pop("_id", None)
+    body["code"] = code.upper()
+    await db.markets.update_one({"code": code.upper()}, {"$set": body}, upsert=True)
+    return await db.markets.find_one({"code": code.upper()}, {"_id": 0})
+
+
+@platform_router.put("/admin/plans/{plan_id}/pricing/{market}")
+async def admin_set_regional_price(plan_id: str, market: str, body: dict, user: dict = Depends(current_user)):
+    """body: { month: <minor units>, year: <minor units> }"""
+    if user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Super admin only")
+    await db.plans.update_one({"id": plan_id},
+                              {"$set": {f"regional_prices.{market.upper()}": {"month": body.get("month"), "year": body.get("year")}}},
+                              upsert=True)
+    return await db.plans.find_one({"id": plan_id}, {"_id": 0})
+
+
 # ------------------------------------------------------------------ migration
 async def run_migration():
     """Idempotent, non-destructive. Preserves existing users/cards/URLs."""
@@ -709,9 +832,22 @@ async def run_migration():
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 
-    # Seed plans
+    # Seed plans + regional prices + markets
     for p in DEFAULT_PLANS:
         await db.plans.update_one({"id": p["id"]}, {"$setOnInsert": p}, upsert=True)
+    for pid, rp in DEFAULT_REGIONAL_PRICES.items():
+        await db.plans.update_one({"id": pid}, {"$set": {"regional_prices": rp}})
+    for m in DEFAULT_MARKETS:
+        await db.markets.update_one({"code": m["code"]}, {"$setOnInsert": m}, upsert=True)
+
+    # Backfill global region defaults on existing workspaces (non-destructive)
+    async for ws in db.workspaces.find({"region": {"$exists": False}}, {"_id": 0, "id": 1}):
+        await db.workspaces.update_one({"id": ws["id"]}, {"$set": {
+            "region": default_region("US"),
+            "tax": {"tax_country": "US", "tax_inclusive": False, "tax_id": "", "status": "unregistered"},
+        }})
+    await db.users.update_many({"language": {"$exists": False}},
+                               {"$set": {"language": "en", "locale": "en-US", "timezone": "America/New_York"}})
 
     # Promote existing admin -> SUPER_ADMIN + ensure a workspace, attach existing cards.
     admin_email = os.environ.get("ADMIN_EMAIL", "").lower()

@@ -58,5 +58,21 @@ Extended (not replaced) the existing app into a multi-tenant commercial platform
 - **Config adapters** for Stripe/Apple+Google Wallet/OAuth/email/CRM/RevenueCat/push/Sentry — all report `configured:false` until creds supplied; nothing blocks.
 - **Web surfaces**: repositioned landing (Meet·Connect·Follow Up·Convert with live profile mockup + pricing), self-service /register, /activate (NFC), /legal placeholders.
 
-## Remaining V1 phases (queued, not yet built)
+## GLOBAL-READINESS INTEGRATION (2026-06-08, iteration 4) — folded into existing phases, ONE global codebase
+Per updated master plan: US = launch market #1, architecture = global-first. No separate global version; existing models extended, data/URLs preserved.
+- **Phase 1 (Accounts/Workspaces)** ← §1,§7,§26,§28: workspace gains `region{country,country_code,region,timezone,locale,default_language,default_currency,billing_country}` + `tax{}`; user gains `language,locale,timezone`. Register infers/accepts country/language/timezone/currency (defaults US/en/UTC/USD as *config*, not assumptions).
+- **Billing (12/27/28)** ← §2,§3,§15: plans carry `regional_prices` per market; `/api/pricing?market=` resolves; entitlements stay currency/provider-independent; Super Admin markets config.
+- **Tax (§4)**: configurable `tax` layer + provider adapter (Stripe Tax hook) behind Not-Configured flag; invoice tax metadata fields.
+- **Profiles/Templates (8/16)** ← §10,§11,§9: `CardData.languages[]` + `i18n{}` localized content (bio/services/projects per lang); public `/api/cards/{slug}?lang=` merge with fallback; RTL for Arabic (web+app).
+- **Contact/Leads/CRM (6/11/22)** ← §5,§6,§22: E.164 phones; structured intl address (line1/line2/city/adminArea/postalCode/countryCode); leads carry country/language.
+- **NFC (4)** ← §12: token architecture unchanged, already market-agnostic; language applied at profile layer.
+- **Wallet (5)** ← §13: provider architecture market/capability-aware (graceful per platform/country).
+- **Hardware (6)** ← §14: order model gains destination_country/currency/intl address/shipping/tax/fulfillment_region.
+- **Analytics/Campaigns (9/19/20)** ← §18,§19: market/country/language/currency/timezone dimensions; campaigns carry market/language/currency.
+- **Teams/White-Label (10/18/24)** ← §20,§21: intl per-user settings within one workspace; reseller market/currency/languages.
+- **AI (13)** ← §23: follow-up output language (EN/AR/ES) + auto by lead language; provider abstraction kept.
+- **Formatting/Storage (§24,§25)**: locale-aware formatting on clients; Unicode/Arabic/Latin-accented safe (Mongo UTF-8).
+- **Privacy (35)** ← §17: region-configurable consent/legal content.
+- **Super Admin (43)** ← §29: Global Config (markets/currencies/regional pricing/languages/tax/legal/app-availability/hardware).
+- **QA (50)** ← §30: multi-market cases (US/UAE-en/UAE-ar-RTL/Spain/UK).
 Native mobile app (Phase 3); Wallet pass generation wiring (5); scanner OCR UI (7); industry content-modules UI (8); full analytics-funnel + rollups UI (9/19); team dashboard + locked-branding UI + CSV import (10/18); CRM OAuth sync jobs UI (11); Stripe/RevenueCat checkout + entitlement webhooks (12/27/28); email-signature generator, custom domains, white-label/reseller UI (13/22/24/25); EN/AR/ES + RTL (14); security hardening (rate-limit/CAPTCHA/2FA/SSO) (15/33/34); store submission assets (16/36); deep links (37).

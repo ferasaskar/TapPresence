@@ -143,6 +143,12 @@ class Contact(BaseModel):
     website: str = ""
     address: str = ""
     mapsUrl: str = ""
+    addressLine1: str = ""
+    addressLine2: str = ""
+    city: str = ""
+    adminArea: str = ""
+    postalCode: str = ""
+    countryCode: str = ""
 
 
 class Social(BaseModel):
@@ -189,6 +195,8 @@ class CardData(BaseModel):
     projects: List[Project] = Field(default_factory=list)
     booking: Booking = Field(default_factory=Booking)
     workspace_id: Optional[str] = None
+    languages: List[str] = Field(default_factory=lambda: ["en"])
+    i18n: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -205,6 +213,8 @@ class CardUpsert(BaseModel):
     services: List[Service] = Field(default_factory=list)
     projects: List[Project] = Field(default_factory=list)
     booking: Booking = Field(default_factory=Booking)
+    languages: List[str] = Field(default_factory=lambda: ["en"])
+    i18n: Dict[str, Any] = Field(default_factory=dict)
 
 
 class LoginIn(BaseModel):
@@ -252,12 +262,39 @@ def _public_card(card: dict) -> dict:
     return card
 
 
+def _apply_lang(card: dict, lang: str) -> dict:
+    """Merge localized i18n overrides for the requested language (fallback: base)."""
+    i18n = card.get("i18n") or {}
+    langs = card.get("languages") or ["en"]
+    default_lang = langs[0] if langs else "en"
+    use = lang if (lang and lang in i18n) else None
+    card["_activeLang"] = lang if (lang and lang in langs) else default_lang
+    card["_availableLangs"] = langs
+    if not use:
+        return card
+    ov = i18n[use]
+    idn = card.get("identity", {})
+    for k in ("bio", "jobTitle", "company", "availabilityBadge"):
+        if ov.get(k):
+            idn[k] = ov[k]
+    card["identity"] = idn
+    for coll, keys in (("services", ("title", "description")), ("projects", ("name", "category", "description"))):
+        items = card.get(coll, [])
+        ov_items = ov.get(coll, [])
+        for i, it in enumerate(items):
+            if i < len(ov_items) and isinstance(ov_items[i], dict):
+                for k in keys:
+                    if ov_items[i].get(k):
+                        it[k] = ov_items[i][k]
+    return card
+
+
 @api_router.get("/cards/{slug}")
-async def get_public_card(slug: str):
+async def get_public_card(slug: str, lang: str = None):
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
-    return card
+    return _apply_lang(card, lang)
 
 
 @api_router.get("/cards/{slug}/vcard")

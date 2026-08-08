@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 4 backend testing (GLOBAL-readiness). Wrote /app/backend/tests/test_global_v1.py with 25 tests spanning: regression (admin login, feras-askar English base, admin cards, QR/poster PNG, multi-tenant zero-cards), /api/markets shape, regional pricing for US/AE/GB, plan-set stability across markets, register-with-region (AE/ar/AED and US defaults), localized public profile (?lang=ar, unsupported lang fallback, no-lang base), AI multilingual follow-up (ar with rtl:true, es, en, all returning provider='template' with review-only note), Super Admin global config (GET /api/admin/markets, 403 for non-admin, PUT plan pricing round-trip with restore to 3900/29900, PUT market field with restore), and international contact + languages/i18n round-trip via admin card create+update+delete. All 25 new tests pass. Re-ran prior 62 tests (test_commercial_v1.py + test_new_features.py + backend_test.py) — 62/62 also pass. Total 87/87 backend tests passing. Restored /api/admin/plans/pro/pricing/AE to {month:3900, year:29900} and market AE 'name' to 'United Arab Emirates' after mutation tests. No changes made to production code — testing-only.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/cards/{slug}?lang=<unsupported>", "issue": "When lang is present but not in card.languages, response returns _activeLang=default (en) but SILENTLY drops the client's requested lang code; consider echoing back requested_lang for observability. Behavior itself is correct per spec (fallback to English)."},
+      {"endpoint": "POST /api/ai/followup (provider='template')", "issue": "Draft is always deterministic template — EMERGENT_LLM_KEY is configured but not wired to an LLM. Not a bug per code comment ('future LLM wiring'), but marketing 'AI' is currently canned text."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_global_v1.py",
+    "/app/backend/tests/test_commercial_v1.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration_4_global.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "platform_v1.default_region hard-codes locale as '<lang>-<country>' (e.g. 'ar-AE'). For AE the DEFAULT_MARKETS entry uses default_language='en' so a user registering with country='AE' and language='ar' still gets locale 'ar-AE' (because register() overrides default_language=lang before deriving locale... actually locale is set from DEFAULT_MARKETS then not recomputed after language override). Locale of returned user came out as expected in tests ('AE' present) but confirm downstream date/number formatting picks the user's language, not the market default.",
+    "/api/pricing falls back to DEFAULT_MARKETS[0] (US) for unknown market codes silently — consider 400 for unknown market to prevent hidden currency mismatches in checkout.",
+    "PUT /api/admin/plans/{plan_id}/pricing/{market} uses upsert=True on the plan and accepts arbitrary month/year (no non-negative int validation, no currency-consistency check with market).",
+    "PUT /api/admin/markets/{code} accepts arbitrary body dict and merges via $set — a malicious/erroneous payload could overwrite 'currency' or 'active' without validation. Add a Pydantic model.",
+    "_apply_lang mutates the card dict in place and also relies on card.get('languages')[0] as default. Empty languages list would 500; defensive fallback already prevents that but consider guarding an empty list explicitly.",
+    "_draft_followup uses non-LLM deterministic templates despite EMERGENT_LLM_KEY being set — either wire the LLM or update the /api/config marketing claim.",
+    "RegisterIn.country_code has no length/enum validation; passing e.g. 'ZZ' silently resolves to US defaults. Consider validating against SUPPORTED market codes or explicitly returning fallback info in response."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_global_v1.py (new)",
+    "/app/test_reports/iteration_4.json (new)",
+    "/app/test_reports/pytest/iteration_4_global.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (87/87 including prior suites)", "frontend": "not tested (backend-only per request)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN). Tenants auto-registered per test with test_<hex>@example.com and cleaned via DELETE /api/account.",
+  "seed_data_creation": "None persistent. Each test that mutates markets/pricing restores original values; card created in test_card_intl_fields_roundtrip is deleted in teardown. feras-askar untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New iteration_4 suite is /app/backend/tests/test_global_v1.py (25 tests). Uses os.environ['REACT_APP_BACKEND_URL'] — export before running. To run all suites: `export REACT_APP_BACKEND_URL=... && pytest backend/tests/` (pytest.ini pins -n 2 --dist loadscope). Global data model to be aware of: workspace.region {country_code,timezone,locale,default_language,default_currency}+tax{}; user.language/locale/timezone; plans.regional_prices[market]={month,year}; markets collection (US/AE/EU/GB seeded); card.languages[] + card.i18n[lang]{identity fields, services[], projects[]}; Contact has intl address fields addressLine1/city/adminArea/postalCode/countryCode. _activeLang echoes default when requested lang not in card.languages. AI provider is 'template' (not LLM).",
+  "rca of the issue": "No new bugs found this iteration."
+}
