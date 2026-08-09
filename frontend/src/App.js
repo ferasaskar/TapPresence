@@ -24,6 +24,9 @@ import Meetings from "@/pages/Meetings";
 import ManageMeeting from "@/pages/ManageMeeting";
 import Activate from "@/pages/Activate";
 import Legal from "@/pages/Legal";
+import LocaleToast from "@/components/LocaleToast";
+import ConsentBanner from "@/components/ConsentBanner";
+import PrivacyCenter from "@/pages/PrivacyCenter";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ children }) {
@@ -50,6 +53,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/activate" element={<Activate />} />
             <Route path="/legal/:doc" element={<Legal />} />
+            <Route path="/privacy-center" element={<PrivacyCenter />} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
@@ -68,8 +72,10 @@ function App() {
             <Route path="/industries" element={<IndustryShowcase />} />
             <Route path="/:slug" element={<PublicProfile />} />
           </Routes>
+          <ConsentBanner />
         </BrowserRouter>
         <Toaster position="top-center" />
+        <LocaleToast />
       </AuthProvider>
     </div>
   );

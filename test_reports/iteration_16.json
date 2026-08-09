@@ -1,0 +1,22 @@
+{
+  "summary": "Iteration 16 — TapPresence (ARIADNI ID) global i18n+consent+currency+scanner+referral-QR review. Comprehensive Playwright test with isolated locale/timezone browser contexts. ALL 7 auto-detect matrix cases PASS (ar-AE→rtl/ar/AED, ar-SA→rtl/ar/SAR, en-AE→ltr/en/AED, en-SA→ltr/en/SAR, es-ES→ltr/es/EUR, en-US→ltr/en/USD, ja-JP fallback→ltr/en/USD). Manual override independence PASS: seeded ariadni_lang=en on ar-AE yields ltr/en with market still AED; seeded ariadni_lang=ar on en-US yields rtl/ar with market still USD. Manual market change (USD→EUR) persists in localStorage tp_market and after reload. Consent banner region-aware: EUR shows 'Aceptar todo' + Reject; USD shows single 'Got it'; hides on click, persists on reload; Privacy Center toggle+save persists tp_consent. Auto-detect toast fires once on ar-AE ('عرض TapPresence بـ العربية · الأسعار بـ AED — يمكنك التغيير في أي وقت') and does NOT reappear on reload (tp_locale_toast_shown=1). RTL horizontal-overflow = 0px on both desktop 1400x900 and mobile 390x844. Meetings page localized: EN testids all present; switching to Arabic re-renders h1='الاستوديو الخاص بي' with dir=rtl and Arabic status labels (اليوم/قادمة/بانتظار الموافقة/مكتملة). Referral QR image loads from /api/referral/qr?code=A9EB29F9 as image/png, download/copy testids present. Scanner entitlement dialog opens via nav-scan and shows 'Unlimited scans on your plan' for enterprise plan. Member 403 correctly gated at /admin/commercial ('Super admin only.'). Backend endpoints verified: /api/referral/qr returns 200 image/png with valid code and 404 for unknown, 422 for missing; /api/billing returns usage.scanner {used, limit, period}; /api/commercial/pricing returns market-scoped prices; /api/cards/feras-askar still published (200).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_commercial_core.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "platform_v1.py now 2013 lines — still exceeds 700-line guideline. Split recommendation remains (commercial/referral/nfc/admin modules).",
+    "detectMarket() in market.js is called on every render of ConsentBanner and LocaleToast; consider memoizing at module scope since browser locale/tz do not change during a session.",
+    "LocaleToast fires on every mount if flag not set and language !== 'en'; guard is correct but the 1200ms setTimeout won't fire if the user navigates away quickly — acceptable, but worth a comment.",
+    "getPreferredMarket uses localStorage 'tp_market' but saveMarketPreference also writes 'tp_locale_toast_shown' — subtle side-effect (manual market change silences future toast). Documented behavior in spec, but worth an inline comment for future maintainers.",
+    "Referral banner on /register still shows generic 'You were invited' text without echoing the ref code (carried over from iter15 — cosmetic)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (public + auth endpoints verified)", "frontend": "100% (7/7 matrix, 2/2 override, market persist, 2/2 consent regions, toast once+persist, RTL overflow 0px desktop+mobile, Meetings EN+AR, Referral QR, Scanner entitlement, member 403)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 · feras@ariadni.ai / Feras@2026",
+  "seed_data_creation": "None. No qa_ users created this iteration (read-only checks only).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Use browser.new_context(locale=..., timezone_id=...) for isolated storage per test. Language localStorage key is legacy 'ariadni_lang' (i18next-browser-languagedetector). Market key 'tp_market'. Toast-once flag 'tp_locale_toast_shown'. Manual-lang flag 'tp_lang_manual'. Consent 'tp_consent'. Scanner opens via [data-testid=nav-scan] on any authenticated /dashboard page (NOT nav-scanner). Meetings testids: meetings-page, meetings-summary, view-list, view-calendar, filter-status. Referral: referral-qr-img (src=/api/referral/qr?code=CODE), referral-qr-download, referral-copy-code, referral-copy-url, referral-page-code. Landing: landing-market select, landing-plan-pro-price. Consent: consent-banner/accept/reject/manage, privacy-center-page, consent-toggle-analytics, consent-save. Public card at /api/cards/{slug} (NOT /api/public/cards/{slug}).",
+  "rca of the issue": "N/A — no bugs found."
+}

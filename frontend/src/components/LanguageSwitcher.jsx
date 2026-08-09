@@ -21,7 +21,7 @@ export const LanguageSwitcher = () => {
         {langs.map((l) => (
           <button
             key={l.code}
-            onClick={() => { setLanguage(l.code); setOpen(false); }}
+            onClick={() => { try { localStorage.setItem("tp_lang_manual", "1"); localStorage.setItem("tp_locale_toast_shown", "1"); } catch (e) {} setLanguage(l.code); setOpen(false); }}
             data-testid={`lang-option-${l.code}`}
             className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-white/[0.06] ${lng === l.code ? "text-[#D6A653]" : "text-white/80"}`}
             dir={l.dir}

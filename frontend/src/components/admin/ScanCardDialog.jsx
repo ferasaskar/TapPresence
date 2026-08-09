@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
+import { useLocale } from "@/i18n/useLocale";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +36,11 @@ function shrink(dataUrl, max = 1600, quality = 0.85) {
 }
 
 export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved }) {
+  const navigate = useNavigate();
+  const { t } = useLocale();
   const scannableCards = cards.filter((c) => c.slug);
+  const [sc, setSc] = useState(null);
+  useEffect(() => { if (open) api.get("/billing").then(({ data }) => setSc(data.usage?.scanner ? { ...data.usage.scanner, active: data.active } : null)).catch(() => {}); }, [open]);
   const [step, setStep] = useState("capture");
   const [source, setSource] = useState("business_card_scan");
   const [image, setImage] = useState("");
@@ -143,6 +149,21 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
           </DialogTitle>
           <DialogDescription className="text-white/50">Capture or upload a business card or event badge, review the details, then save it as a lead.</DialogDescription>
         </DialogHeader>
+
+        {sc ? (
+          (!sc.active || sc.limit === 0) ? (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.06] px-4 py-2.5" data-testid="scan-entitlement">
+              <span className="flex items-center gap-2 text-xs text-red-200/80"><ScanLine className="h-4 w-4" /> {t("scan.unavailable")}</span>
+              <button onClick={() => { onOpenChange(false); navigate("/billing"); }} data-testid="scan-upgrade" className="rounded-lg bg-[#D6A653] px-3 py-1.5 text-xs font-medium text-black hover:brightness-110">{t("scan.upgrade")}</button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-[#D6A653]/25 bg-[#D6A653]/[0.06] px-4 py-2.5" data-testid="scan-entitlement">
+              <span className="flex items-center gap-2 text-xs text-white/70"><ScanLine className="h-4 w-4 text-[#D6A653]" />
+                {sc.limit >= 100000 ? t("scan.unlimited") : t("scan.included", { used: sc.used, limit: sc.limit, period: t(sc.period === "total" ? "scan.period_total" : "scan.period_month") })}
+              </span>
+            </div>
+          )
+        ) : null}
 
         {step === "capture" && (
           <div className="space-y-4">

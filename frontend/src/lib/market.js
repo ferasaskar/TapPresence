@@ -65,5 +65,5 @@ export function getPreferredMarket(supported = [], fallback = "USD") {
 }
 
 export function saveMarketPreference(market) {
-  try { localStorage.setItem(STORAGE_KEY, market); } catch { /* ignore */ }
+  try { localStorage.setItem(STORAGE_KEY, market); localStorage.setItem("tp_locale_toast_shown", "1"); } catch { /* ignore */ }
 }

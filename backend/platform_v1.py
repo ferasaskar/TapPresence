@@ -447,6 +447,24 @@ async def get_referral(user: dict = Depends(current_user)):
     }
 
 
+@platform_router.get("/referral/qr")
+async def referral_qr(code: str):
+    """Public QR PNG for a referral invite link (code is shareable, not secret). Reuses referral_code."""
+    import qrcode
+    code = (code or "").strip().upper()
+    if not code or not await db.workspaces.find_one({"referral_code": code}, {"_id": 1}):
+        raise HTTPException(404, "Unknown code")
+    url = f"{PUBLIC_APP_URL}/register?ref={code}" if PUBLIC_APP_URL else f"/register?ref={code}"
+    qr = qrcode.QRCode(version=None, box_size=10, border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0A0B0D", back_color="#FAFAF8")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
 @platform_router.post("/billing/cancel")
 async def cancel_subscription(user: dict = Depends(current_user)):
     ws_id = await _primary_ws_id(user)
