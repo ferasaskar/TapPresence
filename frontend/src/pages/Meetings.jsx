@@ -110,14 +110,21 @@ export default function Meetings() {
         <Act tone="danger" onClick={() => setStatus(m, "cancelled")} testId={`meeting-cancel-${m.id}`} disabled={busy === m.id}><X className="h-3.5 w-3.5" /> Cancel</Act>
       </div>
     );
-    if (ACTIVE.includes(s)) return (
-      <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
-        <Act onClick={() => openPicker(m, "reschedule")} testId={`meeting-reschedule-${m.id}`}><RotateCw className="h-3.5 w-3.5" /> Reschedule</Act>
-        <Act tone="ok" onClick={() => setStatus(m, "completed")} testId={`meeting-complete-${m.id}`} disabled={busy === m.id}><CheckCircle2 className="h-3.5 w-3.5" /> Mark Completed</Act>
-        <Act onClick={() => setStatus(m, "no-show")} testId={`meeting-noshow-${m.id}`} disabled={busy === m.id}><UserX className="h-3.5 w-3.5" /> No-show</Act>
-        <Act tone="danger" onClick={() => setStatus(m, "cancelled")} testId={`meeting-cancel-${m.id}`} disabled={busy === m.id}><X className="h-3.5 w-3.5" /> Cancel</Act>
-      </div>
-    );
+    if (ACTIVE.includes(s)) {
+      const startMs = new Date(m.start_utc).getTime();
+      const endMs = startMs + (Number(m.duration) || 30) * 60000;
+      const nowMs = Date.now();
+      const canComplete = nowMs >= endMs;             // only after scheduled end
+      const canNoShow = nowMs >= startMs + 15 * 60000; // after start + 15m grace
+      return (
+        <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
+          <Act onClick={() => openPicker(m, "reschedule")} testId={`meeting-reschedule-${m.id}`}><RotateCw className="h-3.5 w-3.5" /> Reschedule</Act>
+          {canComplete ? <Act tone="ok" onClick={() => setStatus(m, "completed")} testId={`meeting-complete-${m.id}`} disabled={busy === m.id}><CheckCircle2 className="h-3.5 w-3.5" /> Mark Completed</Act> : null}
+          {canNoShow ? <Act onClick={() => setStatus(m, "no-show")} testId={`meeting-noshow-${m.id}`} disabled={busy === m.id}><UserX className="h-3.5 w-3.5" /> No-show</Act> : null}
+          <Act tone="danger" onClick={() => setStatus(m, "cancelled")} testId={`meeting-cancel-${m.id}`} disabled={busy === m.id}><X className="h-3.5 w-3.5" /> Cancel</Act>
+        </div>
+      );
+    }
     if (s === "completed") return (
       <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
         <Act onClick={() => setDetails((d) => ({ ...d, [m.id]: !d[m.id] }))} testId={`meeting-viewlead-${m.id}`}><Eye className="h-3.5 w-3.5" /> View Lead</Act>

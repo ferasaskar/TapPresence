@@ -672,6 +672,7 @@ DEFAULT_MTS = [
     {"title": "45 Min Meeting", "duration": 45},
 ]
 ACTIVE_STATUSES = ("scheduled", "confirmed", "requested", "time_proposed")
+NO_SHOW_GRACE_MIN = 15
 
 
 class MeetingTypeIn(BaseModel):
@@ -1022,7 +1023,20 @@ async def admin_meeting_status(meeting_id: str, body: Dict[str, Any], user: dict
     status = str(body.get("status", "")).lower()
     if status not in ("scheduled", "confirmed", "completed", "cancelled", "no-show", "rescheduled", "requested", "declined"):
         raise HTTPException(status_code=400, detail="Invalid status")
-    now = datetime.now(timezone.utc).isoformat()
+    # Temporal eligibility (server time is the source of truth; never trust the client clock).
+    now_dt = datetime.now(timezone.utc)
+    if status in ("completed", "no-show"):
+        try:
+            start_dt = datetime.fromisoformat(m["start_utc"])
+        except Exception:
+            start_dt = None
+        if start_dt is not None:
+            end_dt = start_dt + timedelta(minutes=int(m.get("duration", 30)))
+            if status == "completed" and now_dt < end_dt:
+                raise HTTPException(status_code=409, detail="Meeting hasn't ended yet — can't mark completed before its scheduled end time")
+            if status == "no-show" and now_dt < start_dt + timedelta(minutes=NO_SHOW_GRACE_MIN):
+                raise HTTPException(status_code=409, detail="Too early to mark no-show — wait until after the meeting start + grace period")
+    now = now_dt.isoformat()
     await db.meetings.update_one({"id": meeting_id}, {"$set": {"status": status, "updated_at": now},
                                  "$push": {"history": {"at": now, "event": f"status:{status}", "by": user.get("email")}}})
     if status == "completed" and m.get("lead_id"):

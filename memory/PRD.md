@@ -216,6 +216,14 @@ User reported the raw status dropdown exposed invalid actions (e.g. confirmed→
 - Verified via targeted curl: auto→scheduled, owner reschedule→rescheduled(time moved), completed, PATCH status=time_proposed→**400 rejected**, approval→requested→propose→time_proposed→revise, decline→declined. Test data cleaned; feras-askar has its 6 real meetings.
 - ⚠️ **NORMALIZATION FLAG (not actioned):** `scheduled` (auto-confirm bookings) has **no distinct business meaning** from `confirmed`/`rescheduled` — all are "active/agreed" (same slot-hold, same tabs, same actions). UI already unifies them as "Confirmed". Recommend a future **safe, non-destructive** normalization (map scheduled→confirmed for new writes, backfill old rows in a migration). NOT removed now to avoid a destructive change.
 
+## Meetings temporal eligibility (2026-08-09) — time-aware actions
+Actions are now state-aware AND time-aware. Enforced on BOTH server and client (server = source of truth, client clock never trusted for auth).
+- **Mark Completed**: only at/after scheduled end = `start_utc + duration`. Server returns **409** before end.
+- **No-show**: only after `start_utc + NO_SHOW_GRACE_MIN` (15 min). Server returns **409** before that.
+- Before start, a Confirmed meeting shows only Reschedule + Cancel (no Complete/No-show).
+- Backend: temporal check added in `PATCH /api/admin/meetings/{id}/status` using `datetime.now(timezone.utc)` vs stored `start_utc`+`duration`; constant `NO_SHOW_GRACE_MIN=15`. Frontend hides the buttons until eligible (Meetings.jsx ACTIVE branch).
+- Verified via targeted curl (direct DB-seeded past/future meetings): future→complete **409**, future→no-show **409**, ended→complete **200**, started-not-ended→complete **409**, started+grace→no-show **200**, within-grace(5m)→no-show **409**. Test data cleaned; feras-askar unchanged.
+
 
 
 
