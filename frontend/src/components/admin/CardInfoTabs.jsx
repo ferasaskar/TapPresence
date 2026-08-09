@@ -1,6 +1,7 @@
 import { ImageUploadField } from "@/components/admin/ImageUploadField";
 import { ProfilePhotoField } from "@/components/admin/ProfilePhotoField";
 import IndustryCustomizer from "@/components/admin/IndustryCustomizer";
+import BookingEditor from "@/components/admin/BookingEditor";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +17,7 @@ export const emptyCard = {
   identity: { fullName: "", jobTitle: "", company: "", companyLogo: "", profilePhoto: "", bio: "", city: "", country: "", availabilityBadge: "", imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 },
   contact: { phone: "", whatsapp: "", email: "", website: "", address: "", mapsUrl: "" },
   social: { linkedin: "", instagram: "", x: "", youtube: "", tiktok: "" },
-  actions: [], services: [], projects: [], booking: { bookingUrl: "" },
+  actions: [], services: [], projects: [], booking: { bookingUrl: "", nativeEnabled: false, timezone: "Asia/Dubai" },
 };
 
 export const mergeCard = (initial) => ({
@@ -38,7 +39,7 @@ const Field = ({ label, children }) => (
 const panelCls = "rounded-xl border border-white/10 bg-white/[0.02] p-4";
 const tabTrigger = "rounded-lg px-3.5 py-2 text-sm text-white/55 transition-all data-[state=active]:bg-[#D6A653] data-[state=active]:text-[#050607] data-[state=active]:font-medium hover:text-white";
 
-export default function CardInfoTabs({ form, setForm, showIndustry = true }) {
+export default function CardInfoTabs({ form, setForm, showIndustry = true, cardId }) {
   const set = (path, value) => {
     setForm((f) => {
       const next = { ...f };
@@ -134,7 +135,7 @@ export default function CardInfoTabs({ form, setForm, showIndustry = true }) {
       </TabsContent>
 
       <TabsContent value="booking" className="space-y-3 pt-5">
-        <Field label="Booking URL (Calendly / Cal.com)"><Input value={form.booking.bookingUrl} onChange={(e) => set("booking.bookingUrl", e.target.value)} data-testid="editor-booking" /></Field>
+        <BookingEditor form={form} set={set} cardId={cardId} />
       </TabsContent>
     </Tabs>
   );

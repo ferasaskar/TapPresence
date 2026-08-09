@@ -8,7 +8,7 @@ import AnalyticsDialog from "@/components/admin/AnalyticsDialog";
 import ScanCardDialog from "@/components/admin/ScanCardDialog";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, ScanLine, BarChart3, LayoutGrid, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, ScanLine, BarChart3, LayoutGrid, Copy, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
 
 const AriadniMark = ({ className = "" }) => (
@@ -93,6 +93,7 @@ export default function Admin() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <HeaderBtn onClick={() => setScanOpen(true)} data-testid="scan-button"><ScanLine className="h-4 w-4 text-[#D6A653]" /> Scan card</HeaderBtn>
+            <HeaderBtn onClick={() => navigate("/meetings")} data-testid="meetings-link"><CalendarDays className="h-4 w-4 text-[#D6A653]" /> Meetings</HeaderBtn>
             <div className="relative">
               <HeaderBtn onClick={() => setLeadsOpen(true)} data-testid="inbox-button"><Inbox className="h-4 w-4" /> Inbox</HeaderBtn>
               {unread > 0 ? <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D6A653] px-1 text-[10px] font-semibold text-[#050607]" data-testid="inbox-unread">{unread}</span> : null}

@@ -9,6 +9,8 @@ import Admin from "@/pages/Admin";
 import Landing from "@/pages/Landing";
 import IndustryShowcase from "@/pages/IndustryShowcase";
 import CreateCard from "@/pages/CreateCard";
+import Meetings from "@/pages/Meetings";
+import ManageMeeting from "@/pages/ManageMeeting";
 import Activate from "@/pages/Activate";
 import Legal from "@/pages/Legal";
 import { Loader2 } from "lucide-react";
@@ -39,6 +41,8 @@ function App() {
             <Route path="/legal/:doc" element={<Legal />} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><CreateCard /></ProtectedRoute>} />
+            <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
+            <Route path="/m/:token" element={<ManageMeeting />} />
             <Route path="/industries" element={<IndustryShowcase />} />
             <Route path="/:slug" element={<PublicProfile />} />
           </Routes>

@@ -5,6 +5,7 @@ import re
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -183,6 +184,8 @@ class Project(BaseModel):
 
 class Booking(BaseModel):
     bookingUrl: str = ""
+    nativeEnabled: bool = False
+    timezone: str = "Asia/Dubai"
 
 
 class CardData(BaseModel):
@@ -632,6 +635,371 @@ async def card_analytics(card_id: str, user: dict = Depends(get_current_user)):
     series = sorted([{"date": k, "count": v} for k, v in days.items()], key=lambda x: x["date"])[-7:]
     return {"views": views, "scans": scans, "taps": len(taps), "tapsByKey": by_key,
             "leads": leads_count, "series": series}
+
+# ------------------------------------------------------------------ native meetings / calendar
+DEFAULT_AVAIL = {"days": [1, 2, 3, 4, 5], "start": "09:00", "end": "18:00",
+                 "buffer_before": 0, "buffer_after": 15, "min_notice_hours": 2,
+                 "max_days": 60, "slot_interval": 30, "blocked": []}
+DEFAULT_MTS = [
+    {"title": "15 Min Introduction", "duration": 15},
+    {"title": "30 Min Consultation", "duration": 30},
+    {"title": "45 Min Meeting", "duration": 45},
+]
+ACTIVE_STATUSES = ("scheduled", "confirmed")
+
+
+class MeetingTypeIn(BaseModel):
+    title: str = "Meeting"
+    description: str = ""
+    duration: int = 30
+    location_type: str = "video"  # in_person | phone | video | custom
+    location_detail: str = ""
+    enabled: bool = True
+    price: Optional[float] = None
+    order: int = 0
+
+
+class AvailabilityIn(BaseModel):
+    days: List[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5])
+    start: str = "09:00"
+    end: str = "18:00"
+    buffer_before: int = 0
+    buffer_after: int = 15
+    min_notice_hours: int = 2
+    max_days: int = 60
+    slot_interval: int = 30
+    blocked: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class BookIn(BaseModel):
+    meeting_type_id: str
+    start: str  # UTC ISO
+    name: str
+    email: str = ""
+    phone: str = ""
+    note: str = ""
+    visitor_tz: str = "UTC"
+
+
+async def _get_availability(card_id: str):
+    doc = await db.availability.find_one({"card_id": card_id}, {"_id": 0})
+    if not doc:
+        doc = {"card_id": card_id, **DEFAULT_AVAIL}
+        await db.availability.insert_one(dict(doc))
+    return doc
+
+
+async def _get_meeting_types(card_id: str, only_enabled=False, seed=True):
+    mts = await db.meeting_types.find({"card_id": card_id}, {"_id": 0}).sort("order", 1).to_list(100)
+    if not mts and seed:
+        mts = []
+        for i, d in enumerate(DEFAULT_MTS):
+            mt = {"id": str(uuid.uuid4()), "card_id": card_id, "title": d["title"], "description": "",
+                  "duration": d["duration"], "location_type": "video", "location_detail": "",
+                  "enabled": True, "price": None, "order": i}
+            await db.meeting_types.insert_one(dict(mt))
+            mts.append(mt)
+    if only_enabled:
+        mts = [m for m in mts if m.get("enabled")]
+    return mts
+
+
+def _hhmm(s):
+    h, m = s.split(":")
+    return int(h), int(m)
+
+
+async def _existing_intervals(card_id: str):
+    ms = await db.meetings.find({"card_id": card_id, "status": {"$in": list(ACTIVE_STATUSES)}}, {"_id": 0}).to_list(2000)
+    out = []
+    for m in ms:
+        try:
+            out.append((datetime.fromisoformat(m["start_utc"]), datetime.fromisoformat(m["end_utc"])))
+        except Exception:
+            pass
+    return out
+
+
+def _day_slots(avail, tzname, duration, date_str, existing, now_utc):
+    try:
+        tz = ZoneInfo(tzname or "UTC")
+    except Exception:
+        tz = ZoneInfo("UTC")
+    y, mo, d = map(int, date_str.split("-"))
+    day = datetime(y, mo, d, tzinfo=tz)
+    if day.isoweekday() not in avail.get("days", []):
+        return []
+    sh, sm = _hhmm(avail.get("start", "09:00"))
+    eh, em = _hhmm(avail.get("end", "18:00"))
+    cur = day.replace(hour=sh, minute=sm, second=0, microsecond=0)
+    end_work = day.replace(hour=eh, minute=em, second=0, microsecond=0)
+    interval = int(avail.get("slot_interval", 30)) or 30
+    bb = int(avail.get("buffer_before", 0))
+    ba = int(avail.get("buffer_after", 0))
+    min_notice = now_utc + timedelta(hours=int(avail.get("min_notice_hours", 0)))
+    max_dt = now_utc + timedelta(days=int(avail.get("max_days", 60)))
+    blocked = []
+    for b in avail.get("blocked", []):
+        try:
+            blocked.append((datetime.fromisoformat(b["start"]), datetime.fromisoformat(b["end"])))
+        except Exception:
+            pass
+    slots = []
+    while cur + timedelta(minutes=duration) <= end_work:
+        s_utc = cur.astimezone(timezone.utc)
+        e_utc = (cur + timedelta(minutes=duration)).astimezone(timezone.utc)
+        if min_notice <= s_utc <= max_dt:
+            bs = s_utc - timedelta(minutes=bb)
+            be = e_utc + timedelta(minutes=ba)
+            conflict = any(not (be <= ex[0] or bs >= ex[1]) for ex in existing + blocked)
+            if not conflict:
+                slots.append(s_utc.isoformat())
+        cur += timedelta(minutes=interval)
+    return slots
+
+
+@api_router.get("/cards/{slug}/booking")
+async def public_booking_config(slug: str):
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    b = card.get("booking", {}) or {}
+    native = bool(b.get("nativeEnabled"))
+    mts = await _get_meeting_types(card["id"], only_enabled=True, seed=native) if native else []
+    return {
+        "native_enabled": native,
+        "external_url": b.get("bookingUrl", ""),
+        "owner_name": card.get("identity", {}).get("fullName", ""),
+        "owner_timezone": b.get("timezone", "Asia/Dubai"),
+        "meeting_types": mts,
+    }
+
+
+@api_router.get("/cards/{slug}/slots")
+async def public_slots(slug: str, meeting_type_id: str, date: str):
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0, "id": 1, "booking": 1})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    mt = await db.meeting_types.find_one({"id": meeting_type_id, "card_id": card["id"]}, {"_id": 0})
+    if not mt:
+        raise HTTPException(status_code=404, detail="Meeting type not found")
+    avail = await _get_availability(card["id"])
+    tzname = (card.get("booking", {}) or {}).get("timezone", "Asia/Dubai")
+    existing = await _existing_intervals(card["id"])
+    slots = _day_slots(avail, tzname, int(mt["duration"]), date, existing, datetime.now(timezone.utc))
+    return {"date": date, "owner_timezone": tzname, "duration": mt["duration"], "slots": slots}
+
+
+@api_router.post("/cards/{slug}/book")
+async def public_book(slug: str, body: BookIn):
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not body.name.strip() or not (body.email.strip() or body.phone.strip()):
+        raise HTTPException(status_code=400, detail="Name and an email or phone are required")
+    mt = await db.meeting_types.find_one({"id": body.meeting_type_id, "card_id": card["id"]}, {"_id": 0})
+    if not mt:
+        raise HTTPException(status_code=404, detail="Meeting type not found")
+    try:
+        start_utc = datetime.fromisoformat(body.start.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start time")
+    avail = await _get_availability(card["id"])
+    tzname = (card.get("booking", {}) or {}).get("timezone", "Asia/Dubai")
+    date_str = start_utc.astimezone(ZoneInfo(tzname)).strftime("%Y-%m-%d")
+    existing = await _existing_intervals(card["id"])
+    valid = _day_slots(avail, tzname, int(mt["duration"]), date_str, existing, datetime.now(timezone.utc))
+    if start_utc.isoformat() not in valid:
+        raise HTTPException(status_code=409, detail="That time is no longer available")
+    end_utc = start_utc + timedelta(minutes=int(mt["duration"]))
+    now = datetime.now(timezone.utc).isoformat()
+
+    # CRM: attach to existing lead or create one
+    lead = None
+    if body.email.strip():
+        lead = await db.leads.find_one({"cardSlug": slug, "email": body.email.strip().lower()}, {"_id": 0})
+    if lead:
+        await db.leads.update_one({"id": lead["id"]}, {"$set": {"last_activity": now, "updated_at": now, "read": False}})
+        lead_id = lead["id"]
+    else:
+        lead_id = str(uuid.uuid4())
+        await db.leads.insert_one({
+            "id": lead_id, "cardSlug": slug, "workspace_id": card.get("workspace_id"),
+            "name": body.name.strip(), "email": body.email.strip().lower(), "phone": body.phone.strip(),
+            "company": "", "title": "", "message": body.note.strip(), "interest": mt["title"],
+            "source": "meeting_booking", "campaign": "", "status": "NEW", "tags": ["meeting"], "notes": "",
+            "read": False, "created_at": now, "updated_at": now, "last_activity": now,
+        })
+
+    manage_token = uuid.uuid4().hex + uuid.uuid4().hex[:8]
+    meeting = {
+        "id": str(uuid.uuid4()), "manage_token": manage_token, "card_id": card["id"], "cardSlug": slug,
+        "workspace_id": card.get("workspace_id"), "owner_user_id": card.get("owner_user_id"),
+        "lead_id": lead_id, "meeting_type_id": mt["id"], "meeting_type_title": mt["title"],
+        "duration": mt["duration"], "location_type": mt.get("location_type", "video"),
+        "location_detail": mt.get("location_detail", ""), "owner_name": card.get("identity", {}).get("fullName", ""),
+        "owner_timezone": tzname, "visitor_name": body.name.strip(), "visitor_email": body.email.strip(),
+        "visitor_phone": body.phone.strip(), "visitor_tz": body.visitor_tz or "UTC", "note": body.note.strip(),
+        "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(),
+        "status": "scheduled", "created_at": now, "updated_at": now,
+        "reminders": [{"offset_hours": 24, "status": "scheduled", "provider": "NOT_CONFIGURED"},
+                      {"offset_hours": 1, "status": "scheduled", "provider": "NOT_CONFIGURED"}],
+        "history": [{"at": now, "event": "booked", "by": "guest"}],
+    }
+    await db.meetings.insert_one(dict(meeting))
+    await db.leads.update_one({"id": lead_id}, {"$push": {"timeline": {"at": now, "event": "meeting_booked", "detail": mt["title"]}}})
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "meeting_booked",
+        "title": f"Meeting booked by {body.name.strip()}", "body": f"{mt['title']} · via /{slug}", "read": False, "created_at": now,
+    })
+    await db.analytics_events.insert_one({"id": str(uuid.uuid4()), "cardSlug": slug, "type": "tap", "key": "booking_completed", "created_at": now})
+    meeting.pop("_id", None)
+    return {"ok": True, "manage_token": manage_token, "meeting": meeting}
+
+
+def _sanitize_meeting(m: dict) -> dict:
+    m.pop("_id", None)
+    return m
+
+
+@api_router.get("/meetings/manage/{token}")
+async def manage_get(token: str):
+    m = await db.meetings.find_one({"manage_token": token}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return _sanitize_meeting(m)
+
+
+@api_router.post("/meetings/manage/{token}/cancel")
+async def manage_cancel(token: str):
+    m = await db.meetings.find_one({"manage_token": token}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.meetings.update_one({"manage_token": token}, {"$set": {"status": "cancelled", "updated_at": now},
+                                 "$push": {"history": {"at": now, "event": "cancelled", "by": "guest"}}})
+    if m.get("lead_id"):
+        await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
+    return {"ok": True}
+
+
+@api_router.post("/meetings/manage/{token}/reschedule")
+async def manage_reschedule(token: str, body: Dict[str, Any]):
+    m = await db.meetings.find_one({"manage_token": token}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    try:
+        start_utc = datetime.fromisoformat(str(body.get("start", "")).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start time")
+    avail = await _get_availability(m["card_id"])
+    existing = [iv for iv in await _existing_intervals(m["card_id"])]
+    date_str = start_utc.astimezone(ZoneInfo(m.get("owner_timezone", "UTC"))).strftime("%Y-%m-%d")
+    valid = _day_slots(avail, m.get("owner_timezone", "UTC"), int(m["duration"]), date_str, existing, datetime.now(timezone.utc))
+    if start_utc.isoformat() not in valid and start_utc.isoformat() != m["start_utc"]:
+        raise HTTPException(status_code=409, detail="That time is no longer available")
+    end_utc = start_utc + timedelta(minutes=int(m["duration"]))
+    now = datetime.now(timezone.utc).isoformat()
+    await db.meetings.update_one({"manage_token": token}, {"$set": {
+        "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(), "status": "rescheduled", "updated_at": now,
+        "reminders": [{"offset_hours": 24, "status": "scheduled", "provider": "NOT_CONFIGURED"}, {"offset_hours": 1, "status": "scheduled", "provider": "NOT_CONFIGURED"}]},
+        "$push": {"history": {"at": now, "event": "rescheduled", "by": "guest"}}})
+    return {"ok": True}
+
+
+# ---- admin: meeting types + availability + meetings
+async def _own_card_or_403(card_id, user):
+    card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not await _can_access_card(user, card):
+        raise HTTPException(status_code=403, detail="Not your card")
+    return card
+
+
+@api_router.get("/admin/cards/{card_id}/meeting-types")
+async def admin_list_mts(card_id: str, user: dict = Depends(get_current_user)):
+    await _own_card_or_403(card_id, user)
+    return await _get_meeting_types(card_id, seed=True)
+
+
+@api_router.post("/admin/cards/{card_id}/meeting-types")
+async def admin_create_mt(card_id: str, body: MeetingTypeIn, user: dict = Depends(get_current_user)):
+    await _own_card_or_403(card_id, user)
+    mt = {"id": str(uuid.uuid4()), "card_id": card_id, **body.model_dump()}
+    await db.meeting_types.insert_one(dict(mt))
+    mt.pop("_id", None)
+    return mt
+
+
+@api_router.put("/admin/cards/{card_id}/meeting-types/{mt_id}")
+async def admin_update_mt(card_id: str, mt_id: str, body: MeetingTypeIn, user: dict = Depends(get_current_user)):
+    await _own_card_or_403(card_id, user)
+    await db.meeting_types.update_one({"id": mt_id, "card_id": card_id}, {"$set": body.model_dump()})
+    return await db.meeting_types.find_one({"id": mt_id}, {"_id": 0})
+
+
+@api_router.delete("/admin/cards/{card_id}/meeting-types/{mt_id}")
+async def admin_delete_mt(card_id: str, mt_id: str, user: dict = Depends(get_current_user)):
+    await _own_card_or_403(card_id, user)
+    await db.meeting_types.delete_one({"id": mt_id, "card_id": card_id})
+    return {"ok": True}
+
+
+@api_router.get("/admin/cards/{card_id}/availability")
+async def admin_get_avail(card_id: str, user: dict = Depends(get_current_user)):
+    await _own_card_or_403(card_id, user)
+    return await _get_availability(card_id)
+
+
+@api_router.put("/admin/cards/{card_id}/availability")
+async def admin_put_avail(card_id: str, body: AvailabilityIn, user: dict = Depends(get_current_user)):
+    await _own_card_or_403(card_id, user)
+    await db.availability.update_one({"card_id": card_id}, {"$set": {"card_id": card_id, **body.model_dump()}}, upsert=True)
+    return await db.availability.find_one({"card_id": card_id}, {"_id": 0})
+
+
+@api_router.get("/admin/meetings")
+async def admin_meetings(filter: str = "upcoming", user: dict = Depends(get_current_user)):
+    q = await _card_query(user)
+    cards = await db.digital_cards.find(q, {"_id": 0, "id": 1}).to_list(2000)
+    ids = [c["id"] for c in cards]
+    now = datetime.now(timezone.utc).isoformat()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    base = {"card_id": {"$in": ids}}
+    if filter == "today":
+        base["start_utc"] = {"$gte": today, "$lt": today + "T99"}
+        base["status"] = {"$in": list(ACTIVE_STATUSES) + ["rescheduled"]}
+    elif filter == "upcoming":
+        base["start_utc"] = {"$gte": now}
+        base["status"] = {"$in": list(ACTIVE_STATUSES) + ["rescheduled"]}
+    elif filter == "past":
+        base["start_utc"] = {"$lt": now}
+        base["status"] = {"$nin": ["cancelled"]}
+    elif filter == "cancelled":
+        base["status"] = "cancelled"
+    ms = await db.meetings.find(base, {"_id": 0}).sort("start_utc", 1 if filter != "past" else -1).to_list(2000)
+    return ms
+
+
+@api_router.patch("/admin/meetings/{meeting_id}/status")
+async def admin_meeting_status(meeting_id: str, body: Dict[str, Any], user: dict = Depends(get_current_user)):
+    m = await db.meetings.find_one({"id": meeting_id}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    card = await db.digital_cards.find_one({"id": m["card_id"]}, {"_id": 0})
+    if not card or not await _can_access_card(user, card):
+        raise HTTPException(status_code=403, detail="Not your meeting")
+    status = str(body.get("status", "")).lower()
+    if status not in ("scheduled", "confirmed", "completed", "cancelled", "no-show", "rescheduled"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.meetings.update_one({"id": meeting_id}, {"$set": {"status": status, "updated_at": now},
+                                 "$push": {"history": {"at": now, "event": f"status:{status}", "by": user.get("email")}}})
+    if status == "completed" and m.get("lead_id"):
+        await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_completed", "detail": m.get("meeting_type_title", "")}}})
+    return {"ok": True}
+
 
 # ------------------------------------------------------------------ uploads
 

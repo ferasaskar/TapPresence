@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, UserPlus, CalendarClock } from "lucide-react";
 import { resolveImg } from "@/lib/api";
 import { buildActions, getIcon, orderedServices, orderedProjects } from "@/lib/cardHelpers";
 import { AvailabilityBadge } from "@/components/profile/AvailabilityBadge";
@@ -10,6 +11,8 @@ import { ActionButton } from "@/components/profile/ActionButton";
 import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
 import { WalletButtons } from "@/components/profile/WalletButtons";
+import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
+import { ExchangeContactDialog } from "@/components/profile/ExchangeContactDialog";
 import { accentHex, accentGrad, hexToRgba } from "@/lib/accents";
 import { industryRootStyle, BASE_RGB } from "@/lib/industries";
 import { INDUSTRY_CARDS } from "@/lib/industryCards";
@@ -27,6 +30,8 @@ const Overline = ({ children }) => (
 
 export const ExecutiveBlackGold = ({ data }) => {
   const { identity: id = {}, contact: c = {}, booking: b = {}, social = {}, slug } = data;
+  const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [bookOpen, setBookOpen] = useState(false);
   const actions = buildActions(data);
   const services = orderedServices(data.services);
   const projects = orderedProjects(data.projects);
@@ -170,18 +175,40 @@ export const ExecutiveBlackGold = ({ data }) => {
           </section>
         )}
 
-        {/* MAIN CTA — gold gradient bar */}
-        {(b.bookingUrl || c.phone) && (
-          <motion.section {...fade(0)} className="mt-16" data-testid="cta-bar">
-            <ActionButton
-              action={actions.book || actions.call}
-              testId="cta-book-button"
-              className="flex w-full items-center justify-center gap-3 rounded-full px-8 py-5 text-sm font-medium uppercase tracking-widest text-black transition-transform duration-300 hover:scale-[1.02]"
-              iconClassName="w-5 h-5"
-            />
-          </motion.section>
-        )}
-        <style>{`[data-testid="cta-book-button"]{background:linear-gradient(90deg,${g1},${g2},${g3});}`}</style>
+        {/* MAIN CTA — Exchange Contact (primary) + Book a Meeting */}
+        <motion.section {...fade(0)} className="mt-16 space-y-3" data-testid="cta-bar">
+          <button
+            onClick={() => setExchangeOpen(true)}
+            data-testid="cta-exchange-button"
+            className="flex w-full items-center justify-center gap-3 rounded-full px-8 py-5 text-sm font-medium uppercase tracking-widest text-black transition-transform duration-300 hover:scale-[1.02]"
+            style={{ background: `linear-gradient(90deg,${g1},${g2},${g3})` }}
+          >
+            <UserPlus className="h-5 w-5" /> Exchange Contact
+          </button>
+          {(b.nativeEnabled || b.bookingUrl) && (
+            b.nativeEnabled ? (
+              <button
+                onClick={() => setBookOpen(true)}
+                data-testid="cta-book-button"
+                className="flex w-full items-center justify-center gap-3 rounded-full border px-8 py-4 text-sm font-medium uppercase tracking-widest transition-transform duration-300 hover:scale-[1.02]"
+                style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
+              >
+                <CalendarClock className="h-5 w-5" /> Book a Meeting
+              </button>
+            ) : (
+              <a
+                href={b.bookingUrl}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="cta-book-button"
+                className="flex w-full items-center justify-center gap-3 rounded-full border px-8 py-4 text-sm font-medium uppercase tracking-widest transition-transform duration-300 hover:scale-[1.02]"
+                style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
+              >
+                <CalendarClock className="h-5 w-5" /> Book a Meeting
+              </a>
+            )
+          )}
+        </motion.section>
 
         {/* LEAD CAPTURE */}
         <InquiryForm slug={slug} variant="black" accentColor={GOLD} />
@@ -234,6 +261,9 @@ export const ExecutiveBlackGold = ({ data }) => {
         [data-testid="social-icons"] a{ border-color:rgba(255,255,255,0.12); }
         [data-testid="social-icons"] a:hover{ color:${GOLD}; border-color:${GOLD}; }
       `}</style>
+
+      <ExchangeContactDialog open={exchangeOpen} onOpenChange={setExchangeOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />
+      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />
     </div>
   );
 };

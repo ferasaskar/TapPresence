@@ -86,7 +86,7 @@ export default function CardEditor({ initial, onBack, onSaved }) {
           </div>
         </div>
 
-        <CardInfoTabs form={form} setForm={setForm} />
+        <CardInfoTabs form={form} setForm={setForm} cardId={initial?.id} />
       </div>
 
       {/* LIVE PREVIEW */}

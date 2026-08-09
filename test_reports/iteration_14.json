@@ -1,0 +1,71 @@
+{
+  "summary": "Iteration 14 — Native ARIADNI Meetings/Calendar E2E. Found & fixed one CRITICAL backend bug: GET /api/admin/meetings?filter=today|upcoming crashed 500 due to list+tuple concatenation (`list(ACTIVE_STATUSES) + ('rescheduled',)`), which meant the whole /meetings dashboard was broken for the two most-used tabs. Fixed by changing tuple to list. All 14 backend pytest cases now PASS (booking config, slots, book, slot-removal, 409 double-book, manage GET/reschedule/cancel, all 4 admin-meetings filters incl. rescheduled row visible, PATCH status=completed + lead timeline meeting_completed, meeting-types CRUD, availability PUT round-trip, external-only card regression). Frontend E2E on /feras-askar: cta-exchange-button + cta-book-button both visible & gold-themed (rgb 201,162,75), no console errors, 0px horizontal overflow at 1440 and 390. Exchange flow → exchange-dialog → exchange-success + exchange-savecontact + CRM lead created (source seen in admin/leads). Booking flow → 3 seeded meeting types → dates → 18 slots (Aug 12 weekday) → book-success with book-manage-link + Copy. /m/{token} manage page: manage-reschedule picks date+slot & succeeds, manage-cancel sets status=cancelled. Admin /meetings page: meetings-link in header, meetings-page loads with all 4 tabs (today/upcoming/past/cancelled), booked meeting shows under Upcoming with meeting-{id} + meeting-status-{id} SELECT; changing status to completed toasts 'Marked completed' and PATCHes 200 with CRM timeline meeting_completed. AI /api/ai/followup endpoint returns a valid draft (verified via curl). Owner Booking editor tab on /admin edit: booking-native-toggle, booking-timezone, mt-add, 3 mt-title-* rows, 7 avail-day-*, avail-start, avail-end, avail-save all present; admin-save-button visible. No console errors anywhere. All TEST_ leads deleted; test meetings cancelled; feras-askar untouched (status=published).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/meetings", "issue": "A meeting with status='completed' but future start_utc is invisible on ALL tabs (upcoming filters out completed; past requires start<now; cancelled requires status=cancelled). Real-world impact is small because owners only mark completed after the meeting time — but the AI Draft follow-up button (which requires status=completed) can only be reached from Past. Consider (a) including status=completed in Upcoming until start<now, OR (b) a dedicated 'Completed' tab."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "detailed_results": {
+    "BACKEND_pytest_14/14_PASS": [
+      "test_public_booking_config",
+      "test_public_slots_weekday",
+      "test_public_book_creates_meeting_and_lead",
+      "test_slot_removed_after_booking",
+      "test_double_book_returns_409",
+      "test_manage_get",
+      "test_manage_reschedule",
+      "test_admin_meetings_all_filters (regression for list+tuple fix)",
+      "test_admin_meeting_status_completed (lead timeline meeting_completed verified)",
+      "test_manage_cancel",
+      "test_admin_meeting_types_crud",
+      "test_admin_availability_put",
+      "test_external_only_card_shows_external_url",
+      "test_cleanup"
+    ],
+    "FRONTEND_public_ctas": {
+      "cta-exchange-button": "visible, gold",
+      "cta-book-button": "visible, gold (rgb 201,162,75)",
+      "horizontal_overflow_1440": 0,
+      "horizontal_overflow_390": 0,
+      "console_errors": 0
+    },
+    "FRONTEND_exchange": "exchange-dialog opens, exchange-name+email submit → exchange-success + exchange-savecontact; CRM lead visible in /api/admin/leads?slug=feras-askar",
+    "FRONTEND_booking": "3 seeded meeting types; book-dates → 21 date buttons; book-slots=18 on Aug 12 weekday; book-confirm → book-success + book-manage-link (/m/{token}) + Copy button",
+    "FRONTEND_manage": "manage-meeting visible on /m/{token}; manage-reschedule → manage-date-* + manage-slot-* works (17 slots); manage-cancel → status='cancelled' + 'Meeting cancelled' banner",
+    "FRONTEND_admin_meetings": "meetings-link in /admin header; /meetings shows meetings-page with all 4 tabs; booked meeting appears under Upcoming with meeting-{id}; meeting-status-{id} SELECT → PATCH to completed toasts 'Marked completed'",
+    "FRONTEND_ai_followup_endpoint": "POST /api/ai/followup returns 200 with draft text (openai:gpt-5.4 provider)",
+    "FRONTEND_booking_editor": "All required testids present: booking-native-toggle, booking-timezone, mt-add, 3× mt-title-*, 7× avail-day-*, avail-start, avail-end, avail-save, admin-save-button"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter14_meetings.py",
+    "/app/test_reports/pytest/iter14.xml"
+  ],
+  "action_items": [
+    "(minor UX) Decide whether a meeting marked 'completed' but with future start_utc should stay in Upcoming or appear in a dedicated 'Completed' tab. Currently it disappears from every tab, hiding the AI 'Draft follow-up' button."
+  ],
+  "critical_code_review_comments": [
+    "CRITICAL FIXED: /app/backend/server.py admin_meetings() lines 972,975 concatenated `list(ACTIVE_STATUSES) + ('rescheduled',)` — TypeError, so both filter=today and filter=upcoming returned 500. Changed the tuple to a list. Add a lint/test guard so this can't regress silently.",
+    "PATCH /api/admin/meetings/{id}/status accepts a 'rescheduled' status from the client and stores it — but this event is normally produced by the guest reschedule flow. Consider narrowing the admin-writable status set to {scheduled,confirmed,completed,cancelled,no-show}.",
+    "Cancelled meetings are never fully deleted; the 'blocked slot' logic ignores them via ACTIVE_STATUSES which is correct. Good.",
+    "BookMeetingDialog useEffect resets state on `open` but keeps stale types when the dialog is re-opened quickly after another dialog closes; consider also resetting types=[] before the GET to avoid a brief flash of the previous card's types when navigating between cards on the same session.",
+    "The 21-day date carousel in BookMeetingDialog surfaces every day including weekends & past dates before min-notice; buttons still render — they just yield empty slots. Consider disabling non-working days visually to avoid a dead click.",
+    "Reminders and Google/Outlook sync stored as `NOT_CONFIGURED` in meeting.reminders — good architecture, no bug. Please add a UI badge on the meeting card explaining 'reminders not configured' to set expectations."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (list+tuple TypeError fix in admin_meetings)",
+    "/app/backend/tests/test_iter14_meetings.py (new pytest suite, 14 tests)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (public CTAs + exchange + booking + manage + admin meetings + booking editor)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026",
+  "seed_data_creation": "Booked/cancelled several test meetings on /feras-askar via API + UI (visitor names TEST *). Created & deleted one external-only card in pytest. Cleanup: deleted every TEST_ lead in feras-askar's inbox via DELETE /api/admin/leads/{id} (7 removed, incl. legacy test leads from prior iterations). No cards deleted. feras-askar remains published, gold accent, native booking ON.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The admin_meetings list+tuple bug was fixed at server.py L972,L975 — regression covered by test_admin_meetings_all_filters. Future testers: pytest requires REACT_APP_BACKEND_URL to be exported OR run via `env REACT_APP_BACKEND_URL=$(grep ...) pytest`; use `-o addopts=''` to bypass xdist which the sandbox pytest.ini enables by default. The AI 'Draft follow-up' button is only visible when meeting.status='completed'; to test it end-to-end on the UI, mark completed WHILE the meeting is on the Upcoming tab, then flip to Past — but currently a completed+future meeting falls into no tab (see minor UX issue). To validate AI generation without that, POST /api/ai/followup directly.",
+  "rca of the issue": "server.py L972/L975 built the Mongo $in filter with `list(ACTIVE_STATUSES) + ('rescheduled',)`. ACTIVE_STATUSES is a tuple, wrapped with list(), so the LHS was a list and RHS a tuple → Python raises TypeError. Every call to /admin/meetings?filter=today or filter=upcoming hit this line unconditionally, returning HTTP 500 and rendering the /meetings dashboard's most-used tabs unusable. Fix: replace `('rescheduled',)` with `['rescheduled']`. Reproduction (pre-fix): `curl -H 'Authorization: Bearer <token>' <BASE>/api/admin/meetings?filter=upcoming` → 500 + stacktrace `TypeError: can only concatenate list (not \"tuple\") to list`. Verified fix returns 200 with a list of meetings."
+}
