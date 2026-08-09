@@ -1,0 +1,30 @@
+{
+  "summary": "Verified ARIADNI ID card-creation consolidation flow. TEST 1-5 all pass: 'Create Card' + 'Create your first card' both navigate to /templates studio; 12 industry choices present; step-1→step-2 auto-advance on industry click; preview reflects industry and updates live as fullName is typed; publish + save-draft both create cards in Your Cards with correct status; direct /templates loads at Step 1; inline CardEditor for existing cards has slug/accent/published/save but NO editor-template (correctly removed); feras-askar public profile still renders. Header 'industry-templates-link' correctly removed. Test cards were created and cleaned up; feras-askar untouched (save without modification).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/templates at 390px (mobile)", "issues": ["Horizontal overflow detected (documentElement.scrollWidth > clientWidth). Likely caused by the sticky header row with 'Card Manager' back link + 'Create Your Card' title + 'Save Draft' + 'Publish Card' buttons all on one row. Consider stacking/collapsing header controls on <sm breakpoints."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_11.json"],
+  "action_items": [
+    "Fix mobile (390px) horizontal overflow on /templates studio header — stack Save Draft / Publish Card buttons or hide labels on small viewports.",
+    "Investigate 4 x 404 resource errors in console on the flow (likely missing image asset). Not blocking but should be cleaned up."
+  ],
+  "critical_code_review_comments": [
+    "CreateCard.save() derives slug from fullName if empty — good. But it does not check slug uniqueness client-side; backend will 4xx if duplicate — surface a friendlier message.",
+    "CreateCard has no explicit step-3 data-testid on the wrapper other than the stepper button 'step-3' — acceptable but note editor-fullname is reached only via to-information; consider allowing users to jump directly back to step 3 via the stepper (currently works).",
+    "Admin.jsx passes navigate('/templates') for both new-card-button and empty-new-card — consolidation is clean, no duplicate creation path remains.",
+    "CardEditor.jsx correctly omits templateId select; editor-template testid is NOT present in DOM (verified)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (not directly retested; card CRUD used indirectly via UI, all succeeded)", "frontend": "100% (5/5 test scenarios pass)" },
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created 2 temp cards (qa-real-*, qa-tech-*) during TEST 1 & 2, both cleaned up via delete API. feras-askar saved without changes (no data drift).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Creation flow consolidation is fully working. Only remaining polish item is mobile (390px) header overflow on /templates. All data-testids referenced in review request are present and behave as expected. The card-item testid format is 'card-item-{slug}' (the review's mention of 'card-item-template-hub-184' appears to be a slug/domain confusion — actual pattern verified is card-item-{slug}).",
+  "rca of the issue": "Mobile /templates overflow RCA: The <header> renders 3 button/label groups in a single flex row with gap-3 and px-4 padding on min-w-390 viewports. On mobile the 'Create Your Card' center label + Save Draft + Publish Card buttons together exceed 390px. Fix: apply flex-wrap or hide the center title on sm:, or use icon-only buttons on mobile."
+}

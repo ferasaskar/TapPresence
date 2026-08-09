@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import CardEditor from "@/components/admin/CardEditor";
@@ -7,7 +8,7 @@ import AnalyticsDialog from "@/components/admin/AnalyticsDialog";
 import ScanCardDialog from "@/components/admin/ScanCardDialog";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3, ScanLine, Palette, LayoutGrid } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, ScanLine, BarChart3, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 
 const AriadniMark = ({ className = "" }) => (
@@ -24,6 +25,7 @@ const HeaderBtn = ({ children, className = "", ...props }) => (
 
 export default function Admin() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [cards, setCards] = useState(null);
   const [editing, setEditing] = useState(null);
   const [leadsOpen, setLeadsOpen] = useState(false);
@@ -80,9 +82,6 @@ export default function Admin() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <a href="/industries" data-testid="industry-templates-link">
-              <HeaderBtn><Palette className="h-4 w-4 text-[#D6A653]" /> Industry Templates</HeaderBtn>
-            </a>
             <HeaderBtn onClick={() => setScanOpen(true)} data-testid="scan-button"><ScanLine className="h-4 w-4 text-[#D6A653]" /> Scan card</HeaderBtn>
             <div className="relative">
               <HeaderBtn onClick={() => setLeadsOpen(true)} data-testid="inbox-button"><Inbox className="h-4 w-4" /> Inbox</HeaderBtn>
@@ -100,8 +99,8 @@ export default function Admin() {
             <h2 className="text-3xl font-light tracking-tight text-white">Your Cards</h2>
             <p className="mt-1 text-sm text-white/45">{cards ? `${cards.length} ${cards.length === 1 ? "profile" : "profiles"} in your studio` : "Loading…"}</p>
           </div>
-          <button onClick={() => setEditing({})} className="inline-flex items-center gap-1.5 rounded-full bg-[#D6A653] px-5 py-2.5 text-sm font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-95" data-testid="new-card-button">
-            <Plus className="h-4 w-4" /> New card
+          <button onClick={() => navigate("/templates")} className="inline-flex items-center gap-1.5 rounded-full bg-[#D6A653] px-5 py-2.5 text-sm font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-95" data-testid="new-card-button">
+            <Plus className="h-4 w-4" /> Create Card
           </button>
         </div>
 
@@ -111,7 +110,7 @@ export default function Admin() {
           <div className="flex flex-col items-center rounded-2xl border border-dashed border-white/12 py-24 text-center">
             <LayoutGrid className="mb-4 h-10 w-10 text-[#D6A653]/40" strokeWidth={1.25} />
             <p className="text-white/60">No cards yet.</p>
-            <button onClick={() => setEditing({})} className="mt-4 rounded-full border border-[#D6A653]/40 px-5 py-2 text-sm text-[#D6A653] transition-colors hover:bg-[#D6A653]/10" data-testid="empty-new-card">Create your first card</button>
+            <button onClick={() => navigate("/templates")} className="mt-4 rounded-full border border-[#D6A653]/40 px-5 py-2 text-sm text-[#D6A653] transition-colors hover:bg-[#D6A653]/10" data-testid="empty-new-card">Create your first card</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
