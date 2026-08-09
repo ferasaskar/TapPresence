@@ -134,6 +134,9 @@ class Identity(BaseModel):
     city: str = ""
     country: str = ""
     availabilityBadge: str = ""
+    imageScale: float = 1.0
+    imageOffsetX: float = 0.0
+    imageOffsetY: float = 0.0
 
 
 class Contact(BaseModel):

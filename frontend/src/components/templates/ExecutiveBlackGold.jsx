@@ -12,6 +12,7 @@ import { ShareBar } from "@/components/profile/ShareBar";
 import { WalletButtons } from "@/components/profile/WalletButtons";
 import { accentHex, accentGrad, hexToRgba } from "@/lib/accents";
 import { industryRootStyle, BASE_RGB } from "@/lib/industries";
+import { INDUSTRY_CARDS } from "@/lib/industryCards";
 
 const fade = (i = 0) => ({
   initial: { opacity: 0, y: 24 },
@@ -34,13 +35,23 @@ export const ExecutiveBlackGold = ({ data }) => {
   const iconRow = [actions.call, actions.whatsapp, actions.email, actions.message].filter(Boolean);
 
   const GOLD = accentHex("executive-black-gold", data.accent, data.custom_accent_color);
-  const [g1, g2, g3] = accentGrad("executive-black-gold", data.accent);
-  const gBorder = hexToRgba(GOLD, 0.35);
+  const [g1, g2, g3] = accentGrad("executive-black-gold", data.accent, data.custom_accent_color);
+  const gBorder = hexToRgba(GOLD, 0.4);
   const gBorder30 = hexToRgba(GOLD, 0.3);
   const gGlow = hexToRgba(GOLD, 0.5);
+  const panelTint = hexToRgba(GOLD, 0.07);
+  const panelHoverGlow = hexToRgba(GOLD, 0.2);
+
+  // Match the showcase atmosphere: tint the background scrim with the chosen
+  // industry's base tone (e.g. purple for Sales) instead of a neutral black.
+  const indBase = INDUSTRY_CARDS.find((cc) => cc.id === data.industry)?.base;
+  const scrimBase = data.industry && indBase ? indBase : BASE_RGB["executive-black-gold"];
+
+  // Saved portrait framing (zoom / pan) applied identically in preview & public.
+  const portraitTransform = `translate(${id.imageOffsetX || 0}%, ${id.imageOffsetY || 0}%) scale(${id.imageScale || 1})`;
 
   return (
-    <div className="relative min-h-screen font-sans text-neutral-200 overflow-hidden" style={{ backgroundColor: "#0B0B0C", "--ac": GOLD, ...industryRootStyle(data, BASE_RGB["executive-black-gold"], GOLD) }}>
+    <div className="relative min-h-screen font-sans text-neutral-200 overflow-hidden" style={{ backgroundColor: `rgb(${scrimBase})`, "--ac": GOLD, ...industryRootStyle(data, scrimBase, GOLD) }}>
       <div className="grain-overlay" style={{ opacity: 0.06 }} />
       {/* soft gold radial glow behind hero */}
       <div className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full opacity-20 blur-3xl" style={{ background: GOLD }} />
@@ -50,19 +61,21 @@ export const ExecutiveBlackGold = ({ data }) => {
         {/* HERO */}
         <motion.header {...fade(0)} className="flex flex-col items-center text-center">
           <div className="relative mb-8">
-            <div className="absolute -inset-2 rounded-full" style={{ background: `conic-gradient(from 180deg, ${GOLD}, #6b551f, ${GOLD})` }} />
+            <div className="absolute -inset-2 rounded-full" style={{ background: `conic-gradient(from 180deg, ${GOLD}, ${hexToRgba(GOLD, 0.25)}, ${GOLD})` }} />
             <div className="absolute -inset-2 rounded-full blur-md opacity-50" style={{ background: GOLD }} />
-            {id.profilePhoto ? (
-              <img
-                src={resolveImg(id.profilePhoto)}
-                alt={id.fullName}
-                data-testid="hero-portrait"
-                className="relative w-40 h-40 rounded-full object-cover"
-                style={{ border: "3px solid #0B0B0C" }}
-              />
-            ) : (
-              <div data-testid="hero-portrait" className="relative w-40 h-40 rounded-full bg-neutral-800" style={{ border: "3px solid #0B0B0C" }} />
-            )}
+            <div className="relative w-40 h-40 rounded-full overflow-hidden" style={{ border: "3px solid rgb(" + scrimBase + ")" }}>
+              {id.profilePhoto ? (
+                <img
+                  src={resolveImg(id.profilePhoto)}
+                  alt={id.fullName}
+                  data-testid="hero-portrait"
+                  className="w-full h-full object-cover"
+                  style={{ transform: portraitTransform, transformOrigin: "center" }}
+                />
+              ) : (
+                <div data-testid="hero-portrait" className="w-full h-full bg-neutral-800" />
+              )}
+            </div>
           </div>
           <AvailabilityBadge
             label={id.availabilityBadge}
@@ -107,7 +120,7 @@ export const ExecutiveBlackGold = ({ data }) => {
                     {...fade(i)}
                     data-testid={`service-card-${i}`}
                     className="group rounded-xl border p-7 transition-all duration-300 hover:-translate-y-1"
-                    style={{ borderColor: gBorder, backgroundColor: "#111112" }}
+                    style={{ borderColor: gBorder, backgroundColor: panelTint }}
                   >
                     <Icon className="w-6 h-6 mb-5" strokeWidth={1.5} style={{ color: GOLD }} />
                     <h3 className="font-serif text-xl tracking-tight mb-2 text-neutral-100">{s.title}</h3>
@@ -142,7 +155,7 @@ export const ExecutiveBlackGold = ({ data }) => {
                   </>
                 );
                 const cls = "group block overflow-hidden rounded-xl border transition-colors duration-300";
-                const st = { borderColor: gBorder30, backgroundColor: "#111112" };
+                const st = { borderColor: gBorder30, backgroundColor: panelTint };
                 return (
                   <motion.div key={i} {...fade(i)} data-testid={`project-card-${i}`}>
                     {p.url ? (
@@ -208,12 +221,16 @@ export const ExecutiveBlackGold = ({ data }) => {
       </div>
 
       <style>{`
-        [data-testid="availability-badge"]{ color:${GOLD}; border:1px solid ${gGlow}; }
+        [data-testid="availability-badge"]{ color:${GOLD}; border:1px solid ${gGlow}; background:${panelTint}; }
         [data-testid="availability-badge"] span{ background:${GOLD}; }
-        [data-testid="hero-action-call"],[data-testid="hero-action-whatsapp"],[data-testid="hero-action-email"],[data-testid="hero-action-message"]{ border-color:${gBorder}; background:#111112; }
-        [data-testid="save-contact-button"]{ border-color:${gBorder}; background:#111112; color:#e5e5e5; }
-        [data-testid="save-contact-button"] svg{ color:${GOLD}; }
-        [data-testid="qr-block"]{ border-color:${gBorder}; background:#111112; }
+        [data-testid="hero-action-call"],[data-testid="hero-action-whatsapp"],[data-testid="hero-action-email"],[data-testid="hero-action-message"]{ border-color:${gBorder}!important; background:${panelTint}!important; }
+        [data-testid="hero-action-call"]:hover,[data-testid="hero-action-whatsapp"]:hover,[data-testid="hero-action-email"]:hover,[data-testid="hero-action-message"]:hover{ border-color:${GOLD}!important; box-shadow:0 0 20px ${panelHoverGlow}; }
+        [data-testid="hero-action-call"] svg,[data-testid="hero-action-whatsapp"] svg,[data-testid="hero-action-email"] svg,[data-testid="hero-action-message"] svg{ color:${GOLD}; }
+        [data-testid="inquiry-form"],[data-testid="inquiry-success"]{ border-color:${gBorder}!important; background:${panelTint}!important; backdrop-filter:blur(6px); }
+        [data-testid="save-contact-button"],[data-testid="qr-block"],[data-testid="share-button"],[data-testid="download-poster"],[data-testid="wallet-apple"],[data-testid="wallet-google"]{ border-color:${gBorder}!important; background:${panelTint}!important; color:#ececec!important; backdrop-filter:blur(6px); }
+        [data-testid="save-contact-button"] svg,[data-testid="qr-block"] svg,[data-testid="share-button"] svg,[data-testid="download-poster"] svg,[data-testid="wallet-apple"] svg,[data-testid="wallet-google"] svg{ color:${GOLD}; }
+        [data-testid="share-button"]:hover,[data-testid="download-poster"]:hover,[data-testid="wallet-apple"]:hover,[data-testid="wallet-google"]:hover,[data-testid="save-contact-button"]:hover{ border-color:${GOLD}!important; box-shadow:0 0 20px ${panelHoverGlow}; }
+        [data-testid="inquiry-form"] input:focus,[data-testid="inquiry-form"] textarea:focus{ border-color:${GOLD}!important; box-shadow:0 0 0 1px ${gGlow}; }
         [data-testid="social-icons"] a{ border-color:rgba(255,255,255,0.12); }
         [data-testid="social-icons"] a:hover{ color:${GOLD}; border-color:${GOLD}; }
       `}</style>

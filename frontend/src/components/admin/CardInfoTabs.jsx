@@ -1,4 +1,5 @@
 import { ImageUploadField } from "@/components/admin/ImageUploadField";
+import { ProfilePhotoField } from "@/components/admin/ProfilePhotoField";
 import IndustryCustomizer from "@/components/admin/IndustryCustomizer";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { Plus, Trash2 } from "lucide-react";
 export const emptyCard = {
   slug: "", templateId: "executive-black-gold", accent: "gold", custom_accent_color: "", status: "draft",
   industry: "", background_style: "", background_opacity: 0.14, background_intensity: "medium", background_position: "center", custom_background: "",
-  identity: { fullName: "", jobTitle: "", company: "", companyLogo: "", profilePhoto: "", bio: "", city: "", country: "", availabilityBadge: "" },
+  identity: { fullName: "", jobTitle: "", company: "", companyLogo: "", profilePhoto: "", bio: "", city: "", country: "", availabilityBadge: "", imageScale: 1, imageOffsetX: 0, imageOffsetY: 0 },
   contact: { phone: "", whatsapp: "", email: "", website: "", address: "", mapsUrl: "" },
   social: { linkedin: "", instagram: "", x: "", youtube: "", tiktok: "" },
   actions: [], services: [], projects: [], booking: { bookingUrl: "" },
@@ -66,7 +67,7 @@ export default function CardInfoTabs({ form, setForm, showIndustry = true }) {
       </TabsList>
 
       <TabsContent value="identity" className="space-y-4 pt-5">
-        <ImageUploadField label="Profile photo" value={form.identity.profilePhoto} onChange={(v) => set("identity.profilePhoto", v)} testId="upload-photo" />
+        <ProfilePhotoField id={form.identity} set={set} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Full name"><Input value={form.identity.fullName} onChange={(e) => set("identity.fullName", e.target.value)} data-testid="editor-fullname" /></Field>
           <Field label="Job title"><Input value={form.identity.jobTitle} onChange={(e) => set("identity.jobTitle", e.target.value)} /></Field>

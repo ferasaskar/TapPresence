@@ -1,0 +1,66 @@
+{
+  "summary": "End-to-end verification of ARIADNI ID published-card visual fidelity (accent + industry background + photo crop). All 5 tests + regression PASS. Created 3 disposable cards via /templates (purple Sales, gold Real Estate, purple photo-crop test), verified panel accent colors via computed styles on the PUBLIC route, then deleted all 3 via DELETE /api/admin/cards/{id}. feras-askar untouched.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_12.json"],
+  "detailed_results": {
+    "TEST_1_purple_sales": {
+      "slug": "qa-sales-1786243310 (deleted)",
+      "background_rgb": "rgb(20, 11, 30)",
+      "hero_name_color": "rgb(167, 139, 250)",
+      "panel_border_all_purple": true,
+      "panels_verified": ["inquiry-form","save-contact-button","qr-block","share-button","download-poster","wallet-apple","wallet-google","hero-action-*"],
+      "inquiry_submit_gradient": "linear-gradient(90deg, rgb(193,174,252), rgb(167,139,250), rgb(97,81,145)) — purple",
+      "result": "PASS"
+    },
+    "TEST_2_gold_real_estate": {
+      "slug": "qa-realestate-1786243316 (deleted)",
+      "background_rgb": "rgb(10, 9, 8)",
+      "hero_name_color": "rgb(201, 162, 75)",
+      "panel_border_all_gold": true,
+      "result": "PASS"
+    },
+    "TEST_3_photo_crop": {
+      "controls_present": {"photo-crop-box": true, "photo-zoom": true, "photo-reset": true, "upload-photo-url": true},
+      "drag_updates_offset": true,
+      "api_persisted_identity": {"profilePhoto": true, "imageScale": 1, "imageOffsetX": 13, "imageOffsetY": 9},
+      "public_transform_style": "translate(13%, 9%) scale(1)",
+      "result": "PASS"
+    },
+    "TEST_4_preview_vs_published_parity": {
+      "preview_transform_matrix": "matrix(1, 0, 0, 1, 20.02, 13.86)",
+      "public_transform_matrix": "matrix(1, 0, 0, 1, 20.02, 13.86)",
+      "identical": true,
+      "result": "PASS"
+    },
+    "TEST_5_all_panels_match_accent": {
+      "purple_card_send_message_gradient": true,
+      "all_data_testids_inherit_accent_border_and_glyph": true,
+      "result": "PASS"
+    },
+    "REGRESSION_feras_askar": {
+      "hero_name": "rgb(201, 162, 75)",
+      "action_buttons_border_gold": true,
+      "cta_book_gradient": "linear-gradient(90deg, rgb(218,192,133), rgb(201,162,75), rgb(117,94,44))",
+      "result": "PASS"
+    }
+  },
+  "critical_code_review_comments": [
+    "ExecutiveBlackGold.jsx (~240 lines) drives ALL panel colors via a single dynamic <style> block; clean and DRY. Consider extracting to a small helper if more templates adopt the same accent-first pattern.",
+    "ProfilePhotoField clamps offset to +/-60%; scale range 1x-3x. Good UX bounds. Consider showing pixel-perfect boundaries when zoom > ~2.5 to avoid empty edges.",
+    "cta-book-button gradient is only applied in ExecutiveBlackGold via an inline <style> targeting the data-testid. Verified working for both accents (purple + gold). No hardcoded gold fallback remains.",
+    "Console still emits a 404 for one asset during the flow (leftover from iteration_11). Non-blocking but should be traced (likely a preload image)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (auth login, /api/cards/{slug} read, /api/admin/cards/{id} delete all 200)", "frontend": "100% (6/6 scenarios pass incl. regression)" },
+  "test_credentials": "admin@ariadni.id / Ariadni@2026",
+  "seed_data_creation": "Created 3 temp cards (qa-sales-*, qa-realestate-*, qa-photo-*) — ALL cleaned up via DELETE /api/admin/cards/{id} with Bearer token (200s). feras-askar untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Accent + industry background + photo crop are fully working end-to-end. Verification method: read computed borderTopColor on each panel data-testid on the public /{slug} route; purple = rgb(167,139,250) (accent hex #A78BFA), gold = rgb(201,162,75) (#C9A24B). Preview parity confirmed by comparing hero-portrait transform matrices between /templates create-preview and public route — identical. Cookie-based session does NOT authorize DELETE /api/admin/cards/{id}; must use Bearer token from /api/auth/login. Mobile 390 overflow from iteration_11 was NOT retested and still likely pending.",
+  "rca of the issue": "N/A — all reported features verified working."
+}

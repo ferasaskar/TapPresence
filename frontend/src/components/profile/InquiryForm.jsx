@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Loader2, Check } from "lucide-react";
 import { api } from "@/lib/api";
+import { shadeHex, hexToRgba } from "@/lib/accents";
 import { toast } from "sonner";
 
 const V = {
@@ -36,6 +37,14 @@ const V = {
 
 export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973" }) => {
   const v = V[variant] || V.beige;
+  // Black variant: derive button + input styling from the SELECTED accent so
+  // the form matches the rest of the card (no hardcoded gold).
+  const btnStyle = variant === "black"
+    ? { background: `linear-gradient(90deg, ${shadeHex(accentColor, 0.3)}, ${accentColor}, ${shadeHex(accentColor, -0.42)})` }
+    : v.btnStyle;
+  const inputStyle = variant === "black"
+    ? { borderColor: hexToRgba(accentColor, 0.28), backgroundColor: hexToRgba(accentColor, 0.05) }
+    : v.inputStyle;
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -76,13 +85,13 @@ export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973" }
       <p className="text-[11px] uppercase tracking-[0.35em] mb-2" style={{ color: accentColor }}>Get in touch</p>
       <h2 className={`${v.heading} mb-5`}>Send a message</h2>
       <form onSubmit={submit} className="space-y-3">
-        <input className={v.input} style={v.inputStyle} placeholder="Your name" value={form.name} onChange={set("name")} data-testid="inquiry-name" />
+        <input className={v.input} style={inputStyle} placeholder="Your name" value={form.name} onChange={set("name")} data-testid="inquiry-name" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <input className={v.input} style={v.inputStyle} type="email" placeholder="Email" value={form.email} onChange={set("email")} data-testid="inquiry-email" />
-          <input className={v.input} style={v.inputStyle} placeholder="Phone" value={form.phone} onChange={set("phone")} data-testid="inquiry-phone" />
+          <input className={v.input} style={inputStyle} type="email" placeholder="Email" value={form.email} onChange={set("email")} data-testid="inquiry-email" />
+          <input className={v.input} style={inputStyle} placeholder="Phone" value={form.phone} onChange={set("phone")} data-testid="inquiry-phone" />
         </div>
-        <textarea className={v.input} style={v.inputStyle} rows={3} placeholder="How can I help?" value={form.message} onChange={set("message")} data-testid="inquiry-message" />
-        <button type="submit" className={v.btn} style={v.btnStyle} disabled={loading} data-testid="inquiry-submit">
+        <textarea className={v.input} style={inputStyle} rows={3} placeholder="How can I help?" value={form.message} onChange={set("message")} data-testid="inquiry-message" />
+        <button type="submit" className={v.btn} style={btnStyle} disabled={loading} data-testid="inquiry-submit">
           {loading ? <Loader2 className="mx-auto w-4 h-4 animate-spin" /> : "Send message"}
         </button>
       </form>

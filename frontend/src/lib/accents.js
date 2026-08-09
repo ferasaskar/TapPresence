@@ -56,13 +56,20 @@ export const accentVars = (hex) => ({
 
 export { hexToRgba };
 
-const GRADS = {
-  "executive-black-gold": {
-    gold: ["#E7C56B", "#C9A24B", "#8f7328"],
-    platinum: ["#E6E8EC", "#C3C7CE", "#8b8f96"],
-    rose: ["#EBC3C1", "#D6A0A0", "#9c6f6f"],
-  },
+const clampByte = (n) => Math.max(0, Math.min(255, Math.round(n)));
+// amt > 0 lightens toward white, amt < 0 darkens toward black
+export const shadeHex = (hex, amt) => {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const target = amt < 0 ? 0 : 255;
+  const t = Math.abs(amt);
+  const mix = (c) => clampByte(c + (target - c) * t);
+  return `#${[mix(r), mix(g), mix(b)].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
 };
 
-export const accentGrad = (templateId, accent) =>
-  GRADS[templateId]?.[accent] || GRADS[templateId]?.gold || ["#C9A24B", "#C9A24B", "#C9A24B"];
+// Derive a light→base→dark gradient from the SELECTED accent (works for any
+// accent, not just gold). Keeps buttons/CTAs faithful to the chosen colour.
+export const accentGrad = (templateId, accent, custom) => {
+  const hex = accentHex(templateId, accent, custom);
+  return [shadeHex(hex, 0.32), hex, shadeHex(hex, -0.42)];
+};
