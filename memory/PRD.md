@@ -131,6 +131,12 @@ Data-driven "one base template + industry skin + accent + layered background" �
 - Discoverable from: Card Manager header button (`industry-templates-link`) and landing "Explore Templates". CTAs → `/register`.
 - Verified (iteration_7): 13/13 critical FE tests pass — route renders, preview reacts (industry/accent/template/opacity/device), discoverable from dashboard + landing, `/feras-askar` regression clean. Minor 390px overflow fixed (overflow-x-hidden + smaller mobile frame; scrollWidth=clientWidth=390).
 
+### Fix (2026-06-09, iteration 8) — "background picture not showing" + verify all buttons
+- Root cause: `industryRootStyle` used one flat rgba overlay at alpha ~0.85–0.9 → image washed out (invisible, worst on light Beige).
+- Fix: rewrote to a **directional 3-stop scrim** (lighter at top so the picture shows, denser toward content for readability), with an `isLight` brightness check keeping light templates subtle; opacity×intensity drives visibility.
+- Verified (iteration_8, 100% FE): computed `backgroundImage` contains the industry `.jpeg` URL + gradient on both `/industries` preview and `/feras-askar`; switching industry changes the URL; opacity slider mutates alphas; photo vs CSS-pattern styles swap; ALL buttons work (showcase chips/device/industry/accent/style/position/CTAs; public-profile Message→sms, Book a Call→cal.com, Save→vCard, Share, Poster, Wallet, socials, inquiry submit); no console errors; no mobile overflow.
+
+
 
 
 
