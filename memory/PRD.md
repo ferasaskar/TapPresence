@@ -374,11 +374,24 @@ Auto-detect language like currency: DEFAULT only, user choice always wins & pers
 - **Verified (isolated browser contexts)**: ar-AE→RTL/ar+AED, ar-SA→RTL/ar+SAR, en-AE→LTR/en+AED, en-SA→LTR/en+SAR, es-ES→LTR/es+EUR, en-US→LTR/en+USD, ja-JP→LTR/en+USD (both fallbacks). Manual EN over ar-AE→LTR/en+AED; manual AR over en-US→RTL/ar+USD (INDEPENDENCE proven). Arabic landing: 0px horizontal overflow, pro price "AED 369.99", Arabic pricing/referral text. Language + currency prefs persist independently.
 
 ## REMAINING SAFE ROADMAP (approved, auto-continue) — NEXT
-- **Deep app-page localization (EN/AR/ES)**: Meetings, Leads, CreateCard/editor, Scanner, Analytics dialog still English-only (Home/Settings/Team/Notifications/Signatures/Billing/Referral already localized). Large multi-phase effort.
-- **Consent / Privacy Center** (audit-first; additive, no sensitive delete/export changes).
-- **Scanner commercial exposure** deeper surfacing.
-- **Referral QR** on the Referral page (scannable invite link).
+- **Deep app-page localization (EN/AR/ES) — REMAINING**: Leads, CreateCard (card editor), Analytics dialog, and the ScanCardDialog BODY are still English. Done so far: Home, Settings, Team, Notifications, Signatures, Billing, Referral, Landing, Login, Register, PricingSection, **Meetings** (this pass), scanner entitlement banner.
 - **DEFERRED EXTERNAL**: Stripe/RevenueCat/social login/Wallet certs/email/push/SMS/CRM/DNS/SSO/App Store; auth hardening/2FA; destructive cleanup.
+
+## TECH DEBT / LATER (non-blocking)
+- **Legacy key `ariadni_lang`**: i18next localStorage key still named `ariadni_lang` (pre-rebrand). Existing users depend on it — DO NOT rename now. Later: migrate to a neutral key (e.g. `tp_lang`) with a one-time compatibility read of the old key. Do not surface "Ariadni" anywhere new.
+- platform_v1.py ~2013 lines — split into commercial/referral/nfc/admin modules later.
+- `detectMarket()` could be memoized at module scope (called per render in ConsentBanner/LocaleToast).
+- Register referral banner could echo the actual ref code (cosmetic).
+
+## i18n + CONSENT + SCANNER + REFERRAL-QR + AUTO-DETECT (2026-06, iteration 16) — IMPLEMENTED & QA 100%
+- **Language auto-detect** (existing i18next detector confirmed working app-wide): navigator→ar/es/en, key `ariadni_lang`, fallback en, `applyDocumentDir` true RTL. Public LanguageSwitcher added to Landing/Login/Register. Manual choice sets `tp_lang_manual` + persists. INDEPENDENT from currency (`tp_market`).
+- **Auto-detect toast** `LocaleToast.jsx`: one-time (`tp_locale_toast_shown`), only when lang/market auto-selected (not after manual), i18n `common.localeToast`.
+- **Consent & Privacy Center**: `ConsentBanner.jsx` (region-aware — GDPR opt-in for EUR/GBP: Accept all/Reject; else single Accept; persists `tp_consent`; mounted INSIDE BrowserRouter) + `PrivacyCenter.jsx` at `/privacy-center` (necessary always-on, analytics toggle, save, link to /legal/privacy). Additive only — no change to deletion/export/auth/billing.
+- **Scanner exposure**: `ScanCardDialog` shows `scan-entitlement` banner from `/billing` usage.scanner (used/limit/period, unlimited, or unavailable→`scan-upgrade`→/billing). Reuses existing entitlement architecture.
+- **Referral QR**: backend public `GET /api/referral/qr?code=` (reuses `qrcode`, referral_code; 404 unknown/422 missing) + Referral page QR preview/download/copy-code.
+- **Meetings localization** (EN/AR/ES): full page incl. status labels via `meetings.status_*`, filters keep canonical English values for filtering.
+- **Savings derived** from prices (`_annual_savings_pct`) across Billing + public pricing.
+- QA (iteration_16): 7/7 auto-detect matrix, override independence (en+AED, ar+USD), market persist, 2 consent regions, toast once+persist, RTL 0px overflow desktop+mobile, Meetings EN+AR, Referral QR, scanner entitlement, member 403. Fixed crash: ConsentBanner Link was outside BrowserRouter. feras-askar preserved (200).
 
 ## PRICING SINGLE SOURCE OF TRUTH — Public site + dedicated Referral page (2026-06, iteration 15b) — IMPLEMENTED & verified
 User directive: ONE authoritative pricing config across Super Admin → Billing → Public site → trial messaging → referral. No hard-coded prices anywhere; annual savings DERIVED from prices.
