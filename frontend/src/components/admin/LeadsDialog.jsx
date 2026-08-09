@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -45,7 +45,8 @@ export default function LeadsDialog({ open, onOpenChange, onCountChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="aria-dark max-h-[85vh] max-w-2xl overflow-y-auto border-white/10 bg-[#0A0B0D] text-white" data-testid="leads-dialog">
-        <DialogHeader><DialogTitle className="flex items-center gap-2 text-white"><Inbox className="h-5 w-5 text-[#D6A653]" /> Inquiry inbox</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle className="flex items-center gap-2 text-white"><Inbox className="h-5 w-5 text-[#D6A653]" /> Inquiry inbox</DialogTitle>
+        <DialogDescription className="text-white/45">Inquiries submitted from your public profiles. Draft AI follow-ups here.</DialogDescription></DialogHeader>
         {leads === null ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-[#D6A653]" /></div>
         ) : leads.length === 0 ? (

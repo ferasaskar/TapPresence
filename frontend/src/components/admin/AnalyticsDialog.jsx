@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Eye, QrCode, MousePointerClick, Inbox, Loader2 } from "lucide-react";
 
 const Stat = ({ icon: Icon, label, value, testId }) => (
@@ -30,6 +30,7 @@ export default function AnalyticsDialog({ card, open, onOpenChange }) {
       <DialogContent className="aria-dark max-w-lg border-white/10 bg-[#0A0B0D] text-white" data-testid="analytics-dialog">
         <DialogHeader>
           <DialogTitle className="text-white">Analytics · {card?.identity?.fullName || card?.slug}</DialogTitle>
+          <DialogDescription className="text-white/45">Views, scans, action taps and inquiries for this profile.</DialogDescription>
         </DialogHeader>
         {!data ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-[#D6A653]" /></div>

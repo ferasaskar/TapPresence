@@ -150,6 +150,14 @@ User directive: ALL 12 industries must render in ONE identical premium card stru
 - QA (iteration_9): 100% FE — all 12 cards render identical structure, live preview reacts to every industry + accent (incl. red), no console errors, no overflow at 1440/390, `/feras-askar` regression clean.
 - NOTE: `IndustryCard` is currently used on the `/industries` showcase + builder (marketing/preview surface). The full-page public profile templates (Executive Black Gold etc.) remain the actual published-profile renderer and are unchanged.
 
+## Premium Dark Redesign of ALL internal app pages (2026-06-10, iteration 10) — IMPLEMENTED & QA-PASSED (100% FE)
+User directive: every app page must match the premium home-page look (black #050607 + champagne-gold #D6A653, glass-morphism, grain). Internal pages were light/white and inconsistent.
+- Added scoped **`.aria-dark`** theme in `index.css` (dark inputs/textareas/labels/select-triggers) + **`.aria-pop`** for portaled Radix dropdown popovers + `.aria-gold-radial` glow. Public profile templates (beige/executive/future) intentionally NOT affected.
+- Redesigned dark: **Login, Register, Activate (glowing NFC), Legal** (glass cards, gold CTAs), **Admin dashboard** (glass sticky header, bento card gallery, gold badges, framer stagger), **CardEditor** (the profile-completion studio — gold pill tabs, dark inputs, phone-bezel live preview), **ImageUploadField**, and all dialogs (**Leads, Analytics, Scan**). All data-testids + functionality preserved.
+- Fixed the "not working" builder controls: `IndustryCard` now honors **Background Intensity** (soft/medium/rich alpha multiplier), **Position** (left/center/right + distinct **full** = 150% zoom) and **Opacity**; `previewCardConfig` forwards them.
+- Profile-completion flow (answer to user's question): Dashboard `/admin` → New card / Edit → tabs (Identity/Industry/Contact/Social/Services/Projects/Booking) → Published toggle → live preview → Save.
+- QA (iteration_10): 100% FE — login→dashboard→editor save/publish, dialogs, activate, legal, intensity/position/opacity controls all work; no console errors; no overflow at 1440/390; `/feras-askar` + `/industries` regressions clean. Fixed 2 minor findings (full-position distinct; dialog a11y descriptions).
+
 
 
 
