@@ -98,3 +98,11 @@ Native mobile app (Phase 3); Wallet pass generation wiring (5); scanner OCR UI (
 - **Frontend** (`components/profile/WalletButtons.jsx`): "Apple Wallet" / "Google Wallet" buttons on all 3 public templates (beige/black/future variants) next to Share/QR-Poster; graceful "coming soon" toast when not configured, opens pass_url when configured. Tracks `wallet_apple`/`wallet_google` taps.
 - Verified via curl (status + not-configured pass + 400) and public-profile screenshot render.
 
+## Landing Page — high-fidelity reference rebuild (2026-06-09) — IMPLEMENTED (frontend-only) & QA'd
+- Rebuilt `/` to match the provided dark-luxury reference (black #050607 + champagne gold #D6A653). **Frontend-only** — backend, routes, auth, plans, NFC, profiles, leads, teams all untouched.
+- New reusable structure: `pages/Landing.jsx` composes `components/landing/{Navbar, Hero, ConnectionFeatures, JourneyFlow, TemplateShowcase, TeamsTestimonials, FinalCTA, Footer}`; data-driven via `components/landing/data.js`; hero product composition in `components/landing/HeroVisual.jsx`; styles in `components/landing/landing.css`.
+- Sections: sticky navbar (Product/Templates/Solutions/Resources/Pricing/About anchor-scroll; Login→/login, Create Your ID→/register); hero (phone with live ARIADNI profile UI + matte-black NFC card w/ real /feras-askar QR + glowing pedestal + ambient particles); stats row; 6-feature strip; 5-step tap→connection journey; 3 distinct premium template previews + App promo (App Store/Google Play badges + dashboard phone); Teams panel + 3 testimonials; gold-wave final CTA; 5-column footer with newsletter + socials.
+- Motion via framer-motion (staggered hero entrance, scroll reveals) + CSS floats/breathe; `prefers-reduced-motion` respected. Assets: Unsplash portraits + generated gold-wave/ambient textures.
+- QA: desktop (1440), mobile (390, no horizontal overflow) screenshots match reference; CTA/login routing verified (Create Your ID→/register, Login→/login); existing routes intact.
+
+

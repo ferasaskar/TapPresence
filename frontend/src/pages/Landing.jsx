@@ -1,134 +1,411 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "@/lib/api";
-import { Nfc, QrCode, Wallet, ScanLine, Users, Sparkles, ArrowRight, Repeat } from "lucide-react";
+import { motion } from "framer-motion";
+import { Sparkles, ArrowRight, Users, Nfc, PlayCircle, Star, BrainCircuit, LineChart, Linkedin, Twitter, Instagram, Apple, Play } from "lucide-react";
+import "@/components/landing/landing.css";
+import HeroVisual from "@/components/landing/HeroVisual";
+import { NAV_LINKS, STATS, FEATURES, JOURNEY, TEMPLATES, TESTIMONIALS, FOOTER_GROUPS, ASSETS } from "@/components/landing/data";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const reveal = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0 } };
+const Reveal = ({ children, delay = 0, className = "", ...rest }) => (
+  <motion.div className={className} variants={reveal} initial="hidden" whileInView="show"
+    viewport={{ once: true, amount: 0.2 }} transition={{ duration: 0.6, delay, ease: "easeOut" }} {...rest}>
+    {children}
+  </motion.div>
+);
 
-const Feature = ({ icon: Icon, title, desc }) => (
-  <div className="rounded-xl border border-ivory-border bg-white p-6 transition-all duration-300 hover:-translate-y-1 hover:border-[color:#B89973]" data-testid={`feature-${title.toLowerCase().replace(/\s+/g,'-')}`}>
-    <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-lg" style={{ background: "rgba(184,153,115,0.12)" }}>
-      <Icon className="w-5 h-5 text-[#B89973]" strokeWidth={1.5} />
+const AriadniMark = ({ className = "" }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
+    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
+  </svg>
+);
+
+const goTo = (hash) => {
+  const el = document.querySelector(hash);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+const Brand = ({ size = "text-xl" }) => (
+  <span className={`flex items-center gap-2 ${size} font-semibold tracking-tight`} data-testid="brand">
+    <AriadniMark className="h-6 w-6 text-[#D6A653]" />
+    ARIADNI <span className="lp-gold-text">ID</span>
+  </span>
+);
+
+/* ---------------------------------------------------------------- NAVBAR */
+function Navbar() {
+  return (
+    <motion.header initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+      className="sticky top-0 z-50 border-b border-white/5 bg-[#050607]/80 backdrop-blur-xl">
+      <div className="mx-auto flex h-[80px] max-w-[1320px] items-center justify-between px-5 sm:px-8 lg:px-12">
+        <Brand />
+        <nav className="hidden items-center gap-8 text-[15px] lg:flex">
+          {NAV_LINKS.map((l) => (
+            <button key={l.label} onClick={() => goTo(l.to)} className="lp-navlink" data-testid={`nav-${l.label.toLowerCase()}`}>{l.label}</button>
+          ))}
+        </nav>
+        <div className="flex items-center gap-3">
+          <Link to="/login" className="lp-navlink text-[15px]" data-testid="nav-login">Login</Link>
+          <Link to="/register" className="lp-btn-gold rounded-xl px-5 py-2.5 text-[14px]" data-testid="nav-register">Create Your ID</Link>
+        </div>
+      </div>
+    </motion.header>
+  );
+}
+
+/* ---------------------------------------------------------------- HERO */
+function Hero() {
+  return (
+    <section className="relative overflow-hidden">
+      <div className="mx-auto grid max-w-[1320px] grid-cols-1 items-center gap-10 px-5 pb-8 pt-14 sm:px-8 lg:grid-cols-[44%_56%] lg:gap-4 lg:px-12 lg:pt-20">
+        <div className="max-w-[560px]">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}
+            className="inline-flex items-center gap-2 rounded-full border border-[#D6A653]/30 bg-[#0D1014] px-3.5 py-1.5" data-testid="hero-eyebrow">
+            <Sparkles className="h-3.5 w-3.5 text-[#F0CD84]" />
+            <span className="text-[12px] text-[#E6C787]">The Future of Professional Identity</span>
+          </motion.div>
+
+          <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
+            className="mt-6 font-semibold tracking-[-0.03em] text-white"
+            style={{ fontSize: "clamp(42px, 6vw, 70px)", lineHeight: 1.0 }} data-testid="hero-title">
+            Your Professional<br />Identity.<br /><span className="lp-gold-text">Reinvented.</span>
+          </motion.h1>
+
+          <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.32 }}
+            className="mt-6 max-w-[540px] text-[18px] leading-relaxed text-[#A2A6AD]">
+            Digital business cards, NFC technology, AI follow-up and smart analytics — all in one powerful platform.
+          </motion.p>
+
+          <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }}
+            className="mt-8 flex flex-wrap gap-3">
+            <Link to="/register" className="lp-btn-gold inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-create">
+              Create Your ID <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link to="/register?intent=team" className="lp-btn-ghost inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-team">
+              <Users className="h-4 w-4 text-[#D6A653]" /> For Teams
+            </Link>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.54 }}
+            className="mt-10 flex flex-wrap gap-x-10 gap-y-5" data-testid="hero-stats">
+            {STATS.map((s) => (
+              <div key={s.label} className="flex flex-col">
+                <div className="flex items-center gap-1.5">
+                  <s.icon className="h-3.5 w-3.5 text-[#D6A653]" strokeWidth={1.75} />
+                  <span className="lp-gold-text text-2xl font-semibold tracking-tight">{s.value}</span>
+                </div>
+                <span className="mt-0.5 text-[12px] text-[#70757E]">{s.label}</span>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+
+        <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.9, delay: 0.5, ease: "easeOut" }}>
+          <HeroVisual />
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- FEATURES */
+function ConnectionFeatures() {
+  return (
+    <section id="connect" className="mx-auto max-w-[1320px] px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
+      <Reveal className="text-center">
+        <h2 className="font-semibold tracking-tight text-white" style={{ fontSize: "clamp(26px,3.4vw,36px)" }}>
+          One Identity. Every Way to Connect.
+        </h2>
+      </Reveal>
+      <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 lg:gap-4">
+        {FEATURES.map((f, i) => (
+          <Reveal key={f.title} delay={i * 0.05}>
+            <div className="lp-card flex h-full min-h-[196px] flex-col items-center rounded-[18px] px-4 py-6 text-center" data-testid={`feature-${f.title.toLowerCase().replace(/\s+/g, "-").replace(/&/g, "and")}`}>
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10"
+                style={{ background: "radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,0.08), rgba(255,255,255,0.01))" }}>
+                <f.icon className="h-5 w-5" style={{ color: f.tint }} strokeWidth={1.75} />
+              </div>
+              <h3 className="text-[15px] font-semibold text-white">{f.title}</h3>
+              <p className="mt-2 text-[13px] leading-snug text-[#8A8F97]">{f.desc}</p>
+            </div>
+          </Reveal>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- JOURNEY */
+const JourneyVisual = ({ kind }) => {
+  const base = "flex h-full w-full items-center justify-center";
+  if (kind === "card")
+    return <div className={base}><div className="h-14 w-20 rounded-lg border border-[#D6A653]/40 bg-gradient-to-br from-[#17181b] to-black" style={{ boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.04)" }}><div className="mt-2 ml-2 h-4 w-4"><AriadniMark className="h-4 w-4 text-[#D6A653]" /></div></div></div>;
+  if (kind === "profile")
+    return <div className={base}><div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"><div className="h-6 w-6 rounded-full bg-[#D6A653]/50" /><div className="h-1.5 w-10 rounded bg-white/25" /><div className="h-1 w-8 rounded bg-white/12" /></div></div>;
+  if (kind === "contacts")
+    return <div className={`${base} flex-col gap-1.5`}>{[0, 1, 2].map((r) => (<div key={r} className="flex items-center gap-2"><div className="h-4 w-4 rounded-full bg-[#D6A653]/45" /><div className="h-1.5 w-12 rounded bg-white/20" /></div>))}</div>;
+  if (kind === "ai")
+    return <div className={base}><BrainCircuit className="h-10 w-10 text-[#9C7BFF]" strokeWidth={1.4} style={{ filter: "drop-shadow(0 0 14px rgba(122,85,255,0.6))" }} /></div>;
+  return <div className={`${base} items-end gap-1 px-3 pb-3`}>{[24, 34, 46, 60].map((h, i) => (<div key={i} className="w-3 rounded-t bg-gradient-to-t from-[#5FB4FF]/40 to-[#5FB4FF]" style={{ height: h }} />))}</div>;
+};
+
+function JourneyFlow() {
+  return (
+    <section className="mx-auto max-w-[1320px] px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[24%_76%] lg:gap-8">
+        <Reveal>
+          <p className="lp-eyebrow text-[12px]">Smart. Simple. Powerful.</p>
+          <h2 className="mt-3 font-semibold tracking-tight text-white" style={{ fontSize: "clamp(26px,3.2vw,34px)", lineHeight: 1.1 }}>
+            From Tap to<br />True Connection.
+          </h2>
+          <p className="mt-4 text-[15px] leading-relaxed text-[#8A8F97]">
+            ARIADNI ID turns every interaction into a lasting opportunity.
+          </p>
+          <button onClick={() => goTo("#templates")} className="lp-btn-ghost mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="journey-cta">
+            <PlayCircle className="h-4 w-4 text-[#D6A653]" /> See it in Action
+          </button>
+        </Reveal>
+
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-[repeat(5,1fr)] lg:gap-2">
+          {JOURNEY.map((s, i) => (
+            <Reveal key={s.n} delay={i * 0.06} className="relative flex flex-col items-center text-center">
+              <div className={`mb-3 flex h-8 w-8 items-center justify-center rounded-full border text-[13px] font-semibold ${s.kind === "ai" ? "border-[#7A55FF]/60 text-[#B9A3FF]" : "border-[#D6A653]/55 text-[#E6C787]"}`}>{s.n}</div>
+              <div className="lp-card flex h-[118px] w-[118px] items-center justify-center rounded-2xl" data-testid={`journey-step-${s.n}`}>
+                <JourneyVisual kind={s.kind} />
+              </div>
+              <h3 className="mt-4 text-[15px] font-semibold text-white">{s.title}</h3>
+              <p className="mt-1 max-w-[150px] text-[12.5px] leading-snug text-[#8A8F97]">{s.desc}</p>
+              {i < JOURNEY.length - 1 && (
+                <ArrowRight className="absolute right-[-14px] top-[52px] hidden h-4 w-4 text-[#D6A653]/50 lg:block" />
+              )}
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- TEMPLATES + APP */
+const AppBadge = ({ icon: Icon, top, bottom }) => (
+  <div className="lp-btn-ghost inline-flex items-center gap-2.5 rounded-xl px-4 py-2.5">
+    <Icon className="h-5 w-5 text-white" />
+    <span className="flex flex-col leading-tight text-left">
+      <span className="text-[9px] text-[#9aa0a8]">{top}</span>
+      <span className="text-[13px] font-semibold text-white">{bottom}</span>
     </span>
-    <h3 className="font-serif text-xl tracking-tight text-ink">{title}</h3>
-    <p className="mt-1 text-sm text-ink-soft leading-relaxed">{desc}</p>
   </div>
 );
 
-const money = (c) => c == null ? "Custom" : c === 0 ? "$0" : `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
-
-export default function Landing() {
-  const [plans, setPlans] = useState([]);
-  useEffect(() => { api.get("/plans").then((r) => setPlans(r.data.filter((p) => p.public))).catch(() => {}); }, []);
-
+function TemplateShowcase() {
   return (
-    <div className="min-h-screen bg-ivory-bg text-ink font-sans">
-      {/* NAV */}
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <span className="font-serif text-2xl tracking-tight" data-testid="brand">ARIADNI <span className="text-[#B89973]">ID</span></span>
-        <nav className="flex items-center gap-3 text-sm">
-          <Link to="/login" className="text-ink-soft hover:text-ink" data-testid="nav-login">Sign in</Link>
-          <Link to="/register" className="rounded-md bg-ink px-4 py-2 text-ivory-bg transition-colors hover:bg-ink-soft" data-testid="nav-register">Create your ID</Link>
-        </nav>
-      </header>
+    <section id="templates" className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-12 lg:py-16">
+      <Reveal>
+        <div className="rounded-[24px] border border-white/8 bg-[#090B0E] p-6 sm:p-10">
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-[26%_46%_28%] lg:gap-6">
+            {/* left copy */}
+            <div>
+              <p className="lp-eyebrow text-[12px]">Premium Templates</p>
+              <h2 className="mt-3 font-semibold tracking-tight text-white" style={{ fontSize: "clamp(24px,2.8vw,32px)", lineHeight: 1.12 }}>
+                Designed to Impress.<br />Built to Perform.
+              </h2>
+              <p className="mt-4 text-[15px] leading-relaxed text-[#8A8F97]">
+                Choose a template that reflects your style and makes your profile unforgettable.
+              </p>
+              <Link to="/register" className="lp-btn-ghost mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="explore-templates">
+                Explore Templates <ArrowRight className="h-4 w-4 text-[#D6A653]" />
+              </Link>
+            </div>
 
-      {/* HERO */}
-      <section className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 pt-10 pb-20 lg:grid-cols-2">
-        <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-[#B89973]">Premium Digital Identity & Networking</p>
-          <h1 className="mt-5 font-serif text-5xl leading-[1.05] tracking-tight sm:text-6xl">
-            Meet. Connect.<br />Follow&nbsp;Up. <span className="text-[#B89973]">Convert.</span>
-          </h1>
-          <p className="mt-6 max-w-md text-base leading-relaxed text-ink-soft">
-            The digital business card is only the entry point. ARIADNI ID turns every introduction into a captured lead, an AI follow-up, and a closed deal — with NFC, Wallet, QR, and a world-class profile.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/register" className="inline-flex items-center gap-2 rounded-md bg-ink px-6 py-3.5 text-sm tracking-wide text-ivory-bg transition-colors hover:bg-ink-soft" data-testid="cta-create">
-              Create your ID <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link to="/register?intent=nfc" className="inline-flex items-center gap-2 rounded-md border border-ink/20 px-6 py-3.5 text-sm tracking-wide transition-colors hover:bg-ivory-hover" data-testid="cta-nfc">
-              <Nfc className="w-4 h-4 text-[#B89973]" /> Get NFC Card
-            </Link>
-            <Link to="/register?intent=team" className="inline-flex items-center gap-2 rounded-md border border-ink/20 px-6 py-3.5 text-sm tracking-wide transition-colors hover:bg-ivory-hover" data-testid="cta-team">
-              <Users className="w-4 h-4 text-[#B89973]" /> For Teams
-            </Link>
-          </div>
-        </div>
-        {/* Live phone mockup */}
-        <div className="flex justify-center">
-          <div className="relative rounded-[2.5rem] border-[10px] border-ink bg-ink p-0 shadow-2xl" style={{ width: 300, height: 620 }}>
-            <div className="absolute left-1/2 top-3 z-10 h-5 w-28 -translate-x-1/2 rounded-full bg-ink" />
-            <iframe
-              title="Live ARIADNI profile"
-              src={`${BACKEND_URL.replace('/api','')}/feras-askar`}
-              className="h-full w-full rounded-[1.8rem] bg-white"
-              data-testid="hero-live-profile"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* VALUE PROPS */}
-      <section className="border-t border-ivory-border bg-white/60 py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="font-serif text-4xl tracking-tight">One tap. A full networking engine.</h2>
-          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Feature icon={Sparkles} title="Premium Profiles" desc="Three hand-crafted luxury templates with gold, platinum & rose accents." />
-            <Feature icon={Nfc} title="NFC & QR" desc="Tap a card or scan a code — no app needed for the person you meet." />
-            <Feature icon={Wallet} title="Apple & Google Wallet" desc="Your identity, always one swipe away in the phone wallet." />
-            <Feature icon={Repeat} title="Contact Exchange" desc="Capture their details and send yours back — mutually, instantly." />
-            <Feature icon={ScanLine} title="Card & Badge Scanner" desc="Scan paper cards and event badges straight into your CRM." />
-            <Feature icon={Sparkles} title="AI Follow-Up" desc="Draft the perfect follow-up in seconds. You review, you send." />
-          </div>
-        </div>
-      </section>
-
-      {/* VERTICALS */}
-      <section className="py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <p className="text-xs uppercase tracking-[0.35em] text-[#B89973]">Built for how you sell</p>
-          <h2 className="mt-4 font-serif text-4xl tracking-tight">Industry-smart identities</h2>
-          <div className="mt-10 grid grid-cols-2 gap-4 md:grid-cols-4">
-            {["Real Estate", "Sales", "Consultants", "Founders / Tech", "Automotive", "Healthcare", "Agencies", "Enterprise"].map((v) => (
-              <div key={v} className="rounded-lg border border-ivory-border bg-white p-5 text-center" data-testid={`vertical-${v.toLowerCase().replace(/[^a-z]/g,'')}`}>
-                <span className="font-serif text-lg tracking-tight">{v}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* PRICING */}
-      <section className="border-t border-ivory-border bg-white/60 py-20" data-testid="pricing">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="font-serif text-4xl tracking-tight">Simple, premium pricing</h2>
-          <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {plans.map((p) => (
-              <div key={p.id} className="flex flex-col rounded-xl border border-ivory-border bg-white p-7" data-testid={`plan-${p.id}`}>
-                <span className="text-xs uppercase tracking-widest text-[#B89973]">{p.name}</span>
-                <div className="mt-3 font-serif text-4xl tracking-tight">
-                  {money(p.price_month)}{p.price_month ? <span className="text-base text-ink-soft">/mo</span> : null}
+            {/* center: 3 previews */}
+            <div className="flex justify-center gap-3 overflow-x-auto lp-hide-scroll sm:gap-4">
+              {TEMPLATES.map((t) => (
+                <div key={t.name} className="flex shrink-0 flex-col items-center">
+                  <div className="relative h-[300px] w-[158px] overflow-hidden rounded-[20px] border" style={{ background: t.theme.bg, borderColor: t.theme.border }} data-testid={`template-${t.name.toLowerCase().replace(/\s+/g, "-")}`}>
+                    <div className="flex flex-col items-center px-3 pt-6">
+                      <div className="h-16 w-16 overflow-hidden rounded-full ring-2" style={{ ["--tw-ring-color"]: t.theme.accent, boxShadow: `0 0 0 2px ${t.theme.accent}55` }}>
+                        <img src={t.img} alt={t.person} className="h-full w-full object-cover" />
+                      </div>
+                      <p className="mt-3 text-[12px] font-semibold tracking-wide" style={{ color: t.theme.text }}>{t.person}</p>
+                      <p className="text-[9px]" style={{ color: t.theme.accent }}>{t.role}</p>
+                      <div className="mt-4 grid grid-cols-4 gap-1.5">
+                        {[0, 1, 2, 3].map((k) => (
+                          <div key={k} className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: `${t.theme.accent}22`, border: `1px solid ${t.theme.accent}55` }}>
+                            <div className="h-2 w-2 rounded-full" style={{ background: t.theme.accent }} />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 h-6 w-full rounded-md" style={{ background: `${t.theme.accent}30`, border: `1px solid ${t.theme.accent}55` }} />
+                    </div>
+                  </div>
+                  <span className="mt-3 text-[12px] text-[#9aa0a8]">{t.name}</span>
                 </div>
-                {p.per_seat ? <span className="mt-1 text-xs text-ink-soft">per seat, billed annually</span> : null}
-                <Link to="/register" className="mt-6 rounded-md bg-ink px-4 py-2.5 text-center text-sm text-ivory-bg transition-colors hover:bg-ink-soft" data-testid={`plan-cta-${p.id}`}>
-                  {p.custom ? "Contact sales" : "Get started"}
-                </Link>
+              ))}
+            </div>
+
+            {/* right: app promo */}
+            <div className="relative overflow-hidden">
+              <span className="inline-block rounded-full border border-[#D6A653]/40 bg-[#0D1014] px-2.5 py-0.5 text-[10px] font-semibold tracking-wide text-[#E6C787]">NEW</span>
+              <h3 className="mt-3 text-[20px] font-semibold text-white">ARIADNI ID App</h3>
+              <p className="mt-2 text-[14px] leading-relaxed text-[#8A8F97]">
+                Manage your profile, leads, analytics and team — all from one place.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2.5">
+                <AppBadge icon={Apple} top="Download on the" bottom="App Store" />
+                <AppBadge icon={Play} top="GET IT ON" bottom="Google Play" />
               </div>
+              <div className="pointer-events-none mt-6 hidden justify-end lg:flex">
+                <div className="lp-phone h-[180px] w-[150px] translate-x-8 rounded-t-[28px] p-2">
+                  <div className="h-full w-full overflow-hidden rounded-t-[22px] bg-[#0b0c0e] p-3">
+                    <p className="text-[10px] text-neutral-400">Dashboard</p>
+                    <p className="mt-1 lp-gold-text text-[18px] font-semibold">2,413</p>
+                    <p className="text-[8px] text-neutral-500">Profile views</p>
+                    <div className="mt-3 flex items-end gap-1">
+                      {[16, 24, 20, 34, 28, 42].map((h, i) => <div key={i} className="w-2 rounded-t bg-[#5FB4FF]/70" style={{ height: h }} />)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- TEAMS + TESTIMONIALS */
+function TeamsTestimonials() {
+  return (
+    <section id="teams" className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-12 lg:py-16">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[33%_67%]">
+        <Reveal>
+          <div className="lp-card flex h-full flex-col rounded-[22px] p-8">
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+              <Users className="h-5 w-5 text-[#D6A653]" strokeWidth={1.6} />
+            </div>
+            <h3 className="text-[22px] font-semibold text-white">For Teams and Companies</h3>
+            <p className="mt-3 text-[14px] leading-relaxed text-[#8A8F97]">
+              Create, manage and scale your team's digital identity. Lock branding, manage users and analyse performance.
+            </p>
+            <Link to="/register?intent=team" className="lp-btn-ghost mt-6 inline-flex w-fit items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="teams-learn-more">
+              Learn More <ArrowRight className="h-4 w-4 text-[#D6A653]" />
+            </Link>
+          </div>
+        </Reveal>
+
+        <div>
+          <Reveal>
+            <h3 className="text-[22px] font-semibold text-white">Loved by Professionals Worldwide</h3>
+          </Reveal>
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {TESTIMONIALS.map((t, i) => (
+              <Reveal key={t.name} delay={i * 0.07}>
+                <div className="lp-card flex h-full flex-col rounded-[16px] p-5" data-testid={`testimonial-${i}`}>
+                  <div className="flex gap-0.5">
+                    {[0, 1, 2, 3, 4].map((s) => <Star key={s} className="h-3.5 w-3.5 fill-[#D6A653] text-[#D6A653]" />)}
+                  </div>
+                  <p className="mt-3 flex-1 text-[13.5px] leading-relaxed text-[#C7C9CD]">"{t.quote}"</p>
+                  <div className="mt-4 flex items-center gap-3">
+                    <img src={t.img} alt={t.name} className="h-9 w-9 rounded-full object-cover" />
+                    <div>
+                      <p className="text-[13px] font-semibold text-white">{t.name}</p>
+                      <p className="text-[11px] text-[#8A8F97]">{t.role} · {t.company}</p>
+                    </div>
+                  </div>
+                </div>
+              </Reveal>
             ))}
           </div>
-          <p className="mt-6 text-xs text-ink-soft">Prices are admin-configurable. NFC hardware is a separate one-time purchase.</p>
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
 
-      <footer className="border-t border-ivory-border py-10 text-center text-sm text-ink-soft">
-        <p className="font-serif text-xl text-ink">ARIADNI ID</p>
-        <p className="mt-2">© {new Date().getFullYear()} ARIADNI ID · Premium Digital Identity & Networking Platform</p>
-        <div className="mt-3 flex items-center justify-center gap-4 text-xs">
-          <Link to="/legal/privacy" className="hover:text-ink" data-testid="footer-privacy">Privacy</Link>
-          <Link to="/legal/terms" className="hover:text-ink" data-testid="footer-terms">Terms</Link>
-          <Link to="/login" className="hover:text-ink">Sign in</Link>
+/* ---------------------------------------------------------------- FINAL CTA */
+function FinalCTA() {
+  return (
+    <section id="final-cta" className="relative overflow-hidden py-24">
+      <img src={ASSETS.goldWave} alt="" aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[70%] w-full object-cover opacity-70 mix-blend-screen" style={{ transform: "scaleX(-1)" }} />
+      <img src={ASSETS.goldWave} alt="" aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-[70%] w-full object-cover opacity-60 mix-blend-screen" />
+      <Reveal className="relative mx-auto max-w-[1320px] px-5 text-center sm:px-8">
+        <h2 className="mx-auto max-w-[720px] font-semibold tracking-tight text-white" style={{ fontSize: "clamp(28px,3.6vw,40px)", lineHeight: 1.1 }}>
+          Ready to Elevate Your Professional Identity?
+        </h2>
+        <p className="mx-auto mt-4 max-w-[520px] text-[15px] text-[#A2A6AD]">
+          Join thousands of professionals who trust ARIADNI ID.
+        </p>
+        <Link to="/register" className="lp-btn-gold mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-[15px]" data-testid="cta-final">
+          Create Your ID Now <ArrowRight className="h-4 w-4" />
+        </Link>
+      </Reveal>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------------- FOOTER */
+function Footer() {
+  const linkTarget = (label) => {
+    if (label === "Privacy Policy") return "/legal/privacy";
+    if (["For Teams", "For Enterprise", "For Individuals", "Industries"].includes(label)) return "/register?intent=team";
+    if (["Features", "Templates", "Pricing", "Updates"].includes(label)) return "/register";
+    return "/register";
+  };
+  return (
+    <footer id="footer" className="border-t border-white/8 bg-[#070809] pb-10 pt-16">
+      <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-8 px-5 sm:px-8 lg:grid-cols-6 lg:px-12">
+        <div className="col-span-2">
+          <Brand />
+          <p className="mt-4 max-w-[240px] text-[13px] leading-relaxed text-[#70757E]">
+            The future of professional identity. Reinvented.
+          </p>
+          <p className="mt-6 text-[12px] text-[#5b6068]">© {new Date().getFullYear()} ARIADNI ID. All rights reserved.</p>
         </div>
-      </footer>
+        {FOOTER_GROUPS.map((g) => (
+          <div key={g.title}>
+            <h4 className="text-[13px] font-semibold text-white">{g.title}</h4>
+            <ul className="mt-4 space-y-2.5">
+              {g.links.map((l) => (
+                <li key={l}><Link to={linkTarget(l)} className="text-[13px] text-[#8A8F97] transition-colors hover:text-white">{l}</Link></li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <div className="col-span-2 lg:col-span-1">
+          <h4 className="text-[13px] font-semibold text-white">Stay Connected</h4>
+          <p className="mt-4 text-[12px] text-[#8A8F97]">Get updates and tips on digital networking.</p>
+          <form className="mt-3 flex items-center gap-2" onSubmit={(e) => e.preventDefault()}>
+            <input type="email" placeholder="Enter your email" data-testid="footer-email"
+              className="h-10 w-full rounded-lg border border-white/12 bg-[#0D1014] px-3 text-[13px] text-white placeholder:text-[#5b6068] focus:border-[#D6A653]/50 focus:outline-none" />
+            <button type="submit" aria-label="Subscribe" className="lp-btn-gold flex h-10 w-11 shrink-0 items-center justify-center rounded-lg" data-testid="footer-subscribe">
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </form>
+          <div className="mt-4 flex items-center gap-3">
+            {[Linkedin, Twitter, Instagram].map((Icon, i) => (
+              <a key={i} href="#" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 text-[#8A8F97] transition-colors hover:border-[#D6A653]/40 hover:text-[#D6A653]">
+                <Icon className="h-3.5 w-3.5" />
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* ---------------------------------------------------------------- PAGE */
+export default function Landing() {
+  return (
+    <div className="lp-root min-h-screen">
+      <Navbar />
+      <Hero />
+      <ConnectionFeatures />
+      <JourneyFlow />
+      <TemplateShowcase />
+      <TeamsTestimonials />
+      <FinalCTA />
+      <Footer />
     </div>
   );
 }
