@@ -166,6 +166,14 @@ User directive: exactly ONE creation flow. Card Manager → Create Card → Temp
 - **Admin dashboard**: `Create Card` (renamed) + empty-state `Create your first card` both `navigate('/templates')`. Editing an existing card still opens the inline `CardEditor`.
 - QA (iteration_11): 5/5 journeys pass — new-user publish, existing-user save-draft, direct /templates, legacy card edit (no `editor-template` in DOM, /feras-askar intact), no duplicate creation path. Fixed the one finding (mobile /templates header overflow → flex-wrap + collapse labels).
 
+## Published-card visual fidelity + photo crop (2026-06-10, iteration 12) — IMPLEMENTED & QA-PASSED (6/6)
+User: published card must match the approved showcase — accent-consistent panels, faithful industry background, and portrait crop control. Fixed at the template-engine level (all cards).
+- **Accent-driven everything**: `accents.js` `accentGrad` now derives a light→base→dark gradient from the SELECTED accent via new `shadeHex` (no more gold fallback). `InquiryForm` black variant button + inputs derive from `accentColor`. `ExecutiveBlackGold` `<style>` block drives ALL panels/buttons (action buttons, CTA/Book, Send Message, inquiry form, Save Contact, QR, Share, QR Poster, Apple/Google Wallet, services/projects) from the accent — border + tint (`hexToRgba(ac,0.07)`) + hover glow + icon color. Purple card = purple everywhere; gold = gold.
+- **Background atmosphere match**: template scrim base is now tinted with the chosen industry's `base` tone from `INDUSTRY_CARDS` (e.g. Sales → rgb(20,11,30) purple) instead of neutral black, so published matches the showcase mood. Preview & published share the same `TemplateRenderer` logic (parity verified — identical transforms).
+- **Profile photo crop**: new `ProfilePhotoField` (upload / paste URL, draggable circular crop, zoom slider 1–3x, reset). Saved as `identity.imageScale/imageOffsetX/imageOffsetY` (backend `Identity` model extended). Applied via `transform: translate(x%,y%) scale()` on the portrait in preview AND public render.
+- QA (iteration_12): 6/6 pass via computed-style checks — purple panels rgb(167,139,250), gold rgb(201,162,75), bg tones correct, crop persists & preview↔public transform matrices identical, feras-askar regression gold. Temp cards cleaned up.
+- NOTE: fix currently lives in the default `ExecutiveBlackGold` template (all new cards use it). Beige/Future legacy templates unchanged (existing cards safe).
+
 
 
 
