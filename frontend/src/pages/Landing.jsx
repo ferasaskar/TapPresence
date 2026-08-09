@@ -266,7 +266,7 @@ function TemplateShowcase() {
               <p className="mt-4 text-[15px] leading-relaxed text-[#8A8F97]">
                 Choose a template that reflects your style and makes your profile unforgettable.
               </p>
-              <Link to="/register" className="lp-btn-ghost lp-press mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="explore-templates">
+              <Link to="/industries" className="lp-btn-ghost lp-press mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="explore-templates">
                 Explore Templates <ArrowRight className="h-4 w-4 text-[#D6A653]" />
               </Link>
             </div>

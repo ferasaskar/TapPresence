@@ -1,0 +1,46 @@
+{
+  "summary": "Frontend verification for /industries showcase page (bug-fix for 'I can't find the new designs'). Tested route rendering, discoverability from dashboard + landing, live-preview reactivity (industry/accent/base-template/opacity/device toggle), CTAs, mobile layout, and /:slug regression. 13/13 critical tests pass. One minor cosmetic issue: ~6px horizontal overflow on mobile (390px) caused by phone-frame preview.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/industries @ mobile 390px", "issues": ["Minor horizontal overflow (~6px, scrollWidth=396 vs clientWidth=390). Root cause: the mobile phone-frame preview uses `w-full max-w-[390px] border-4` inside a `px-4` section. The 8px border + w-full pushes the .order-1 column to width=380 starting at x=16, extending to right=396. Suggested fix: reduce phone frame width (e.g. max-w-[358px] on mobile) OR wrap preview in a container with overflow-x-hidden, OR remove border-4 on mobile."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL/MINOR: Fix 6px horizontal overflow on /industries at 390px viewport (phone frame + border-4 vs section px-4)."
+  ],
+  "critical_code_review_comments": [
+    "IndustryShowcase.jsx is self-contained and stateful only in local state (as required, no persistence). Good.",
+    "Route /industries correctly placed BEFORE /:slug catch-all in App.js — public profile /feras-askar still 200s."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100% critical / 92% overall (1 minor design)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (works)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 8 backend was verified in iteration_6 (100%). This iteration verified the /industries showcase FE only. All acceptance criteria met: route renders with hero 'One Template. Endless Possibilities.', preview reacts to industry/accent/base-template chips/opacity slider, device toggle works, CTAs link to /register, admin dashboard has data-testid='industry-templates-link' -> /industries, landing 'Explore Templates' -> /industries, mobile shows preview above customizer (order-1: 496 < customizer:1212), and /:slug regression clean (/feras-askar returns 200 and is NOT the showcase page). Only minor cosmetic: 6px mobile overflow.",
+  "test_details": {
+    "passed": [
+      "industries_route (hero visible)",
+      "showcase-preview element present",
+      "preview_reactivity (industry-technology + accent-blue + chip-future-professional changed preview HTML)",
+      "bg-opacity slider (value 0.16 -> 0.5)",
+      "device-mobile / device-desktop toggle clickable",
+      "chip-executive-black-gold / chip-beige-luxury / chip-future-professional switch template without crash",
+      "showcase-apply and showcase-create both href='/register'",
+      "landing explore-templates -> /industries (navigation confirmed)",
+      "admin industry-templates-link visible with href='/industries' (post-login)",
+      "mobile preview appears before customizer in DOM order (order-1)",
+      "public profile /feras-askar returns 200 and is NOT treated as showcase (regression clean)",
+      "/login still renders",
+      "/admin still works with seeded credentials"
+    ],
+    "failed_non_critical": [
+      "Mobile viewport 390px: scrollWidth=396, clientWidth=390 (6px overflow) — cosmetic only"
+    ]
+  }
+}

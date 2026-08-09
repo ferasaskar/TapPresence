@@ -7,6 +7,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Admin from "@/pages/Admin";
 import Landing from "@/pages/Landing";
+import IndustryShowcase from "@/pages/IndustryShowcase";
 import Activate from "@/pages/Activate";
 import Legal from "@/pages/Legal";
 import { Loader2 } from "lucide-react";
@@ -36,6 +37,7 @@ function App() {
             <Route path="/activate" element={<Activate />} />
             <Route path="/legal/:doc" element={<Legal />} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+            <Route path="/industries" element={<IndustryShowcase />} />
             <Route path="/:slug" element={<PublicProfile />} />
           </Routes>
         </BrowserRouter>

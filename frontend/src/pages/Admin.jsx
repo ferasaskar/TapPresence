@@ -8,7 +8,7 @@ import ScanCardDialog from "@/components/admin/ScanCardDialog";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3, ScanLine } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3, ScanLine, Palette } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Admin() {
@@ -64,6 +64,11 @@ export default function Admin() {
             <h1 className="text-lg font-semibold text-neutral-900">Card manager</h1>
           </div>
           <div className="flex items-center gap-3">
+            <a href="/industries" data-testid="industry-templates-link">
+              <Button variant="outline" size="sm">
+                <Palette className="w-4 h-4 mr-1 text-[#B89973]" /> Industry Templates
+              </Button>
+            </a>
             <Button variant="outline" size="sm" onClick={() => setScanOpen(true)} data-testid="scan-button">
               <ScanLine className="w-4 h-4 mr-1 text-[#B89973]" /> Scan card
             </Button>
