@@ -24,7 +24,8 @@
     "industries": "Industry Studio",
     "signatures": "Signatures",
     "integrations": "Integrations",
-    "billing": "Billing"
+    "billing": "Billing",
+    "referral": "Referral"
   },
   "team": {
     "title": "Team & Company",
@@ -176,5 +177,24 @@
     "rewardQueued": "{{pct}}% queued for the following cycle",
     "referredYou": "You have a {{pct}}% referral discount on your plan.",
     "demoNote": "Demo mode — upgrades activate instantly without a real payment. A payment provider will handle billing in production."
+  },
+  "referral": {
+    "title": "Refer & Earn",
+    "subtitle": "Invite friends and earn discounts on your subscription.",
+    "loadError": "Could not load your referral details.",
+    "disabled": "The referral program is currently disabled.",
+    "headline": "Give friends {{referred}}% off their plan, earn {{reward}}% back per referral — up to {{max}}% off your bill each cycle.",
+    "yourCode": "Your code",
+    "referred": "Friends referred",
+    "rewardApplied": "Reward applied",
+    "rewardQueued": "Queued for next cycle",
+    "cap": "cap",
+    "copied": "Invite link copied",
+    "youWereReferred": "You joined with a referral — {{pct}}% off your plan.",
+    "howTitle": "How it works",
+    "step1": "Share your unique invite link or code.",
+    "step2": "Your friend signs up and gets {{referred}}% off their plan.",
+    "step3": "You earn {{reward}}% off per referral, up to {{max}}% each billing cycle (extra rolls to the next cycle).",
+    "fairUse": "Self-referrals aren't counted. Rewards are percentage discounts only — no cash payouts."
   }
 }

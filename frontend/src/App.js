@@ -19,6 +19,7 @@ import IndustryShowcase from "@/pages/IndustryShowcase";
 import CreateCard from "@/pages/CreateCard";
 import Billing from "@/pages/Billing";
 import CommercialSettings from "@/pages/CommercialSettings";
+import Referral from "@/pages/Referral";
 import Meetings from "@/pages/Meetings";
 import ManageMeeting from "@/pages/ManageMeeting";
 import Activate from "@/pages/Activate";
@@ -60,6 +61,7 @@ function App() {
             <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><CreateCard /></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+            <Route path="/referral" element={<ProtectedRoute><Referral /></ProtectedRoute>} />
             <Route path="/admin/commercial" element={<ProtectedRoute><CommercialSettings /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/m/:token" element={<ManageMeeting />} />

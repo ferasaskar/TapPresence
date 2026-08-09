@@ -306,13 +306,27 @@ async def trial_days() -> int:
     return int(tr.get("days", TRIAL_DAYS)) if tr.get("enabled", True) else 0
 
 
+def _annual_savings_pct(monthly, yearly) -> int:
+    try:
+        m, y = float(monthly or 0), float(yearly or 0)
+        if m > 0 and y > 0 and m * 12 > 0:
+            return max(0, round((1 - (y / (m * 12))) * 100))
+    except (TypeError, ValueError):
+        pass
+    return 0
+
+
 def resolve_market_pricing(cfg: dict, market: str) -> dict:
     market = (market or cfg.get("default_market") or "USD").upper()
     rp = (cfg.get("regional_pricing") or {}).get(market)
     if not rp:
         market = cfg.get("default_market", "USD")
         rp = (cfg.get("regional_pricing") or {}).get(market, DEFAULT_COMMERCIAL_CONFIG["regional_pricing"]["USD"])
-    return {"market": market, "symbol": rp.get("symbol", _MARKET_SYMBOL.get(market, "")), **rp}
+    out = {"market": market, "symbol": rp.get("symbol", _MARKET_SYMBOL.get(market, "")), **rp}
+    # annual savings are DERIVED from the configured monthly vs annual prices (never hard-coded)
+    out["pro_annual_savings_pct"] = _annual_savings_pct(rp.get("pro_month"), rp.get("pro_year"))
+    out["team_annual_savings_pct"] = _annual_savings_pct(rp.get("team_seat_month"), rp.get("team_seat_year"))
+    return out
 
 
 class SubscribeIn(BaseModel):

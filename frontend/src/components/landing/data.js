@@ -17,7 +17,7 @@ export const NAV_LINKS = [
   { label: "Templates", to: "#templates" },
   { label: "Solutions", to: "#teams" },
   { label: "Resources", to: "#footer" },
-  { label: "Pricing", to: "#final-cta" },
+  { label: "Pricing", to: "#pricing" },
   { label: "About", to: "#footer" },
 ];
 

@@ -24,7 +24,8 @@
     "industries": "Estudio de sectores",
     "signatures": "Firmas",
     "integrations": "Integraciones",
-    "billing": "Facturación"
+    "billing": "Facturación",
+    "referral": "Referidos"
   },
   "team": {
     "title": "Equipo y empresa",
@@ -176,5 +177,24 @@
     "rewardQueued": "{{pct}}% en cola para el siguiente ciclo",
     "referredYou": "Tienes un {{pct}}% de descuento por referido en tu plan.",
     "demoNote": "Modo demo — las mejoras se activan al instante sin pago real. Un proveedor de pagos gestionará la facturación en producción."
+  },
+  "referral": {
+    "title": "Recomienda y gana",
+    "subtitle": "Invita a amigos y gana descuentos en tu suscripción.",
+    "loadError": "No se pudieron cargar tus datos de referidos.",
+    "disabled": "El programa de referidos está deshabilitado actualmente.",
+    "headline": "Ofrece a tus amigos {{referred}}% de descuento, gana {{reward}}% por referido — hasta {{max}}% de descuento en tu factura cada ciclo.",
+    "yourCode": "Tu código",
+    "referred": "Amigos referidos",
+    "rewardApplied": "Recompensa aplicada",
+    "rewardQueued": "En cola para el próximo ciclo",
+    "cap": "tope",
+    "copied": "Enlace de invitación copiado",
+    "youWereReferred": "Te uniste con un referido — {{pct}}% de descuento en tu plan.",
+    "howTitle": "Cómo funciona",
+    "step1": "Comparte tu enlace o código de invitación único.",
+    "step2": "Tu amigo se registra y obtiene {{referred}}% de descuento en su plan.",
+    "step3": "Ganas {{reward}}% por referido, hasta {{max}}% cada ciclo de facturación (el extra pasa al siguiente ciclo).",
+    "fairUse": "Las autorreferencias no cuentan. Las recompensas son solo descuentos porcentuales — sin pagos en efectivo."
   }
 }

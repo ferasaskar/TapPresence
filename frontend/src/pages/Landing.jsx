@@ -5,6 +5,7 @@ import { Sparkles, ArrowRight, Users, Nfc, PlayCircle, Star, BrainCircuit, LineC
 import "@/components/landing/landing.css";
 import HeroVisual from "@/components/landing/HeroVisual";
 import GoldWaveCanvas from "@/components/landing/GoldWaveCanvas";
+import PricingSection from "@/components/landing/PricingSection";
 import { NAV_LINKS, STATS, FEATURES, JOURNEY, TEMPLATES, TESTIMONIALS, FOOTER_GROUPS, ASSETS } from "@/components/landing/data";
 
 const reveal = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0 } };
@@ -461,6 +462,7 @@ export default function Landing() {
       <JourneyFlow />
       <TemplateShowcase />
       <TeamsTestimonials />
+      <PricingSection />
       <FinalCTA />
       <Footer />
     </div>

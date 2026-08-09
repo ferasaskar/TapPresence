@@ -363,9 +363,16 @@ User-approved commercial rules enforced; provider-neutral (NO real payment provi
 ## REMAINING SAFE ROADMAP (approved, auto-continue) — NOT YET DONE
 - **Localization coverage** (extend existing i18n): Meetings, Leads, CreateCard/editor, Scanner, Analytics dialog, Super Admin / Industry Studio / Integrations internal tools, public marketing/login/register.
 - **Consent / Privacy Center** (audit first — must not touch sensitive account deletion/export semantics without classification).
-- **Scanner commercial exposure** aligned to the approved plan matrix (surface scanner entitlement/usage in-product).
-- **Referral engine surfacing polish** (optional): echo the actual ref code in the register banner; dedicated referral page.
+- **Scanner commercial exposure** deeper surfacing (usage already on Billing).
 - **DEFERRED EXTERNAL** (unchanged): Stripe/RevenueCat/social login/Wallet certs/email/push/SMS/CRM connectors/DNS/SSO/App Store; auth hardening/2FA; destructive cleanup (LeadsDialog, scheduled→confirmed).
+
+## PRICING SINGLE SOURCE OF TRUTH — Public site + dedicated Referral page (2026-06, iteration 15b) — IMPLEMENTED & verified
+User directive: ONE authoritative pricing config across Super Admin → Billing → Public site → trial messaging → referral. No hard-coded prices anywhere; annual savings DERIVED from prices.
+- **Backend**: `resolve_market_pricing()` now returns DERIVED `pro_annual_savings_pct` / `team_annual_savings_pct` via `_annual_savings_pct(monthly, yearly) = round((1 - annual/(monthly*12))*100)`. `/api/commercial/pricing` (public, market-resolved, USD fallback) feeds both the landing and Billing.
+- **Public landing** `components/landing/PricingSection.jsx` (`#pricing`, added to nav): fetches `/api/commercial/pricing`, Monthly/Annual toggle, market selector (USD/AED/SAR/EUR/GBP), Trial/Pro/Team/Enterprise cards, trial-days + referral promo line, and JSON-LD (schema.org Product/Offers) reflecting the SAME resolved config. NO independent price data.
+- **Billing** now shows DERIVED savings (`pricing.*_annual_savings_pct`) instead of the stored `annual_discount_pct`.
+- **Dedicated Referral page** `pages/Referral.jsx` at `/referral` (+ nav Gift pill, EN/AR/ES): code, share link, copy/native-share, stats (referred count / reward applied w/ cap / queued), referred-as note, how-it-works, fair-use. Reuses `GET /api/referral` (authoritative referral config).
+- **Verified (curl, 9-step)**: change Pro monthly → BOTH public + billing update (same value); change Pro annual → savings auto-recalc (e.g. 11.99mo/109.99yr → 24%); change GBP regional price → correct market price resolves; MEMBER PUT /admin/commercial → 403; referral values come from authoritative config. Landing + Billing + Referral pages screenshot-verified rendering from config. Config reverted to approved defaults (9.99/99.99, Save 17%).
 
 
 

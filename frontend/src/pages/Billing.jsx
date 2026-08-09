@@ -73,24 +73,23 @@ export default function Billing() {
   const plans = useMemo(() => {
     if (!c) return [];
     const yr = interval === "year";
-    const pro = c.plans.pro, team = c.plans.team;
+    const team = c.plans.team;
     const proPrice = yr ? pricing.pro_year : pricing.pro_month;
     const teamPrice = yr ? pricing.team_seat_year : pricing.team_seat_month;
     return [
       {
-        id: "trial", name: "Trial", icon: Sparkles, tagline: `${c.trial.days}-day free trial · no card required`,
-        price: fmtMoney(sym, 0), unit: "", features: ["1 profile card", "Full analytics (1 month)", "10 AI follow-ups (total)", "10 card scans (total)", "Lead capture & CRM"],
+        id: "trial", name: "Trial", icon: Sparkles, tagline: `${c.trial.days}-day free trial · no card required`,        price: fmtMoney(sym, 0), unit: "", features: ["1 profile card", "Full analytics (1 month)", "10 AI follow-ups (total)", "10 card scans (total)", "Lead capture & CRM"],
       },
       {
         id: "pro", name: "Pro", icon: Crown, popular: true, tagline: "For professionals",
         price: fmtMoney(sym, proPrice), unit: yr ? "/year" : "/month",
-        save: yr ? `Save ${pro.annual_discount_pct}%` : null,
+        save: yr ? `Save ${pricing.pro_annual_savings_pct}%` : null,
         features: ["Up to 3 cards", "Full analytics (12 months)", "100 AI follow-ups / month", "50 card scans / month", "Remove ARIADNI branding", "Digital wallet passes"],
       },
       {
         id: "team", name: "Team", icon: Users, tagline: `Min ${team.min_seats} seats`,
         price: fmtMoney(sym, teamPrice), unit: yr ? "/seat / year" : "/seat / month",
-        save: yr ? `Save ${team.annual_discount_pct}%` : null,
+        save: yr ? `Save ${pricing.team_annual_savings_pct}%` : null,
         features: ["Unlimited cards", "Team dashboard & roles", "Locked company branding", "100 AI / user / month", "100 scans / user / month", "API access & custom domain"],
       },
       {
@@ -198,7 +197,7 @@ export default function Billing() {
                   </button>
                 ))}
               </div>
-              {interval === "year" ? <span className="text-xs text-[#D6A653]">{t("billing.saveBadge", { pct: c.plans.pro.annual_discount_pct })}</span> : null}
+              {interval === "year" ? <span className="text-xs text-[#D6A653]">{t("billing.saveBadge", { pct: pricing.pro_annual_savings_pct })}</span> : null}
             </div>
 
             {/* plan comparison */}
