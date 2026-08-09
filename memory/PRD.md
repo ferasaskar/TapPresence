@@ -233,6 +233,16 @@ Goal: a MEMBER feels like they have their own account, not the Super Admin syste
 - **Security**: unchanged Phase 1 backend isolation is the source of truth; nav hiding is cosmetic only. Set known passwords for Mona (`Mona@2026`) and Luis (`Luis@2026`) for testing/real login.
 - **Targeted tests (curl, no broad QA)**: Feras→only feras-askar+feras-mahmmoud; Mona→only mona-farah; admin→5 cards (global); Feras→mona/edrina analytics & leads = **403**; Mona→feras leads = **403**; Feras→edit mona card = **403**. Frontend compiles clean. NOTE: authed dashboard nav couldn't be screenshotted in-tool (tool only captures the page_url's initial/unauth state) — visual nav review left to user. Phase 3 NOT started.
 
+## PHASE 3 — Professional Meetings + Leads/Inbox redesign (2026-08-09) — IMPLEMENTED
+UX/UI only; reused existing APIs/models. One tiny additive backend endpoint (lead pipeline stage). No duplicate CRM/meeting systems.
+- **Meetings** (`pages/Meetings.jsx`, rewritten): summary cards with counts — **Today / Upcoming / Pending Approval / Completed**; **List + Calendar** views (List default, mobile-friendly month grid with per-day dots); filters **Type / Status / Card** (Card only when >1 owned card); human-readable status labels only (no raw enums); reused contextual + time-aware actions (Accept/Decline/Propose, Reschedule/Cancel, Completed/No-show gated by time, Revise proposal, View Lead→/leads, AI Follow-up); click a meeting → **detail modal** (guest info, when/tz, source card, notes, actions, reminder status, lead link, status history). No new scheduling logic — all via existing endpoints.
+- **Leads/Inbox** (`pages/Leads.jsx`, new page; entry = Home "View Leads" → `/leads`): pipeline tabs **New / Contacted / Meeting Booked / Qualified / Converted / Archived** (+All) with counts; **search + Source + Card + Date** filters; lead rows show name, email/phone, source, card, latest real activity, meeting-status badge (client join on `lead_id`), stage badge, quick actions **Call / WhatsApp / Email**; **detail modal** with contact, source, card, **stage dropdown** (moves pipeline), meeting info, **activity timeline from real tracked events only** (Lead created + meeting_requested/confirmed/completed/cancelled), and **AI Follow-up** (channel/tone/language, editable draft, copy — draft-only, never auto-sent). Delete lead. Auto-opens `?lead=<id>` from Meetings.
+- Stage derivation (honest, non-fabricating): stored `status` is source of truth; a default "new" lead that has a booking/linked meeting displays under "Meeting Booked" until the owner explicitly moves it.
+- **Backend addition (minimal)**: `PATCH /api/admin/leads/{id}/status` (ownership-checked via `_lead_or_403`; `LEAD_STAGES`). No other backend/CRM/meeting logic changed.
+- Home "View Leads" now routes to `/leads` (removed the old LeadsDialog usage). New route `/leads` in App.js.
+- **Targeted tests (curl)**: lead stage update→200 & persists; invalid stage→400; cross-tenant stage change→**403**; meetings upcoming/past/cancelled→200 scoped to feras-askar only. Frontend compiles (mobile layout OK). Added `.aria-pop` dark dropdown styling. NOTE: authed pages not screenshottable in-tool — visual review left to user.
+- Roadmap phases (Typography, Referral, Billing, Native App) NOT started.
+
 
 
 

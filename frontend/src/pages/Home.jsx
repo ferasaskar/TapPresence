@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { api, resolveImg } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { OwnerNav } from "@/components/admin/OwnerNav";
-import LeadsDialog from "@/components/admin/LeadsDialog";
 import { Loader2, Eye, QrCode, MousePointerClick, Inbox, Pencil, ExternalLink, Share2, CalendarDays, Plus, Clock, User, CheckCircle2, CircleDot } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,7 +29,6 @@ export default function Home() {
   const [stats, setStats] = useState(null);
   const [newLeads, setNewLeads] = useState(0);
   const [meetings, setMeetings] = useState([]);
-  const [leadsOpen, setLeadsOpen] = useState(false);
 
   useEffect(() => {
     api.get("/admin/cards").then(({ data }) => {
@@ -94,7 +92,7 @@ export default function Home() {
                   <Quick icon={Pencil} label="Edit Card" onClick={() => navigate("/admin")} testId="quick-edit" />
                   <Quick icon={ExternalLink} label="View Public" onClick={() => window.open(`/${primary.slug}`, "_blank")} testId="quick-view" />
                   <Quick icon={Share2} label="Share Card" onClick={share} testId="quick-share" />
-                  <Quick icon={Inbox} label="View Leads" onClick={() => setLeadsOpen(true)} testId="quick-leads" />
+                  <Quick icon={Inbox} label="View Leads" onClick={() => navigate("/leads")} testId="quick-leads" />
                   <Quick icon={CalendarDays} label="Meetings" onClick={() => navigate("/meetings")} testId="quick-meetings" />
                   {cards.length > 1 ? <Quick icon={Plus} label={`${cards.length} cards`} onClick={() => navigate("/admin")} testId="quick-allcards" /> : <Quick icon={Plus} label="New Card" onClick={() => navigate("/templates")} testId="quick-newcard" />}
                 </div>
@@ -135,8 +133,6 @@ export default function Home() {
           </div>
         )}
       </main>
-
-      <LeadsDialog open={leadsOpen} onOpenChange={setLeadsOpen} onCountChange={setNewLeads} />
     </div>
   );
 }

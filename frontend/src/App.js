@@ -8,6 +8,7 @@ import Register from "@/pages/Register";
 import Admin from "@/pages/Admin";
 import Home from "@/pages/Home";
 import Settings from "@/pages/Settings";
+import Leads from "@/pages/Leads";
 import Landing from "@/pages/Landing";
 import IndustryShowcase from "@/pages/IndustryShowcase";
 import CreateCard from "@/pages/CreateCard";
@@ -44,6 +45,7 @@ function App() {
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><CreateCard /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/m/:token" element={<ManageMeeting />} />

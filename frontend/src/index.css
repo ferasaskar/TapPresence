@@ -111,3 +111,7 @@ code {
 .aria-pop [role="option"] { color: rgba(255, 255, 255, 0.82); }
 .aria-pop [role="option"][data-highlighted] { background-color: rgba(214, 166, 83, 0.14); color: #fff; }
 .aria-gold-radial { background: radial-gradient(60% 50% at 50% 28%, rgba(214, 166, 83, 0.16), transparent 70%); }
+
+.aria-pop { background:#0A0B0D; border:1px solid rgba(255,255,255,0.1); color:#fff; }
+.aria-pop [role="option"] { color: rgba(255,255,255,0.82); }
+.aria-pop [role="option"][data-highlighted], .aria-pop [role="option"]:hover { background: rgba(214,166,83,0.14); color:#fff; }

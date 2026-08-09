@@ -636,6 +636,21 @@ async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+LEAD_STAGES = ("new", "contacted", "meeting_booked", "qualified", "converted", "archived")
+
+
+@api_router.patch("/admin/leads/{lead_id}/status")
+async def set_lead_status(lead_id: str, body: Dict[str, Any], user: dict = Depends(get_current_user)):
+    """Move a lead through the existing pipeline. Uses the lead model's existing `status` field."""
+    await _lead_or_403(lead_id, user)
+    st = str(body.get("status", "")).lower()
+    if st not in LEAD_STAGES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.leads.update_one({"id": lead_id}, {"$set": {"status": st, "updated_at": now, "last_activity": now}})
+    return {"ok": True}
+
+
 @api_router.get("/admin/cards/{card_id}/analytics")
 async def card_analytics(card_id: str, user: dict = Depends(get_current_user)):
     card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
