@@ -1168,8 +1168,13 @@ async def update_commercial_admin(body: CommercialConfigIn, user: dict = Depends
             raise HTTPException(400, "min_seats must be a number")
     ref = patch.get("referral", {})
     for k in ("referred_discount_month_pct", "referred_discount_year_pct", "referrer_reward_pct", "max_reward_discount_pct"):
-        if ref.get(k) is not None and not (0 <= float(ref[k]) <= 100):
-            raise HTTPException(400, f"{k} must be between 0 and 100")
+        if ref.get(k) is not None:
+            try:
+                v = float(ref[k])
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{k} must be a number")
+            if not (0 <= v <= 100):
+                raise HTTPException(400, f"{k} must be between 0 and 100")
     current = await get_commercial_config()
     merged = _deep_merge(current, patch)
     merged["id"] = "global"
