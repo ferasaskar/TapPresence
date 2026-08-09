@@ -90,6 +90,11 @@ export default function Leads() {
   };
   const closeDetail = () => { setOpenLead(null); if (params.get("lead")) { params.delete("lead"); setParams(params, { replace: true }); } };
 
+  const openAI = async (l) => {
+    await openDetail(l);
+    setTimeout(() => document.getElementById("lead-ai-section")?.scrollIntoView({ behavior: "smooth", block: "center" }), 350);
+  };
+
   const changeStage = async (l, st) => {
     try { await api.patch(`/admin/leads/${l.id}/status`, { status: st }); toast.success(`Moved to ${STAGE_LABEL[st]}`); setLeads((ls) => ls.map((x) => x.id === l.id ? { ...x, status: st } : x)); setOpenLead((o) => o && o.id === l.id ? { ...o, status: st } : o); }
     catch { toast.error("Could not update"); }
@@ -173,10 +178,13 @@ export default function Leads() {
                       </div>
                       <p className="mt-1 text-xs text-white/40">{lastEv ? `${EVENT_LABEL[lastEv.event] || lastEv.event}` : "Inquiry"} · {fmt(l.last_activity || l.created_at)}</p>
                     </div>
-                    <div className="flex shrink-0 gap-1.5">
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                       {l.phone ? <QA icon={Phone} href={`tel:${l.phone}`} label="Call" testId={`lead-call-${l.id}`} /> : null}
                       {l.phone ? <QA icon={MessageCircle} href={`https://wa.me/${digits(l.phone)}`} label="WhatsApp" testId={`lead-wa-${l.id}`} /> : null}
                       {l.email ? <QA icon={Mail} href={`mailto:${l.email}`} label="Email" testId={`lead-email-${l.id}`} /> : null}
+                      <button onClick={(e) => { e.stopPropagation(); openAI(l); }} title="AI Follow-up" data-testid={`lead-ai-${l.id}`} className="flex h-9 items-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 px-2.5 text-xs font-medium text-[#D6A653] transition-colors hover:bg-[#D6A653]/20">
+                        <Sparkles className="h-3.5 w-3.5" /><span className="hidden sm:inline">AI Follow-up</span><span className="sm:hidden">AI</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -248,7 +256,7 @@ export default function Leads() {
                   </div>
 
                   {/* AI follow-up */}
-                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                  <div id="lead-ai-section" className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-ai-section">
                     <div className="mb-2 grid grid-cols-3 gap-2">
                       <Select value={aiOpts.channel} onValueChange={(v) => setAiOpts((o) => ({ ...o, channel: v }))}><SelectTrigger className="h-8 text-xs" data-testid="ai-channel"><SelectValue /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="email">Email</SelectItem><SelectItem value="whatsapp">WhatsApp</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent></Select>
                       <Select value={aiOpts.tone} onValueChange={(v) => setAiOpts((o) => ({ ...o, tone: v }))}><SelectTrigger className="h-8 text-xs" data-testid="ai-tone"><SelectValue /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="professional">Professional</SelectItem><SelectItem value="warm">Warm</SelectItem><SelectItem value="short">Short</SelectItem></SelectContent></Select>

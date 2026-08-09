@@ -243,6 +243,10 @@ UX/UI only; reused existing APIs/models. One tiny additive backend endpoint (lea
 - **Targeted tests (curl)**: lead stage update→200 & persists; invalid stage→400; cross-tenant stage change→**403**; meetings upcoming/past/cancelled→200 scoped to feras-askar only. Frontend compiles (mobile layout OK). Added `.aria-pop` dark dropdown styling. NOTE: authed pages not screenshottable in-tool — visual review left to user.
 - Roadmap phases (Typography, Referral, Billing, Native App) NOT started.
 
+## AI Follow-up discoverability restore (2026-08-09)
+Audit: pre-Phase-3 the only inbox AI was per-lead **AI follow-up** in the now-orphaned `LeadsDialog.jsx` (still in code, unused). Phase 3 moved the SAME feature (same `POST /ai/followup`, same channel/tone/language, editable draft, copy, no auto-send) into the `/leads` Lead Details modal — nothing lost, only less discoverable.
+Fix (UI-only, no new AI/backend/CRM): added a clear **AI Follow-up** quick action (sparkle icon; "AI Follow-up" on ≥sm, "AI" on mobile) on every lead row in `pages/Leads.jsx`, next to Call/WhatsApp/Email. It calls `openAI(l)` → opens that lead's existing detail modal → scrolls to `#lead-ai-section` (the existing AI panel). No duplicate AI component; `LeadsDialog.jsx` left unused. Verified: compiles; `/ai/followup` still returns draft-only (provider openai:gpt-5.4), no auto-send.
+
 
 
 
