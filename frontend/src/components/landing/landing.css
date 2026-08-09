@@ -74,3 +74,75 @@
 }
 .lp-hide-scroll::-webkit-scrollbar { display: none; }
 .lp-hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ---- navbar scroll state ---- */
+.lp-nav { background: transparent; border-color: transparent; transition: background-color .4s ease, border-color .4s ease, backdrop-filter .4s ease; }
+.lp-nav.scrolled { background: rgba(5,6,7,0.72); border-color: rgba(255,255,255,0.06); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+
+/* ---- gold light sweep (subtle, ~8s) ---- */
+.lp-sweep { position: relative; overflow: hidden; isolation: isolate; }
+.lp-sweep::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(115deg, transparent 34%, rgba(255,255,255,0.38) 48%, transparent 62%);
+  transform: translateX(-130%);
+  animation: lpSweep 9s ease-in-out infinite;
+}
+.lp-sweep > * { position: relative; z-index: 2; }
+@keyframes lpSweep { 0%, 62% { transform: translateX(-130%); } 80%, 100% { transform: translateX(130%); } }
+
+/* ---- gold text shine on "Reinvented." ---- */
+.lp-shine {
+  background: linear-gradient(100deg, #B98533 0%, #D6A653 30%, #FBE7BE 46%, #F0CD84 54%, #D6A653 70%, #B98533 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: lpShine 9s ease-in-out infinite;
+}
+@keyframes lpShine { 0%, 60% { background-position: 130% 0; } 85%, 100% { background-position: -30% 0; } }
+
+/* ---- press feedback ---- */
+.lp-press { transition: transform .18s ease, box-shadow .3s ease, filter .3s ease; }
+.lp-press:active { transform: scale(0.98); }
+
+/* ---- feature card pointer tilt + glow ---- */
+.lp-tilt {
+  transform: perspective(700px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--ty, 0px));
+  transition: transform .35s ease, border-color .35s ease, box-shadow .35s ease;
+  position: relative; overflow: hidden;
+}
+.lp-tilt::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s ease;
+  background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 0%), rgba(214,166,83,0.16), transparent 60%);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lp-tilt:hover { border-color: rgba(214,166,83,0.4); box-shadow: 0 20px 55px rgba(0,0,0,0.55); }
+  .lp-tilt:hover::before { opacity: 1; }
+}
+/* mobile: activation glow when card enters viewport */
+.lp-tilt.in-view { border-color: rgba(214,166,83,0.28); }
+
+/* ---- journey connecting signal path ---- */
+.lp-journey-track { position: absolute; background: rgba(255,255,255,0.08); overflow: hidden; border-radius: 999px; }
+.lp-journey-fill {
+  position: absolute; inset: 0; transform-origin: left center; border-radius: 999px;
+  background: linear-gradient(90deg, #D6A653, #F0CD84 55%, #7A9BFF);
+  box-shadow: 0 0 14px rgba(214,166,83,0.5);
+  transition: transform .6s cubic-bezier(.22,.61,.36,1);
+}
+.lp-node { transition: border-color .4s ease, color .4s ease, box-shadow .4s ease; }
+.lp-step-visual { transition: transform .4s ease, border-color .4s ease, box-shadow .4s ease, opacity .4s ease; }
+.lp-step.dim .lp-step-visual { opacity: .45; }
+.lp-step.dim .lp-step-copy { opacity: .5; }
+.lp-step.active .lp-step-visual { border-color: rgba(214,166,83,0.5); box-shadow: 0 0 26px rgba(214,166,83,0.28); transform: translateY(-3px); }
+.lp-step.active.ai .lp-step-visual { border-color: rgba(122,85,255,0.55); box-shadow: 0 0 30px rgba(122,85,255,0.4); }
+.lp-step.done .lp-step-visual { border-color: rgba(214,166,83,0.3); box-shadow: 0 0 16px rgba(214,166,83,0.14); }
+.lp-step.active .lp-node { border-color: rgba(214,166,83,0.8); color: #F0CD84; box-shadow: 0 0 16px rgba(214,166,83,0.4); }
+.lp-step.active.ai .lp-node { border-color: rgba(122,85,255,0.8); color: #B9A3FF; box-shadow: 0 0 16px rgba(122,85,255,0.45); }
+.lp-step.done .lp-node { border-color: rgba(214,166,83,0.5); color: #E6C787; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-sweep::after, .lp-shine { animation: none !important; }
+  .lp-shine { background-position: 40% 0; }
+  .lp-tilt { transform: none !important; }
+}
+

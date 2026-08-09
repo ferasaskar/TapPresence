@@ -105,4 +105,16 @@ Native mobile app (Phase 3); Wallet pass generation wiring (5); scanner OCR UI (
 - Motion via framer-motion (staggered hero entrance, scroll reveals) + CSS floats/breathe; `prefers-reduced-motion` respected. Assets: Unsplash portraits + generated gold-wave/ambient textures.
 - QA: desktop (1440), mobile (390, no horizontal overflow) screenshots match reference; CTA/login routing verified (Create Your ID→/register, Login→/login); existing routes intact.
 
+## Landing Page — "Cinematic Gold Signal" interactive layer (2026-06-09) — IMPLEMENTED (frontend-only) & QA'd
+Design/structure/functionality unchanged; added a performant interactive layer on top.
+- **Signature animated gold wave**: `components/landing/GoldWaveCanvas.jsx` — layered particle ribbons on a transparent canvas (pre-rendered sprite + additive blend), scroll+pointer reactive, `IntersectionObserver` pauses when offscreen, DPR-capped, ~50% fewer particles on mobile, static single frame under reduced-motion. Final CTA = hybrid (loved wave image as calm base + live particles on top).
+- **Hero signal**: subtle gold→blue `variant="hero"` canvas behind phone/NFC (signal "generated" by the card). Phone & NFC card float at different durations + opposite scroll parallax (framer `useScroll`/`useTransform`, disabled under reduced-motion).
+- **Journey (major upgrade)**: scroll-driven illuminated signal path connecting the 5 steps — desktop horizontal line through nodes, mobile vertical timeline; gold→blue gradient fill scales with scroll progress; active/done/dim states; AI step glows purple.
+- **Light sweeps**: `.lp-sweep` (~9s) on primary CTAs + NFC card; `.lp-shine` gold shimmer on "Reinvented.".
+- **Feature cards**: pointer-follow 3D tilt (≤3°) + radial glow (hover-capable only), in-view activation glow on mobile.
+- **Navbar**: transparent at top → translucent blur + hairline border after 24px scroll. **CTAs**: hover lift + `.lp-press` 0.98 active + moving highlight.
+- Accessibility/perf: `prefers-reduced-motion` removes floats/parallax/particle motion (page stays complete); GPU transforms/opacity only; no layout thrash.
+- QA: 1440 + 390 screenshots, reduced-motion, and `scrollWidth<=clientWidth` (no overflow) all verified; routes/functionality untouched.
+
+
 
