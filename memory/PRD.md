@@ -116,5 +116,15 @@ Design/structure/functionality unchanged; added a performant interactive layer o
 - Accessibility/perf: `prefers-reduced-motion` removes floats/parallax/particle motion (page stays complete); GPU transforms/opacity only; no layout thrash.
 - QA: 1440 + 390 screenshots, reduced-motion, and `scrollWidth<=clientWidth` (no overflow) all verified; routes/functionality untouched.
 
+## Phase 8 — Industry Template Personalization (2026-06-09, iteration 6) — IMPLEMENTED & QA-PASSED (100%)
+Data-driven "one base template + industry skin + accent + layered background" — NO per-industry templates, NO breaking changes.
+- **Backend**: `CardData`/`CardUpsert` extended with `industry, background_style, custom_accent_color, background_opacity, background_intensity, background_position, custom_background` (safe defaults ⇒ existing cards unchanged). `GET /api/industries` returns a 12-item catalog (11 industries + Custom) merging Super-Admin `industry_overrides`. `update_card` locked_fields extended: MEMBERs cannot change locked `accent`/`industry`/`background`.
+- **Frontend engine** `lib/industries.js`: `industryRootStyle(card, baseRgb, accentHex)` builds the layered background (readability overlay + image/CSS-pattern) merged onto each template root; returns `{}` when no industry (regression-safe). `lib/accents.js` extended to 7 accent presets + custom hex.
+- **Templates**: all 3 (Beige/Executive/Future) render any industry skin (template-independent); content untouched, background sits behind via root layers; accent supports custom color.
+- **Editor** `components/admin/IndustryCustomizer.jsx` + new "Industry" tab in `CardEditor`: premium dark panel with industry cards, accent swatches + custom picker, per-industry background-style thumbnails, opacity slider (0–30%), intensity (soft/medium/rich), position (left/center/right/full), custom image upload — all update the existing LIVE PREVIEW instantly.
+- **Assets**: 11 generated premium dark industry backgrounds (CDN). Custom industry = user upload via existing storage.
+- QA (iteration_6): backend 5/5; all 8 combos, template independence, existing-card regression, MEMBER locked-fields revert, mobile 2-col grid + no overflow, Arabic RTL — all pass. Demo `feras-askar` = Beige Luxury + Real Estate skyline @20%.
+
+
 
 

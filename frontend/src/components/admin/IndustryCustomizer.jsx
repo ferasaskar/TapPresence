@@ -102,7 +102,7 @@ export default function IndustryCustomizer({ form, set }) {
 
         {/* CUSTOM BACKGROUND */}
         <Section title={ind?.id === "custom" ? "Custom Background" : "Custom Background (optional)"}>
-          <div className="rounded-xl border border-white/10 bg-[#111214] p-3">
+          <div className="rounded-xl border border-white/10 bg-[#111214] p-3" data-testid="upload-custom-bg">
             <ImageUploadField label="" value={form.custom_background} onChange={(v) => set("custom_background", v)} testId="upload-custom-bg" />
             {form.custom_background && (
               <button type="button" onClick={() => set("custom_background", "")} className="mt-2 text-[11px] text-neutral-500 hover:text-white" data-testid="clear-custom-bg">Remove custom image</button>
