@@ -76,6 +76,11 @@ export default function SuperAdmin() {
               </div>
             </div>
 
+            <button onClick={() => navigate("/admin/commercial")} data-testid="goto-commercial" className="mt-6 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#0A0B0D] p-5 text-left transition-colors hover:border-[#D6A653]/40">
+              <span className="flex items-center gap-3"><CreditCard className="h-5 w-5 text-[#D6A653]" /><span><span className="block text-sm font-medium text-white">Commercial &amp; Pricing</span><span className="block text-xs text-white/45">Manage plans, trial, referral and regional pricing</span></span></span>
+              <span className="text-[#D6A653]">→</span>
+            </button>
+
             <button onClick={() => navigate("/industry-studio")} data-testid="goto-industry-studio" className="mt-6 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#0A0B0D] p-5 text-left transition-colors hover:border-[#D6A653]/40">
               <span className="flex items-center gap-3"><Palette className="h-5 w-5 text-[#D6A653]" /><span><span className="block text-sm font-medium text-white">Industry Studio</span><span className="block text-xs text-white/45">Customize industry visual presets across the platform</span></span></span>
               <span className="text-[#D6A653]">→</span>

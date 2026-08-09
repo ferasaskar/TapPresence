@@ -17,6 +17,8 @@ import Leads from "@/pages/Leads";
 import Landing from "@/pages/Landing";
 import IndustryShowcase from "@/pages/IndustryShowcase";
 import CreateCard from "@/pages/CreateCard";
+import Billing from "@/pages/Billing";
+import CommercialSettings from "@/pages/CommercialSettings";
 import Meetings from "@/pages/Meetings";
 import ManageMeeting from "@/pages/ManageMeeting";
 import Activate from "@/pages/Activate";
@@ -57,6 +59,8 @@ function App() {
             <Route path="/integrations" element={<ProtectedRoute><IntegrationHub /></ProtectedRoute>} />
             <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><CreateCard /></ProtectedRoute>} />
+            <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+            <Route path="/admin/commercial" element={<ProtectedRoute><CommercialSettings /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/m/:token" element={<ManageMeeting />} />
             <Route path="/industries" element={<IndustryShowcase />} />

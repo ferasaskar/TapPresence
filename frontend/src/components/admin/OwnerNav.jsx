@@ -7,7 +7,7 @@ import ScanCardDialog from "./ScanCardDialog";
 import { NotificationBell } from "./NotificationCenter";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useLocale } from "@/i18n/useLocale";
-import { Home, CreditCard, CalendarDays, BarChart3, Settings as SettingsIcon, ScanLine, LogOut, ShieldCheck, Users, Mail, Plug } from "lucide-react";
+import { Home, CreditCard, CalendarDays, BarChart3, Settings as SettingsIcon, ScanLine, LogOut, ShieldCheck, Users, Mail, Plug, Receipt } from "lucide-react";
 
 const AriadniMark = ({ className = "" }) => (
   <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
@@ -42,6 +42,7 @@ export const OwnerNav = ({ active }) => {
     { key: "meetings", label: t("nav.meetings"), icon: CalendarDays, onClick: () => navigate("/meetings") },
     { key: "analytics", label: t("nav.analytics"), icon: BarChart3, onClick: () => (primary ? setAnalyticsCard(primary) : navigate("/dashboard")) },
     { key: "signatures", label: t("nav.signatures"), icon: Mail, onClick: () => navigate("/signatures") },
+    { key: "billing", label: t("nav.billing"), icon: Receipt, onClick: () => navigate("/billing") },
     ...(canTeam ? [{ key: "team", label: t("nav.team"), icon: Users, onClick: () => navigate("/team") }] : []),
     ...(canTeam ? [{ key: "integrations", label: t("nav.integrations"), icon: Plug, onClick: () => navigate("/integrations") }] : []),
     ...(isAdmin ? [{ key: "command", label: t("nav.command"), icon: ShieldCheck, onClick: () => navigate("/admin/platform") }] : []),

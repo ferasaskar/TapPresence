@@ -1,0 +1,29 @@
+{
+  "summary": "Independently re-verified ARIADNI ID Commercial Core V1 — backend (pytest 17/17 pass) and frontend (all critical UI flows pass). Public pricing, super-admin config CRUD+persist+guards, billing lifecycle (trial->pro->team) with 402 quota gating on 2nd card, referral engine (discount + reward accrual + 50% cap + queued overflow + one-per-workspace), Billing UI (plan cards, market switch USD->AED, monthly/annual toggle, usage meters, referral card), Super Admin /admin/commercial save+persist+revert, member 403 denied state, and Register ?ref= referral banner — ALL WORKING. Demo card feras-askar preserved (regression suite still green). All qa_ throwaway accounts created were cleaned up via DELETE /api/account fixture teardown.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/register referral banner", "issues": ["Banner shows generic 'You were invited' text but does not echo the actual ref code (e.g. TESTREF123). Cosmetic — spec only requires the banner to appear, which it does. Consider showing the code for transparency."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_commercial_core.py",
+    "/app/test_reports/pytest/commercial_core.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "platform_v1.py is 1976 lines — exceeds 700-line guideline. Recommend splitting into modules (commercial.py, referral.py, admin_commercial.py, auth.py, nfc.py, crm.py, campaigns.py).",
+    "PUT /api/admin/commercial validation for referral pct casts float(ref[k]) without a type-guard around non-numeric values; would raise TypeError->500 rather than 400. Minor hardening opportunity.",
+    "resolve_market_pricing silently falls back to USD on unknown market at the /commercial/pricing public endpoint — good UX — but the PUT /admin/commercial correctly 400s. Consistent enough; no action needed."
+  ],
+  "updated_files": ["/app/backend/tests/test_commercial_core.py"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (9/9 checks)"},
+  "test_credentials": "Admin: admin@ariadni.id / Ariadni@2026 · Member: feras@ariadni.ai / Feras@2026 · Throwaway registrations qa_<uuid>@demo.com / Test@1234 (auto-deleted)",
+  "seed_data_creation": "None persisted — all qa_* accounts deleted via /api/account DELETE fixture teardown. commercial_config pro.price_month temporarily set to 14.44 then reverted to 9.99. NFC minted tokens from prior suites still present (deactivated).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend suite /app/backend/tests/test_commercial_core.py is comprehensive for Commercial V1: run with `REACT_APP_BACKEND_URL=<url> pytest backend/tests/test_commercial_core.py -n 0`. It creates+deletes qa_ users. Note: pytest.ini has -n auto for xdist; use -n 0 to force serial (session fixtures rely on it). Frontend testids for billing/commercial/register are all wired correctly. Interval toggle default is 'year' on load — click interval-month first to see month price.",
+  "rca of the issue": "N/A — no bugs found in this review pass."
+}

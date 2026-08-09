@@ -240,16 +240,86 @@ async def enforce_quota(user: dict, ws_id: str, metric: str):
 
 
 # ------------------------------------------------------------------ Commercial Core: billing (provider-neutral — NO real payment)
+# Legacy static fallback (kept for safety); the authoritative source is the DB-backed commercial_config.
 PRICES = {
     "pro": {"month": 9.99, "year": 99.99},
     "team": {"month": 5.0, "year": 50.0, "min_seats": 3},
 }
+
+# Demo/test activation guard. In preview this allows the internal provider-neutral endpoint to
+# activate a plan WITHOUT a real payment. When a real payment provider becomes the authoritative
+# activation source, set ALLOW_DEMO_BILLING=false (or connect the provider) to disable this path.
+ALLOW_DEMO_BILLING = os.environ.get("ALLOW_DEMO_BILLING", "true").lower() in ("1", "true", "yes")
+
+# Commercial pricing / trial / referral are Super-Admin configurable (DB-backed, no code changes).
+COMMERCIAL_MARKETS = ["USD", "AED", "SAR", "EUR", "GBP"]
+_MARKET_SYMBOL = {"USD": "$", "AED": "AED ", "SAR": "SAR ", "EUR": "€", "GBP": "£"}
+
+DEFAULT_COMMERCIAL_CONFIG = {
+    "id": "global",
+    "trial": {"enabled": True, "days": 14},
+    "plans": {
+        "pro": {"price_month": 9.99, "price_year": 99.99, "annual_discount_pct": 17},
+        "team": {"price_seat_month": 5.0, "price_seat_year": 50.0, "min_seats": 3, "annual_discount_pct": 17},
+    },
+    "referral": {
+        "enabled": True,
+        "referred_discount_month_pct": 20,
+        "referred_discount_year_pct": 20,
+        "referrer_reward_pct": 20,
+        "max_reward_discount_pct": 50,
+    },
+    "default_market": "USD",
+    "regional_pricing": {
+        "USD": {"symbol": "$", "pro_month": 9.99, "pro_year": 99.99, "team_seat_month": 5.0, "team_seat_year": 50.0},
+        "AED": {"symbol": "AED ", "pro_month": 36.99, "pro_year": 369.99, "team_seat_month": 18.0, "team_seat_year": 180.0},
+        "SAR": {"symbol": "SAR ", "pro_month": 37.99, "pro_year": 379.99, "team_seat_month": 19.0, "team_seat_year": 190.0},
+        "EUR": {"symbol": "€", "pro_month": 9.99, "pro_year": 99.99, "team_seat_month": 5.0, "team_seat_year": 50.0},
+        "GBP": {"symbol": "£", "pro_month": 8.99, "pro_year": 89.99, "team_seat_month": 4.5, "team_seat_year": 45.0},
+    },
+}
+
+
+def _deep_merge(base: dict, patch: dict) -> dict:
+    out = dict(base)
+    for k, v in (patch or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+async def get_commercial_config() -> dict:
+    """Single source of truth for commercial config. Seeds defaults if absent; always returns a full doc."""
+    doc = await db.commercial_config.find_one({"id": "global"}, {"_id": 0})
+    if not doc:
+        await db.commercial_config.insert_one(dict(DEFAULT_COMMERCIAL_CONFIG))
+        return dict(DEFAULT_COMMERCIAL_CONFIG)
+    # merge over defaults so newly added keys always resolve
+    return _deep_merge(DEFAULT_COMMERCIAL_CONFIG, doc)
+
+
+async def trial_days() -> int:
+    cfg = await get_commercial_config()
+    tr = cfg.get("trial", {})
+    return int(tr.get("days", TRIAL_DAYS)) if tr.get("enabled", True) else 0
+
+
+def resolve_market_pricing(cfg: dict, market: str) -> dict:
+    market = (market or cfg.get("default_market") or "USD").upper()
+    rp = (cfg.get("regional_pricing") or {}).get(market)
+    if not rp:
+        market = cfg.get("default_market", "USD")
+        rp = (cfg.get("regional_pricing") or {}).get(market, DEFAULT_COMMERCIAL_CONFIG["regional_pricing"]["USD"])
+    return {"market": market, "symbol": rp.get("symbol", _MARKET_SYMBOL.get(market, "")), **rp}
 
 
 class SubscribeIn(BaseModel):
     plan: str
     interval: str = "month"  # month | year
     seats: int = 1
+    market: Optional[str] = None
 
 
 async def _primary_ws_id(user: dict):
@@ -259,42 +329,108 @@ async def _primary_ws_id(user: dict):
 
 
 @platform_router.get("/billing")
-async def get_billing(user: dict = Depends(current_user)):
+async def get_billing(user: dict = Depends(current_user), market: Optional[str] = None):
     ws_id = await _primary_ws_id(user)
     if not ws_id:
         raise HTTPException(404, "No workspace")
     ent = await resolve_entitlements(ws_id)
     ai_used = await get_usage(user["id"], "ai", ent.get("ai_period", "month"))
     sc_used = await get_usage(user["id"], "scanner", ent.get("scanner_period", "month"))
+    cfg = await get_commercial_config()
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "region": 1, "subscription": 1, "referral_rewards": 1})
+    mk = market or ((ws or {}).get("region") or {}).get("default_currency") or cfg.get("default_market", "USD")
+    pricing = resolve_market_pricing(cfg, mk)
+    cards_used = await db.digital_cards.count_documents({"workspace_id": ws_id})
+    # referral discounts: referred-customer discount on their price + referrer reward on their own bill
+    referred = ((ws or {}).get("subscription") or {}).get("referral") or {}
+    reward = (ws or {}).get("referral_rewards") or {}
+    discount = {
+        "referred_month_pct": float(referred.get("discount_month_pct", 0)) if referred else 0,
+        "referred_year_pct": float(referred.get("discount_year_pct", 0)) if referred else 0,
+        "reward_pct": float(reward.get("applied_pct", 0)),
+        "reward_queued_pct": float(reward.get("queued_pct", 0)),
+    }
     return {
         "plan": ent["plan"], "status": ent["status"], "active": ent["active"],
         "trial_ends_at": ent.get("trial_ends_at"), "current_period_end": ent.get("current_period_end"),
-        "seats": ent.get("seats"), "entitlements": ent, "prices": PRICES,
+        "seats": ent.get("seats"), "entitlements": ent,
+        "commercial": {"trial": cfg["trial"], "plans": cfg["plans"], "referral": cfg["referral"],
+                       "pricing": pricing, "markets": COMMERCIAL_MARKETS},
+        "discount": discount,
+        "demo_billing": ALLOW_DEMO_BILLING,
         "usage": {"ai": {"used": ai_used, "limit": ent.get("ai_limit"), "period": ent.get("ai_period")},
-                  "scanner": {"used": sc_used, "limit": ent.get("scanner_limit"), "period": ent.get("scanner_period")}},
+                  "scanner": {"used": sc_used, "limit": ent.get("scanner_limit"), "period": ent.get("scanner_period")},
+                  "cards": {"used": cards_used, "limit": ent.get("max_cards")}},
+    }
+
+
+@platform_router.get("/commercial/pricing")
+async def commercial_pricing(market: Optional[str] = None):
+    """Public resolved pricing for a market — for the billing page + marketing pricing."""
+    cfg = await get_commercial_config()
+    return {
+        "trial": cfg["trial"], "plans": cfg["plans"], "referral": cfg["referral"],
+        "pricing": resolve_market_pricing(cfg, market),
+        "markets": COMMERCIAL_MARKETS,
+        "all_regional": cfg["regional_pricing"],
     }
 
 
 @platform_router.post("/billing/subscribe")
 async def subscribe(body: SubscribeIn, user: dict = Depends(current_user)):
     """Provider-neutral activation. Does NOT connect a real payment provider (deferred).
-    Reactivates the SAME card/URL/QR/NFC by flipping subscription to active."""
+    Reactivates the SAME card/URL/QR/NFC by flipping subscription to active.
+    Demo/test path only — guarded by ALLOW_DEMO_BILLING; the future payment provider is the authoritative source."""
+    if not ALLOW_DEMO_BILLING:
+        raise HTTPException(402, "Payment required. Activation must be completed through the payment provider.")
     ws_id = await _primary_ws_id(user)
     await require_ws_admin(user, ws_id)
     if body.plan not in ("pro", "team", "enterprise"):
         raise HTTPException(400, "Invalid plan")
     if body.interval not in ("month", "year"):
         raise HTTPException(400, "Invalid interval")
+    cfg = await get_commercial_config()
     seats = 1
     if body.plan == "team":
-        seats = max(int(body.seats or 3), PRICES["team"]["min_seats"])
+        min_seats = int(cfg["plans"]["team"].get("min_seats", 3))
+        seats = max(int(body.seats or min_seats), min_seats)
     days = 365 if body.interval == "year" else 30
+    prior = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
     sub = {"plan": body.plan, "status": "active", "interval": body.interval, "seats": seats,
+           "market": (body.market or cfg.get("default_market", "USD")).upper(),
            "trial_ends_at": None,
            "current_period_end": (datetime.now(timezone.utc) + timedelta(days=days)).isoformat(),
-           "updated_at": now_iso()}
+           "activation": "demo", "updated_at": now_iso()}
+    # preserve referred-customer discount linkage across activation
+    _rf = ((prior or {}).get("subscription") or {}).get("referral")
+    if _rf:
+        sub["referral"] = _rf
     await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription": sub, "plan": body.plan}})
     return {"ok": True, "subscription": sub, "entitlements": await resolve_entitlements(ws_id)}
+
+
+@platform_router.get("/referral")
+async def get_referral(user: dict = Depends(current_user)):
+    """Internal referral program surface — my code, referred accounts, reward ledger. No real billing."""
+    ws_id = await _primary_ws_id(user)
+    if not ws_id:
+        raise HTTPException(404, "No workspace")
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0})
+    code = await _ensure_referral_code(ws)
+    cfg = await get_commercial_config()
+    ref_cfg = cfg.get("referral", {})
+    referrals = await db.referrals.find({"referrer_ws_id": ws_id}, {"_id": 0, "referred_email": 0}).to_list(500)
+    ledger = ws.get("referral_rewards") or {"applied_pct": 0, "queued_pct": 0, "count": 0}
+    my_ref = ((ws.get("subscription") or {}).get("referral")) or None
+    share_url = f"{PUBLIC_APP_URL}/register?ref={code}"
+    return {
+        "enabled": bool(ref_cfg.get("enabled")),
+        "code": code, "share_url": share_url,
+        "config": ref_cfg,
+        "referred_count": len(referrals),
+        "reward": ledger,
+        "referred_as": my_ref,
+    }
 
 
 @platform_router.post("/billing/cancel")
@@ -350,6 +486,7 @@ class RegisterIn(BaseModel):
     language: str = "en"
     timezone: str = ""
     currency: str = ""
+    referral_code: Optional[str] = None
 
 
 class RefreshIn(BaseModel):
@@ -367,6 +504,67 @@ class ResetIn(BaseModel):
 
 class VerifyIn(BaseModel):
     token: str
+
+
+async def _gen_referral_code() -> str:
+    for _ in range(10):
+        code = secrets.token_hex(4).upper()  # 8 hex chars
+        if not await db.workspaces.find_one({"referral_code": code}, {"_id": 1}):
+            return code
+    return uuid.uuid4().hex[:10].upper()
+
+
+async def _ensure_referral_code(ws: dict) -> str:
+    if ws.get("referral_code"):
+        return ws["referral_code"]
+    code = await _gen_referral_code()
+    await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"referral_code": code}})
+    return code
+
+
+async def _apply_referral(code: Optional[str], referred_email: str, referred_ws_id: str, referred_uid: str):
+    """Internal, provider-neutral referral. Applies a referred-customer discount and credits the
+    referrer's reward ledger (capped per cycle, overflow queued). NO real billing connection."""
+    if not code:
+        return
+    cfg = await get_commercial_config()
+    ref = cfg.get("referral", {})
+    if not ref.get("enabled"):
+        return
+    referrer_ws = await db.workspaces.find_one({"referral_code": code.strip().upper()}, {"_id": 0})
+    if not referrer_ws:
+        return
+    # anti self-referral: not same workspace, not same account owner
+    if referrer_ws["id"] == referred_ws_id:
+        return
+    owner = await db.users.find_one({"id": referrer_ws.get("owner_id")}, {"_id": 0, "email": 1})
+    if owner and owner.get("email", "").lower() == referred_email.lower():
+        return
+    if await db.referrals.find_one({"referred_ws_id": referred_ws_id}):
+        return  # a workspace can only be referred once
+    # referred-customer discount stored on their subscription
+    dmo = float(ref.get("referred_discount_month_pct", 0))
+    dyr = float(ref.get("referred_discount_year_pct", 0))
+    await db.workspaces.update_one({"id": referred_ws_id}, {"$set": {
+        "subscription.referral": {"referrer_code": code.strip().upper(), "referrer_ws_id": referrer_ws["id"],
+                                  "discount_month_pct": dmo, "discount_year_pct": dyr}}})
+    # referrer reward ledger — capped per cycle, overflow queued
+    reward = float(ref.get("referrer_reward_pct", 0))
+    cap = float(ref.get("max_reward_discount_pct", 50))
+    ledger = referrer_ws.get("referral_rewards") or {"applied_pct": 0, "queued_pct": 0, "count": 0}
+    room = max(0.0, cap - ledger["applied_pct"])
+    add_now = min(reward, room)
+    ledger["applied_pct"] = round(ledger["applied_pct"] + add_now, 2)
+    ledger["queued_pct"] = round(ledger["queued_pct"] + (reward - add_now), 2)
+    ledger["count"] = ledger.get("count", 0) + 1
+    await db.workspaces.update_one({"id": referrer_ws["id"]}, {"$set": {"referral_rewards": ledger}})
+    await db.referrals.insert_one({
+        "id": str(uuid.uuid4()), "code": code.strip().upper(),
+        "referrer_ws_id": referrer_ws["id"], "referrer_user_id": referrer_ws.get("owner_id"),
+        "referred_ws_id": referred_ws_id, "referred_user_id": referred_uid, "referred_email": referred_email,
+        "referred_discount_month_pct": dmo, "referred_discount_year_pct": dyr,
+        "referrer_reward_pct": reward, "status": "pending", "created_at": now_iso(),
+    })
 
 
 async def _issue_session(user, request: Request):
@@ -419,12 +617,22 @@ async def register(body: RegisterIn, request: Request):
     }
     await db.users.insert_one(user)
     ws_id = str(uuid.uuid4())
+    _tdays = await trial_days()
+    if _tdays > 0:
+        _sub = {"plan": "trial", "status": "trialing",
+                "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=_tdays)).isoformat(),
+                "current_period_end": None, "seats": 1, "interval": None}
+        _plan = "trial"
+    else:
+        # trials disabled by Super Admin — start locked until subscribed
+        _sub = {"plan": "trial", "status": "trial_expired",
+                "trial_ends_at": now_iso(), "current_period_end": None, "seats": 1, "interval": None}
+        _plan = "trial"
     await db.workspaces.insert_one({
         "id": ws_id, "name": body.workspace_name.strip() or (body.name.strip() or "My Workspace"),
-        "type": "individual", "plan": "trial", "owner_id": uid,
-        "subscription": {"plan": "trial", "status": "trialing",
-                         "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)).isoformat(),
-                         "current_period_end": None, "seats": 1, "interval": None},
+        "type": "individual", "plan": _plan, "owner_id": uid,
+        "subscription": _sub,
+        "referral_code": await _gen_referral_code(),
         "region": region, "tax": {"tax_country": region["country_code"], "tax_inclusive": False,
                                    "tax_id": "", "status": "unregistered"},
         "branding": {}, "locked_fields": [], "created_at": now_iso(),
@@ -433,6 +641,7 @@ async def register(body: RegisterIn, request: Request):
         "id": str(uuid.uuid4()), "user_id": uid, "workspace_id": ws_id,
         "role": "WORKSPACE_OWNER", "status": "active", "created_at": now_iso(),
     })
+    await _apply_referral(body.referral_code, email, ws_id, uid)
     await db.email_verifications.insert_one({
         "id": str(uuid.uuid4()), "user_id": uid, "token": verify_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), "used": False,
@@ -924,6 +1133,49 @@ async def platform_overview(user: dict = Depends(current_user)):
         "plan_distribution": dict(plan_dist),
         "views_30d": views_30,
     }
+
+
+# ------------------------------------------------------------------ Super Admin: Commercial / Pricing configuration
+class CommercialConfigIn(BaseModel):
+    trial: Optional[dict] = None
+    plans: Optional[dict] = None
+    referral: Optional[dict] = None
+    default_market: Optional[str] = None
+    regional_pricing: Optional[dict] = None
+
+
+@platform_router.get("/admin/commercial")
+async def get_commercial_admin(user: dict = Depends(current_user)):
+    _require_super(user)
+    cfg = await get_commercial_config()
+    return {"config": cfg, "markets": COMMERCIAL_MARKETS, "demo_billing": ALLOW_DEMO_BILLING}
+
+
+@platform_router.put("/admin/commercial")
+async def update_commercial_admin(body: CommercialConfigIn, user: dict = Depends(current_user)):
+    _require_super(user)
+    patch = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if not patch:
+        raise HTTPException(400, "Nothing to update")
+    # validation guards on core commercial rules
+    if patch.get("default_market") and patch["default_market"].upper() not in COMMERCIAL_MARKETS:
+        raise HTTPException(400, "Unknown market")
+    if patch.get("plans", {}).get("team", {}).get("min_seats") is not None:
+        try:
+            if int(patch["plans"]["team"]["min_seats"]) < 1:
+                raise HTTPException(400, "min_seats must be >= 1")
+        except (TypeError, ValueError):
+            raise HTTPException(400, "min_seats must be a number")
+    ref = patch.get("referral", {})
+    for k in ("referred_discount_month_pct", "referred_discount_year_pct", "referrer_reward_pct", "max_reward_discount_pct"):
+        if ref.get(k) is not None and not (0 <= float(ref[k]) <= 100):
+            raise HTTPException(400, f"{k} must be between 0 and 100")
+    current = await get_commercial_config()
+    merged = _deep_merge(current, patch)
+    merged["id"] = "global"
+    await db.commercial_config.update_one({"id": "global"}, {"$set": merged}, upsert=True)
+    await audit(None, user["id"], "commercial_config_updated", {"keys": list(patch.keys())})
+    return {"ok": True, "config": merged}
 
 
 

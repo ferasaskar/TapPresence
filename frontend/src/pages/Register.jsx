@@ -13,7 +13,8 @@ export default function Register() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const intent = params.get("intent");
-  const [f, setF] = useState({ name: "", email: "", password: "", workspace_name: "" });
+  const refCode = params.get("ref") || "";
+  const [f, setF] = useState({ name: "", email: "", password: "", workspace_name: "", referral_code: refCode });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
@@ -46,6 +47,11 @@ export default function Register() {
           <div className="space-y-1.5"><Label>Work email</Label><Input type="email" value={f.email} onChange={set("email")} data-testid="register-email" required /></div>
           <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={f.password} onChange={set("password")} data-testid="register-password" required minLength={6} /></div>
           <div className="space-y-1.5"><Label>Workspace / company (optional)</Label><Input value={f.workspace_name} onChange={set("workspace_name")} data-testid="register-workspace" /></div>
+          {refCode ? (
+            <div className="rounded-xl border border-[#D6A653]/30 bg-[#D6A653]/[0.07] px-3 py-2 text-xs text-[#D6A653]" data-testid="register-referral-banner">
+              🎁 You were invited — a referral discount will be applied to your plan.
+            </div>
+          ) : null}
           {error ? <p className="text-sm text-red-400" data-testid="register-error">{error}</p> : null}
           <Button type="submit" className="w-full rounded-full bg-[#D6A653] font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-[0.98]" disabled={loading} data-testid="register-submit">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create account"}
