@@ -263,14 +263,56 @@ Non-sensitive UX/analytics-presentation phase in `ExecutiveBlackGold.jsx` (+ tin
 - Tests: compiles (pre-existing warning only); sticky hidden→visible on scroll verified; 390px no overflow; Exchange tap fires `/track` + opens dialog (network-captured); preview isolation via publicView.
 
 ## ROADMAP PROGRESS REPORT (running)
-- **COMPLETE**: A1 Typography/Readability · A2 Public Card Conversion Polish · J Analytics Rollups (owner funnel) · D Onboarding Activation (frontend)
+- **COMPLETE**: A1 Typography · A2 Public Card Conversion · J Analytics Rollups · D Onboarding · F Notification Center (+secured notifications) · G Localization (EN/AR-RTL/ES) · M Team/Company Dashboard · L Admin Industry Studio · K Super Admin Command Center
 - **PARTIAL (existing foundations)**: Localization (public done, dashboard strings pending — G) · Entitlements (model done, enforcement scanner-only — C) · Notifications (data+GET done, BUT workspace-scoped not ownership-scoped — see NEEDS APPROVAL) · Team (backend done, dashboard UI pending — M) · Industry overrides (backend done, studio UI pending — L) · Super Admin (config APIs done, tower UI pending — K)
-- **PENDING (internal, non-sensitive next)**: K super-admin tower UI · L industry studio UI · M team dashboard UI · N signature manager · G localization
+- **PENDING (internal safe, next)**: N Email Signature Manager · G string-coverage extension (Meetings/Leads/CreateCard/Settings/Admin/marketing) · Team/Studio/Command RTL physical-property polish
+
+## PHASE L — Admin Industry Studio (2026-08-09) — IMPLEMENTED & verified
+Built on EXISTING `industry_overrides` merge; added missing write layer (SUPER_ADMIN-only, additive, non-destructive).
+- Backend (platform_v1): `_require_super`; `GET /api/admin/industries`, `PUT /api/admin/industries/{id}` (name/accent/opacity/image/status upsert), `DELETE` (reset). Public `/industries` already merges → applies to every new card.
+- Frontend: `pages/IndustryStudio.jsx` at `/industry-studio` — 12 industries editable (accent/opacity/image/enable-disable/save/reset). SUPER_ADMIN gate.
+- Tests: PUT finance opacity→0.22 reflected in public `/industries`; reset 200; Feras(member) PUT→403; UI 12 rows.
+
+## PHASE K — Super Admin Command Center (2026-08-09) — IMPLEMENTED & verified
+Real analytics only — NO fabricated KPIs.
+- Backend: `GET /api/admin/platform/overview` (SUPER_ADMIN) — real counts: workspaces/users/memberships/cards(+published)/leads/meetings(+by status)/plan distribution/30d views.
+- Frontend: `pages/SuperAdmin.jsx` at `/admin/platform` — metric tiles, plan bars, status chips, deep-link to Industry Studio. Nav "Command Center" SUPER_ADMIN-only.
+- Tests: admin overview real (9/14/6/4/8/6/212); Feras(member)→403; UI verified.
+
+## SENSITIVE — AWAITING USER DECISION before enforcement (governance stop)
+- **C Commercial Core**: may build provider-neutral subscription/usage models + paywall UI, but MUST get approved FREE/PRO/TEAM/ENTERPRISE feature+limit matrix before enforcing any gate against existing users/cards/CRM/meetings/teams.
+- **B Referral**: approved economics on file; may build internal engine; STOP before connecting rewards to real billing.
+- **I Auth hardening/2FA/rate-limit**: sensitive auth (integration_expert first).
+
+## PHASE M — Team / Company Dashboard (2026-08-09) — IMPLEMENTED & verified
+Customer-facing B2B team management on the EXISTING permission model — no backend change (all endpoints pre-existed).
+- New `pages/Team.jsx` at `/team`: workspace header (name, plan, seat count), member roster (name/email, role, assigned-card count, status), invite dialog (email/name/role), inline role change, activate/deactivate, remove — owner protected. Localized (EN/AR/ES), mobile-first, data-testids on all controls.
+- Reused: `GET /workspaces/me`, `GET/POST /workspaces/{wid}/members`, `PATCH /members/{uid}`, `DELETE /members/{uid}`, `GET /admin/cards` (for per-member card counts). Backend `require_ws_admin` remains source of truth.
+- Nav: `OwnerNav` shows "Team" only for SUPER_ADMIN or workspace owners (computed via `/workspaces/me` owner_id); members don't get a dead-end; direct-nav members get a friendly admin-only state (backend 403 handled).
+- Tests (curl, admin on ARIADNI HQ): invite→200, role→MANAGER 200, deactivate 200, Feras(member) list→403, remove→200, roster back to 5 (test member cleaned). UI verified at 390px, no overflow.
+
 - **NEEDS APPROVAL (sensitive)**:
-  - 🔴 **Notifications isolation**: `GET /api/notifications` scopes by `workspace_id` only. In a shared workspace (e.g. ARIADNI HQ) a MEMBER would see OTHER members' event notifications. Currently 0 leak observed only because Mona/Luis have no events yet — the scoping itself is not ownership-aware. Building a notification center requires making this ownership-scoped = a permissions change → needs approval before implementation.
+  - ✅ RESOLVED — **Notifications isolation** fixed in Phase F (ownership-aware; security-tested).
   - C entitlement enforcement rules · B referral reward economics · I auth hardening/2FA · any data migration
 - **DEFERRED EXTERNAL**: Stripe/RevenueCat/Wallet certs/social login/email/push/CRM connectors/Zapier/DNS/custom-domain SSL/SSO/App Store
 - **POSTPONED (kept)**: T white-label · U enterprise · V enrichment · W advanced AI · per-card typography preset · legacy cleanup (LeadsDialog, scheduled→confirmed)
+
+## PHASE F — Notification Center + Secured Notifications (2026-08-09) — IMPLEMENTED & security-tested
+Fixed a real tenant/member isolation gap, then built the center on the corrected endpoint. No destructive migration.
+- **Authorization fix (smallest additive)**: notification writes now carry `scope` (`card`/`workspace`/`workspace_admin`) + `card_slug` (card-context) or `recipient_user_id` (user-specific). `GET /api/notifications` rewritten to be **ownership-aware** via `_notif_visibility_query`: user-specific→recipient only; card-context→users who can access that card (member=owner, admin=workspace); workspace/admin scopes→members/admins; **legacy records (no new fields)→workspace admins only** (safe default, no leak). Response now `{items, unread}`.
+- **New endpoints**: `PATCH /api/notifications/{id}/read` (visibility-checked → 404 if not visible), `POST /api/notifications/read-all` (scoped).
+- **Frontend**: `components/admin/NotificationCenter.jsx` — bell + unread badge in shared `OwnerNav` (all owner pages), right-side Sheet (mobile-first), human-readable types, relative timestamps, unread dots, mark-one (+deep-link to /leads or /meetings), mark-all, clean empty state. Reuses existing notification writes; no second system; no email/push/SMS (deferred external).
+- **Security tests (curl, all pass)**: Feras sees only feras-askar (not mona-farah); Mona sees only mona-farah (not feras-askar); SUPER_ADMIN sees all; unauthenticated→401; Feras marks own→200; Feras marks Mona's→404. Test data cleaned.
+- Verified UI: Feras dashboard bell badge=1, center opens, shows real "New inquiry from Amira Nasser · via /feras-askar", mark-all present. Mobile full-width sheet, no overflow.
+
+## PHASE G — Global Localization Architecture (2026-08-09) — IMPLEMENTED & verified
+One shared i18n system so every future screen localizes from the start (no per-screen rebuild later). No backend change.
+- **Stack**: `i18next` + `react-i18next` + language detector. `src/i18n/index.js` (EN/AR/ES resources, fallback en, localStorage `ariadni_lang`), `src/i18n/locales/{en,ar,es}.json` (shared keys: common/nav/home/funnel/onboarding/notifications/settings), `src/i18n/useLocale.js` (single source for `t` + **locale-aware Intl formatters**: number/currency/date/datetime), `components/LanguageSwitcher.jsx` (globe menu in OwnerNav).
+- **True RTL**: `applyDocumentDir` sets `<html dir=rtl lang=ar>` on language change (real layout mirroring, not only translated text); reversible to LTR. Public-card localization behavior untouched.
+- **Applied to**: shared shell (OwnerNav), Home (welcome/stats/quick actions/statuses/upcoming with `formatDateTime`), and the new AnalyticsOverview / OnboardingChecklist / NotificationCenter components. Meetings/Leads/CreateCard/Settings/Admin/marketing string coverage extends incrementally on the same architecture (pattern established).
+- Verified: switch to العربية → `html dir=rtl lang=ar`, nav mirrored right, Arabic strings render (الرئيسية/مسار التحويل/نقرات NFC), 390px no overflow; switch back → ltr/en. Language persists via localStorage.
+
+
 
 ## PHASE J — Analytics Rollups / Owner Funnel (2026-08-09) — IMPLEMENTED & verified
 Additive read-only reporting; no writes, no new event semantics.

@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { OwnerNav } from "@/components/admin/OwnerNav";
 import { AnalyticsOverview } from "@/components/admin/AnalyticsOverview";
 import { OnboardingChecklist } from "@/components/admin/OnboardingChecklist";
+import { useLocale } from "@/i18n/useLocale";
 import { Loader2, Eye, QrCode, MousePointerClick, Inbox, Pencil, ExternalLink, Share2, CalendarDays, Plus, Clock, User, CheckCircle2, CircleDot } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,10 +23,9 @@ const Quick = ({ icon: Icon, label, onClick, testId }) => (
   </button>
 );
 
-const fmt = (iso, tz) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz });
-
 export default function Home() {
   const { user } = useAuth();
+  const { t, formatDateTime } = useLocale();
   const navigate = useNavigate();
   const [cards, setCards] = useState(null);
   const [stats, setStats] = useState(null);
@@ -48,7 +48,7 @@ export default function Home() {
   const share = async () => {
     const url = `${window.location.origin}/${primary.slug}`;
     if (navigator.share) { try { await navigator.share({ title: primary.identity?.fullName, url }); } catch (_) {} }
-    else { try { await navigator.clipboard.writeText(url); toast.success("Link copied"); } catch { toast.error("Could not copy"); } }
+    else { try { await navigator.clipboard.writeText(url); toast.success(t("home.linkCopied")); } catch { toast.error("Could not copy"); } }
   };
 
   return (
@@ -58,16 +58,16 @@ export default function Home() {
 
       <main className="relative mx-auto max-w-7xl px-4 py-8 sm:px-8">
         <div className="mb-6">
-          <h2 className="text-2xl font-light tracking-tight text-white">Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}</h2>
-          <p className="mt-1 text-sm text-white/45">Here's how your presence is performing.</p>
+          <h2 className="text-2xl font-light tracking-tight text-white">{user?.name ? t("home.welcome", { name: user.name.split(" ")[0] }) : t("home.welcomeNoName")}</h2>
+          <p className="mt-1 text-sm text-white/45">{t("home.subtitle")}</p>
         </div>
 
         {cards === null ? (
           <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-[#D6A653]" /></div>
         ) : cards.length === 0 ? (
           <div className="flex flex-col items-center rounded-2xl border border-dashed border-white/12 py-24 text-center" data-testid="home-empty">
-            <p className="text-white/60">You don't have a card yet.</p>
-            <button onClick={() => navigate("/templates")} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#D6A653] px-5 py-2.5 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="home-create-card"><Plus className="h-4 w-4" /> Create your card</button>
+            <p className="text-white/60">{t("home.noCard")}</p>
+            <button onClick={() => navigate("/templates")} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#D6A653] px-5 py-2.5 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="home-create-card"><Plus className="h-4 w-4" /> {t("home.createFirst")}</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -87,18 +87,18 @@ export default function Home() {
                   <span className={primary.status === "published"
                     ? "inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300"
                     : "inline-flex items-center gap-1 rounded-full border border-white/12 bg-white/5 px-2.5 py-0.5 text-[11px] text-white/60"} data-testid="home-status">
-                    {primary.status === "published" ? <CheckCircle2 className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />} {primary.status === "published" ? "Published" : "Draft"}
+                    {primary.status === "published" ? <CheckCircle2 className="h-3 w-3" /> : <CircleDot className="h-3 w-3" />} {primary.status === "published" ? t("home.published") : t("home.draft")}
                   </span>
                   <span className="text-xs text-[#D6A653]/80">/{primary.slug}</span>
                 </div>
 
                 <div className="mt-5 grid grid-cols-2 gap-2">
-                  <Quick icon={Pencil} label="Edit Card" onClick={() => navigate("/admin")} testId="quick-edit" />
-                  <Quick icon={ExternalLink} label="View Public" onClick={() => window.open(`/${primary.slug}`, "_blank")} testId="quick-view" />
-                  <Quick icon={Share2} label="Share Card" onClick={share} testId="quick-share" />
-                  <Quick icon={Inbox} label="View Leads" onClick={() => navigate("/leads")} testId="quick-leads" />
-                  <Quick icon={CalendarDays} label="Meetings" onClick={() => navigate("/meetings")} testId="quick-meetings" />
-                  {cards.length > 1 ? <Quick icon={Plus} label={`${cards.length} cards`} onClick={() => navigate("/admin")} testId="quick-allcards" /> : <Quick icon={Plus} label="New Card" onClick={() => navigate("/templates")} testId="quick-newcard" />}
+                  <Quick icon={Pencil} label={t("home.editCard")} onClick={() => navigate("/admin")} testId="quick-edit" />
+                  <Quick icon={ExternalLink} label={t("home.viewPublic")} onClick={() => window.open(`/${primary.slug}`, "_blank")} testId="quick-view" />
+                  <Quick icon={Share2} label={t("home.shareCard")} onClick={share} testId="quick-share" />
+                  <Quick icon={Inbox} label={t("home.viewLeads")} onClick={() => navigate("/leads")} testId="quick-leads" />
+                  <Quick icon={CalendarDays} label={t("home.meetings")} onClick={() => navigate("/meetings")} testId="quick-meetings" />
+                  {cards.length > 1 ? <Quick icon={Plus} label={t("home.cardsCount", { count: cards.length })} onClick={() => navigate("/admin")} testId="quick-allcards" /> : <Quick icon={Plus} label={t("home.newCard")} onClick={() => navigate("/templates")} testId="quick-newcard" />}
                 </div>
               </div>
             </div>
@@ -107,30 +107,30 @@ export default function Home() {
             <div className="space-y-6 lg:col-span-2">
               <OnboardingChecklist primary={primary} overview={overview} newLeads={newLeads} onNavigate={navigate} />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="home-stats">
-                <Stat icon={Eye} label="Profile views" value={stats?.views} testId="home-views" />
-                <Stat icon={MousePointerClick} label="NFC / taps" value={stats?.taps} testId="home-taps" />
-                <Stat icon={QrCode} label="QR scans" value={stats?.scans} testId="home-scans" />
-                <Stat icon={Inbox} label="New leads" value={newLeads} testId="home-newleads" />
+                <Stat icon={Eye} label={t("home.views")} value={stats?.views} testId="home-views" />
+                <Stat icon={MousePointerClick} label={t("home.taps")} value={stats?.taps} testId="home-taps" />
+                <Stat icon={QrCode} label={t("home.scans")} value={stats?.scans} testId="home-scans" />
+                <Stat icon={Inbox} label={t("home.newLeads")} value={newLeads} testId="home-newleads" />
               </div>
 
               <AnalyticsOverview data={overview} />
 
               <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="home-upcoming">
                 <div className="mb-3 flex items-center justify-between">
-                  <h3 className="flex items-center gap-2 text-sm font-medium text-white"><CalendarDays className="h-4 w-4 text-[#D6A653]" /> Upcoming meetings</h3>
-                  <button onClick={() => navigate("/meetings")} className="text-xs text-[#D6A653] hover:underline" data-testid="home-view-meetings">View all</button>
+                  <h3 className="flex items-center gap-2 text-sm font-medium text-white"><CalendarDays className="h-4 w-4 text-[#D6A653]" /> {t("home.upcoming")}</h3>
+                  <button onClick={() => navigate("/meetings")} className="text-xs text-[#D6A653] hover:underline" data-testid="home-view-meetings">{t("home.viewAll")}</button>
                 </div>
                 {meetings.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-white/45">No upcoming meetings.</p>
+                  <p className="py-6 text-center text-sm text-white/45">{t("home.noMeetings")}</p>
                 ) : (
                   <div className="space-y-2">
                     {meetings.slice(0, 5).map((m) => (
                       <div key={m.id} className="flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3" data-testid={`home-meeting-${m.id}`}>
                         <div className="min-w-0">
                           <p className="truncate text-sm text-white">{m.meeting_type_title} <span className="text-white/40">· {m.visitor_name}</span></p>
-                          <p className="mt-0.5 flex items-center gap-1 text-xs text-white/50"><Clock className="h-3 w-3 text-[#D6A653]" /> {fmt(m.start_utc, m.owner_timezone)}</p>
+                          <p className="mt-0.5 flex items-center gap-1 text-xs text-white/50"><Clock className="h-3 w-3 text-[#D6A653]" /> {formatDateTime(m.start_utc, m.owner_timezone)}</p>
                         </div>
-                        {m.status === "requested" ? <span className="shrink-0 rounded-full border border-[#D6A653]/40 bg-[#D6A653]/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-[#D6A653]">Pending</span> : <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">Confirmed</span>}
+                        {m.status === "requested" ? <span className="shrink-0 rounded-full border border-[#D6A653]/40 bg-[#D6A653]/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-[#D6A653]">{t("home.pending")}</span> : <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">{t("home.confirmed")}</span>}
                       </div>
                     ))}
                   </div>

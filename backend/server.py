@@ -405,6 +405,7 @@ async def create_lead(slug: str, body: LeadIn):
     await db.leads.insert_one(lead)
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
+        "card_slug": slug, "scope": "card",
         "title": f"New inquiry from {body.name.strip()}", "body": f"via /{slug}",
         "read": False, "created_at": now,
     })
@@ -949,6 +950,7 @@ async def public_book(slug: str, body: BookIn):
     await db.leads.update_one({"id": lead_id}, {"$push": {"timeline": {"at": now, "event": "meeting_requested" if approval else "meeting_booked", "detail": mt["title"]}}})
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "meeting_booked",
+        "card_slug": slug, "scope": "card",
         "title": (f"Meeting request from {body.name.strip()}" if approval else f"Meeting booked by {body.name.strip()}"), "body": f"{mt['title']} · via /{slug}", "read": False, "created_at": now,
     })
     await db.analytics_events.insert_one({"id": str(uuid.uuid4()), "cardSlug": slug, "type": "tap", "key": "booking_completed", "created_at": now})

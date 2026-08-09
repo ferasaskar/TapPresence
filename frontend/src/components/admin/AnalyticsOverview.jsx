@@ -1,11 +1,12 @@
 import { TrendingUp, Eye, MousePointerClick, Inbox, CalendarDays, CheckCircle2 } from "lucide-react";
+import { useLocale } from "@/i18n/useLocale";
 
-const STEPS = [
-  { key: "views", label: "Profile views", icon: Eye },
-  { key: "engaged", label: "Engaged (taps)", icon: MousePointerClick },
-  { key: "leads", label: "Leads captured", icon: Inbox },
-  { key: "meetings_booked", label: "Meetings booked", icon: CalendarDays },
-  { key: "meetings_completed", label: "Completed", icon: CheckCircle2 },
+const STEP_KEYS = [
+  { key: "views", tkey: "funnel.views", icon: Eye },
+  { key: "engaged", tkey: "funnel.engaged", icon: MousePointerClick },
+  { key: "leads", tkey: "funnel.leads", icon: Inbox },
+  { key: "meetings_booked", tkey: "funnel.booked", icon: CalendarDays },
+  { key: "meetings_completed", tkey: "funnel.completed", icon: CheckCircle2 },
 ];
 
 const ACTION_LABELS = {
@@ -40,18 +41,20 @@ const Sparkline = ({ series }) => {
 };
 
 export const AnalyticsOverview = ({ data }) => {
+  const { t, formatNumber } = useLocale();
   if (!data) return null;
   const f = data.funnel || {};
   const maxVal = Math.max(f.views || 0, 1);
   const pct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
+  const STEPS = STEP_KEYS.map((s) => ({ ...s, label: t(s.tkey) }));
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="analytics-overview">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-medium text-white">
-          <TrendingUp className="h-4 w-4 text-[#D6A653]" /> Conversion funnel
+          <TrendingUp className="h-4 w-4 text-[#D6A653]" /> {t("funnel.title")}
         </h3>
-        <span className="text-[11px] uppercase tracking-wide text-white/40">Last {data.range_days} days</span>
+        <span className="text-[11px] uppercase tracking-wide text-white/40">{t("funnel.range", { days: data.range_days })}</span>
       </div>
 
       <div className="space-y-2.5" data-testid="overview-funnel">
@@ -64,7 +67,7 @@ export const AnalyticsOverview = ({ data }) => {
               <div className="mb-1 flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-white/70"><Icon className="h-3.5 w-3.5 text-[#D6A653]" /> {s.label}</span>
                 <span className="flex items-center gap-2">
-                  <span className="font-semibold text-white">{val.toLocaleString()}</span>
+                  <span className="font-semibold text-white">{formatNumber(val)}</span>
                   {prev !== null && <span className="text-[10px] text-white/35">{pct(val, prev)}%</span>}
                 </span>
               </div>
@@ -78,14 +81,14 @@ export const AnalyticsOverview = ({ data }) => {
 
       {data.series?.length >= 2 && (
         <div className="mt-5">
-          <p className="mb-1 text-[11px] uppercase tracking-wide text-white/40">Views &amp; scans trend</p>
+          <p className="mb-1 text-[11px] uppercase tracking-wide text-white/40">{t("funnel.trend")}</p>
           <Sparkline series={data.series} />
         </div>
       )}
 
       {data.top_actions?.length > 0 && (
         <div className="mt-5" data-testid="overview-top-actions">
-          <p className="mb-2 text-[11px] uppercase tracking-wide text-white/40">Top actions</p>
+          <p className="mb-2 text-[11px] uppercase tracking-wide text-white/40">{t("funnel.topActions")}</p>
           <div className="flex flex-wrap gap-2">
             {data.top_actions.map((a) => (
               <span key={a.key} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] text-white/70" data-testid={`top-action-${a.key}`}>

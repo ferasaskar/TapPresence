@@ -694,6 +694,93 @@ async def list_industries():
     return {"industries": out}
 
 
+def _require_super(user: dict):
+    if user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Super admin only")
+
+
+_INDUSTRY_IDS = {i["id"] for i in INDUSTRY_CATALOG}
+
+
+class IndustryOverrideIn(BaseModel):
+    name: Optional[str] = None
+    recommended_accent: Optional[str] = None
+    default_opacity: Optional[float] = None
+    image: Optional[str] = None
+    status: Optional[str] = None  # active | disabled
+
+
+@platform_router.get("/admin/industries")
+async def admin_list_industries(user: dict = Depends(current_user)):
+    """Super-admin view: default catalog + any saved overrides + effective merged values."""
+    _require_super(user)
+    overrides = await db.industry_overrides.find({}, {"_id": 0}).to_list(200)
+    by_id = {o["id"]: o for o in overrides}
+    out = []
+    for ind in INDUSTRY_CATALOG:
+        ov = by_id.get(ind["id"], {})
+        out.append({
+            "id": ind["id"], "default": ind,
+            "override": {k: v for k, v in ov.items() if k != "id"},
+            "effective": {**ind, **ov},
+        })
+    return {"industries": out}
+
+
+@platform_router.put("/admin/industries/{industry_id}")
+async def upsert_industry_override(industry_id: str, body: IndustryOverrideIn, user: dict = Depends(current_user)):
+    _require_super(user)
+    if industry_id not in _INDUSTRY_IDS:
+        raise HTTPException(404, "Unknown industry")
+    if body.status is not None and body.status not in ("active", "disabled"):
+        raise HTTPException(400, "Invalid status")
+    patch = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if not patch:
+        raise HTTPException(400, "Nothing to update")
+    patch["id"] = industry_id
+    await db.industry_overrides.update_one({"id": industry_id}, {"$set": patch}, upsert=True)
+    return {"ok": True}
+
+
+@platform_router.delete("/admin/industries/{industry_id}")
+async def reset_industry_override(industry_id: str, user: dict = Depends(current_user)):
+    _require_super(user)
+    await db.industry_overrides.delete_one({"id": industry_id})
+    return {"ok": True}
+
+
+@platform_router.get("/admin/platform/overview")
+async def platform_overview(user: dict = Depends(current_user)):
+    """Super Admin business control tower — REAL counts only, no fabricated KPIs."""
+    _require_super(user)
+    from collections import Counter
+    workspaces = await db.workspaces.find({}, {"_id": 0, "plan": 1, "name": 1}).to_list(5000)
+    plan_dist = Counter((w.get("plan") or "free") for w in workspaces)
+    cards = await db.digital_cards.find({}, {"_id": 0, "status": 1}).to_list(20000)
+    published = sum(1 for c in cards if c.get("status") == "published")
+    users_count = await db.users.count_documents({})
+    members_count = await db.memberships.count_documents({})
+    leads_count = await db.leads.count_documents({})
+    meetings = await db.meetings.find({}, {"_id": 0, "status": 1}).to_list(20000)
+    meet_by_status = Counter((m.get("status") or "unknown") for m in meetings)
+    views_30 = await db.analytics_events.count_documents(
+        {"type": "view", "created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()}})
+    return {
+        "workspaces": len(workspaces),
+        "users": users_count,
+        "memberships": members_count,
+        "cards": len(cards),
+        "cards_published": published,
+        "leads": leads_count,
+        "meetings": len(meetings),
+        "meetings_by_status": dict(meet_by_status),
+        "plan_distribution": dict(plan_dist),
+        "views_30d": views_30,
+    }
+
+
+
+
 # ------------------------------------------------------------------ contact exchange (unified lead)
 class ExchangeIn(BaseModel):
     name: str
@@ -726,6 +813,7 @@ async def contact_exchange(slug: str, body: ExchangeIn):
     await db.leads.insert_one(lead)
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
+        "card_slug": slug, "scope": "card",
         "title": f"New contact from {body.name.strip()}", "body": f"via {body.source}",
         "read": False, "created_at": now_iso(),
     })
@@ -1004,6 +1092,7 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
     await db.leads.insert_one(lead)
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
+        "card_slug": body.cardSlug, "scope": "card",
         "title": f"Scanned lead: {lead['name']}", "body": f"via {source}",
         "read": False, "created_at": now_iso(),
     })
@@ -1019,11 +1108,67 @@ async def ai_enrich(body: dict, user: dict = Depends(current_user)):
     return {"configured": True, "data": {}}
 
 # ------------------------------------------------------------------ notifications
+NOTIF_ADMIN_WS_ROLES = {"WORKSPACE_OWNER", "WORKSPACE_ADMIN", "MANAGER"}
+
+
+async def _notif_visibility_query(user: dict) -> dict:
+    """Ownership-aware notification visibility. Backend is the source of truth.
+    - user-specific  -> only the addressed recipient
+    - card-context   -> only users who can access that card (member=owner, admin=workspace)
+    - workspace-wide -> members of that workspace
+    - workspace_admin activity -> workspace admins only
+    - legacy records (no scope/card_slug/recipient) -> workspace admins only (safe default, no leak)
+    """
+    if user.get("role") == "SUPER_ADMIN":
+        return {}
+    ms = await db.memberships.find({"user_id": user["id"]}, {"_id": 0}).to_list(200)
+    member_ws = [m["workspace_id"] for m in ms]
+    admin_ws = [m["workspace_id"] for m in ms if m.get("role") in NOTIF_ADMIN_WS_ROLES]
+    # cards the caller can access (admins: whole workspace; members: only owned)
+    ors = []
+    for m in ms:
+        if m.get("role") in NOTIF_ADMIN_WS_ROLES:
+            ors.append({"workspace_id": m["workspace_id"]})
+        else:
+            ors.append({"workspace_id": m["workspace_id"], "owner_user_id": user["id"]})
+    slugs = []
+    if ors:
+        cards = await db.digital_cards.find({"$or": ors}, {"_id": 0, "slug": 1}).to_list(5000)
+        slugs = [c["slug"] for c in cards]
+    conditions = [
+        {"recipient_user_id": user["id"]},
+        {"scope": "card", "card_slug": {"$in": slugs}},
+        {"scope": "workspace", "workspace_id": {"$in": member_ws}},
+        {"scope": "workspace_admin", "workspace_id": {"$in": admin_ws}},
+        {"scope": {"$exists": False}, "card_slug": {"$exists": False},
+         "recipient_user_id": {"$exists": False}, "workspace_id": {"$in": admin_ws}},
+    ]
+    return {"$or": conditions}
+
+
 @platform_router.get("/notifications")
 async def notifications(user: dict = Depends(current_user)):
-    ws_ids = await workspace_ids_for(user)
-    q = {} if ws_ids == "ALL" else {"workspace_id": {"$in": ws_ids}}
-    return await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    q = await _notif_visibility_query(user)
+    items = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    unread = sum(1 for n in items if not n.get("read"))
+    return {"items": items, "unread": unread}
+
+
+@platform_router.patch("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, user: dict = Depends(current_user)):
+    q = await _notif_visibility_query(user)
+    n = await db.notifications.find_one({"$and": [{"id": notif_id}, q]}, {"_id": 0})
+    if not n:
+        raise HTTPException(404, "Notification not found")
+    await db.notifications.update_one({"id": notif_id}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@platform_router.post("/notifications/read-all")
+async def mark_all_notifications_read(user: dict = Depends(current_user)):
+    q = await _notif_visibility_query(user)
+    res = await db.notifications.update_many({"$and": [q, {"read": False}]}, {"$set": {"read": True}})
+    return {"ok": True, "updated": res.modified_count}
 
 # ------------------------------------------------------------------ integration status (placeholders)
 @platform_router.get("/integrations/status")
@@ -1107,6 +1252,7 @@ async def invite_member(wid: str, body: MemberIn, user: dict = Depends(current_u
     await require_ws_admin(user, wid)
     u, created = await _create_member(wid, body.email, body.name, body.role)
     await db.notifications.insert_one({"id": str(uuid.uuid4()), "workspace_id": wid, "type": "team_invite",
+                                       "scope": "workspace_admin",
                                        "title": f"Invited {body.email}", "body": "", "read": False, "created_at": now_iso()})
     await audit(wid, user["id"], "team.invite", {"email": body.email, "created_user": created})
     return {"ok": True, "user_id": u["id"], "created": created}
