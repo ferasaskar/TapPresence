@@ -2,21 +2,16 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import IndustryCustomizer from "@/components/admin/IndustryCustomizer";
 import IndustryCards from "@/components/landing/IndustryCards";
-import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
+import { IndustryCard } from "@/components/landing/IndustryCard";
+import { INDUSTRY_CARDS, previewCardConfig } from "@/lib/industryCards";
 import { ASSETS } from "@/components/landing/data";
-import { ArrowLeft, ArrowRight, Smartphone, Monitor } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 const AriadniMark = ({ className = "" }) => (
   <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
     <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
   </svg>
 );
-
-const TEMPLATE_CHIPS = [
-  { id: "executive-black-gold", label: "Executive Black Gold" },
-  { id: "beige-luxury", label: "Beige Luxury" },
-  { id: "future-professional", label: "Future Professional" },
-];
 
 const DEMO = {
   slug: "preview", templateId: "executive-black-gold", accent: "gold", custom_accent_color: "", status: "published",
@@ -40,13 +35,20 @@ const DEMO = {
 
 export default function IndustryShowcase() {
   const [demo, setDemo] = useState(DEMO);
-  const [device, setDevice] = useState("mobile");
 
   const set = (path, value) => {
     setDemo((f) => {
       const next = { ...f };
       if (path.includes(".")) { const [g, k] = path.split("."); next[g] = { ...next[g], [k]: value }; }
       else next[path] = value;
+      if (path === "industry") {
+        const p = INDUSTRY_CARDS.find((c) => c.id === value);
+        if (p) {
+          next.accent = p.accentId;
+          next.custom_accent_color = "";
+          next.identity = { ...next.identity, fullName: p.name, jobTitle: p.role, company: p.company, profilePhoto: p.portrait };
+        }
+      }
       return next;
     });
   };
@@ -89,38 +91,17 @@ export default function IndustryShowcase() {
       <section className="mx-auto max-w-[1280px] px-4 pt-16 sm:px-8">
         <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#D6A653]">Build Your Own</p>
         <h2 className="mt-2 text-[26px] font-semibold text-white">Customize &amp; preview live</h2>
+        <p className="mt-2 max-w-[620px] text-[14px] leading-relaxed text-neutral-400">
+          One master card. Pick an industry to change the mood, background and accent — the card structure stays exactly the same.
+        </p>
       </section>
 
       {/* main: live preview + customizer */}
       <section className="mx-auto grid max-w-[1280px] gap-8 px-4 pb-20 pt-10 sm:px-8 lg:grid-cols-[1fr_420px]">
         {/* preview column */}
         <div className="order-1">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            {TEMPLATE_CHIPS.map((t) => (
-              <button key={t.id} onClick={() => set("templateId", t.id)}
-                className={`rounded-full border px-4 py-2 text-[12px] transition-colors ${demo.templateId === t.id ? "border-[#D6A653] bg-[#D6A653]/12 text-white" : "border-white/12 text-neutral-400 hover:border-white/30"}`}
-                data-testid={`chip-${t.id}`}>{t.label}</button>
-            ))}
-            <div className="ml-auto flex items-center gap-1 rounded-full border border-white/12 p-1">
-              <button onClick={() => setDevice("mobile")} className={`flex h-8 w-8 items-center justify-center rounded-full ${device === "mobile" ? "bg-white/10 text-white" : "text-neutral-500"}`} data-testid="device-mobile"><Smartphone className="h-4 w-4" /></button>
-              <button onClick={() => setDevice("desktop")} className={`flex h-8 w-8 items-center justify-center rounded-full ${device === "desktop" ? "bg-white/10 text-white" : "text-neutral-500"}`} data-testid="device-desktop"><Monitor className="h-4 w-4" /></button>
-            </div>
-          </div>
-
-          <div className="flex justify-center">
-            {device === "mobile" ? (
-              <div className="w-full max-w-[340px] overflow-hidden rounded-[36px] border-4 border-neutral-800 bg-black shadow-2xl sm:max-w-[390px]">
-                <div className="h-[680px] overflow-y-auto" data-testid="showcase-preview">
-                  <TemplateRenderer data={demo} />
-                </div>
-              </div>
-            ) : (
-              <div className="w-full overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
-                <div className="h-[680px] overflow-y-auto" data-testid="showcase-preview">
-                  <TemplateRenderer data={demo} />
-                </div>
-              </div>
-            )}
+          <div className="flex justify-center rounded-3xl border border-white/8 bg-gradient-to-b from-[#0a0b0d] to-[#050607] px-4 py-12" data-testid="showcase-preview">
+            <IndustryCard c={previewCardConfig(demo)} />
           </div>
         </div>
 

@@ -7,8 +7,8 @@ const hexToRgba = (hex, a) => {
 };
 
 const SETS = {
-  "beige-luxury": { gold: "#B89973", platinum: "#8C8F94", rose: "#BC8A82", blue: "#5B84B1", emerald: "#4E8C74", purple: "#8A6FB0", bronze: "#A9743B" },
-  "executive-black-gold": { gold: "#C9A24B", platinum: "#C3C7CE", rose: "#D6A0A0", blue: "#5FA8E8", emerald: "#52B788", purple: "#A78BFA", bronze: "#C08A3E" },
+  "beige-luxury": { gold: "#B89973", platinum: "#8C8F94", rose: "#BC8A82", blue: "#5B84B1", emerald: "#4E8C74", purple: "#8A6FB0", bronze: "#A9743B", red: "#B5544B" },
+  "executive-black-gold": { gold: "#C9A24B", platinum: "#C3C7CE", rose: "#D6A0A0", blue: "#5FA8E8", emerald: "#52B788", purple: "#A78BFA", bronze: "#C08A3E", red: "#E5544B" },
   "future-professional": {
     gold: { p: "#E7B24B", s: "#C98A2B" },
     platinum: { p: "#4AA8FF", s: "#7A5CFF" },
@@ -17,6 +17,7 @@ const SETS = {
     emerald: { p: "#34D399", s: "#0E9E6E" },
     purple: { p: "#A78BFA", s: "#7A5CFF" },
     bronze: { p: "#D8A24B", s: "#9F6F29" },
+    red: { p: "#FF6A5C", s: "#C0392B" },
   },
 };
 
@@ -28,6 +29,7 @@ export const ACCENT_OPTIONS = [
   { id: "purple", label: "Purple", hex: "#A78BFA" },
   { id: "rose", label: "Rose", hex: "#D6A0A0" },
   { id: "bronze", label: "Bronze", hex: "#C08A3E" },
+  { id: "red", label: "Red", hex: "#E5544B" },
 ];
 
 export const accentValue = (templateId, accent, custom) => {
