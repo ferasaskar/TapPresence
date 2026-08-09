@@ -17,7 +17,7 @@ import bcrypt
 import qrcode
 import requests
 from PIL import Image, ImageDraw, ImageFont
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File, Header
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -387,8 +387,32 @@ async def get_vcard(slug: str):
     )
 
 
+# ------------------------------------------------------------------ Phase P: idempotency (retry-safe public writes)
+async def idempotency_lookup(key: str, scope: str):
+    if not key:
+        return None
+    doc = await db.idempotency_keys.find_one({"key": key, "scope": scope}, {"_id": 0})
+    return doc.get("response") if doc else None
+
+
+async def idempotency_store(key: str, scope: str, response: dict):
+    if not key:
+        return
+    try:
+        await db.idempotency_keys.insert_one({
+            "key": key, "scope": scope, "response": response,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass  # duplicate key race — the first write wins, safe to ignore
+
+
+
 @api_router.post("/cards/{slug}/leads")
-async def create_lead(slug: str, body: LeadIn):
+async def create_lead(slug: str, body: LeadIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    cached = await idempotency_lookup(idempotency_key, f"lead:{slug}")
+    if cached is not None:
+        return cached
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0, "id": 1, "workspace_id": 1})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
@@ -409,7 +433,10 @@ async def create_lead(slug: str, body: LeadIn):
         "title": f"New inquiry from {body.name.strip()}", "body": f"via /{slug}",
         "read": False, "created_at": now,
     })
-    return {"ok": True}
+    await dispatch_webhooks(card.get("workspace_id"), "lead.created", {"id": lead["id"], "name": lead["name"], "cardSlug": slug, "source": lead["source"]})
+    result = {"ok": True}
+    await idempotency_store(idempotency_key, f"lead:{slug}", result)
+    return result
 
 
 @api_router.post("/cards/{slug}/track")
@@ -889,7 +916,10 @@ async def public_slots(slug: str, meeting_type_id: str, date: str):
 
 
 @api_router.post("/cards/{slug}/book")
-async def public_book(slug: str, body: BookIn):
+async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    cached = await idempotency_lookup(idempotency_key, f"book:{slug}")
+    if cached is not None:
+        return cached
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
@@ -954,8 +984,11 @@ async def public_book(slug: str, body: BookIn):
         "title": (f"Meeting request from {body.name.strip()}" if approval else f"Meeting booked by {body.name.strip()}"), "body": f"{mt['title']} · via /{slug}", "read": False, "created_at": now,
     })
     await db.analytics_events.insert_one({"id": str(uuid.uuid4()), "cardSlug": slug, "type": "tap", "key": "booking_completed", "created_at": now})
+    await dispatch_webhooks(card.get("workspace_id"), "meeting.booked", {"id": meeting["id"], "guest": body.name.strip(), "type": mt["title"], "start_utc": meeting.get("start_utc"), "cardSlug": slug})
     meeting.pop("_id", None)
-    return {"ok": True, "manage_token": manage_token, "meeting": meeting}
+    result = {"ok": True, "manage_token": manage_token, "meeting": meeting}
+    await idempotency_store(idempotency_key, f"book:{slug}", result)
+    return result
 
 
 def _sanitize_meeting(m: dict) -> dict:

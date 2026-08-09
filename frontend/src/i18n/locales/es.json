@@ -21,7 +21,9 @@
     "language": "Idioma",
     "team": "Equipo",
     "command": "Centro de mando",
-    "industries": "Estudio de sectores"
+    "industries": "Estudio de sectores",
+    "signatures": "Firmas",
+    "integrations": "Integraciones"
   },
   "team": {
     "title": "Equipo y empresa",
@@ -117,6 +119,31 @@
     "language": "Idioma",
     "cards": "Tarjetas",
     "manageCard": "Gestionar tarjeta",
-    "logout": "Cerrar sesión"
+    "logout": "Cerrar sesión",
+    "subtitle": "Tu cuenta y espacio de trabajo.",
+    "comingSoon": "La edición de perfil, el cambio de contraseña y las preferencias de notificación llegarán en una fase posterior."
+  },
+  "signatures": {
+    "title": "Firma de correo",
+    "subtitle": "Convierte tu tarjeta en una firma de correo lista para copiar.",
+    "card": "Tarjeta",
+    "template": "Plantilla",
+    "fields": "Campos",
+    "photo": "Foto",
+    "qr": "Código QR",
+    "titleField": "Cargo",
+    "company": "Empresa",
+    "phone": "Teléfono",
+    "email": "Correo",
+    "link": "Enlace de perfil",
+    "copyHtml": "Copiar HTML",
+    "copyRich": "Copiar firma",
+    "copied": "Copiado",
+    "classic": "Clásica",
+    "compact": "Compacta",
+    "modern": "Moderna",
+    "locked": "Bloqueado por la empresa",
+    "preview": "Vista previa",
+    "noCards": "Crea una tarjeta primero para crear una firma."
   }
 }

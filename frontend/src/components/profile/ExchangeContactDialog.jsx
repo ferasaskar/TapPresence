@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { api, vcardUrl } from "@/lib/api";
+import { api, vcardUrl, newIdemKey, idem } from "@/lib/api";
 import { Loader2, Check, UserPlus, Download } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,13 +11,16 @@ export function ExchangeContactDialog({ open, onOpenChange, slug, accent = "#D6A
   const [f, setF] = useState({ name: "", email: "", phone: "", message: "" });
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const idemRef = useRef(null);
 
   const submit = async () => {
     if (!f.name.trim() || !(f.email.trim() || f.phone.trim())) { toast.error("Name and email or phone required"); return; }
     setSaving(true);
+    if (!idemRef.current) idemRef.current = newIdemKey();
     try {
-      await api.post(`/cards/${slug}/leads`, { name: f.name, email: f.email, phone: f.phone, message: f.message });
+      await api.post(`/cards/${slug}/leads`, { name: f.name, email: f.email, phone: f.phone, message: f.message }, idem(idemRef.current));
       api.post(`/cards/${slug}/track`, { type: "tap", key: "contact_exchanged" }).catch(() => {});
+      idemRef.current = null;
       setDone(true);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Could not exchange");

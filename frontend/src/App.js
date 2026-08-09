@@ -11,6 +11,8 @@ import Settings from "@/pages/Settings";
 import Team from "@/pages/Team";
 import SuperAdmin from "@/pages/SuperAdmin";
 import IndustryStudio from "@/pages/IndustryStudio";
+import Signatures from "@/pages/Signatures";
+import IntegrationHub from "@/pages/IntegrationHub";
 import Leads from "@/pages/Leads";
 import Landing from "@/pages/Landing";
 import IndustryShowcase from "@/pages/IndustryShowcase";
@@ -51,6 +53,8 @@ function App() {
             <Route path="/team" element={<ProtectedRoute><Team /></ProtectedRoute>} />
             <Route path="/admin/platform" element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
             <Route path="/industry-studio" element={<ProtectedRoute><IndustryStudio /></ProtectedRoute>} />
+            <Route path="/signatures" element={<ProtectedRoute><Signatures /></ProtectedRoute>} />
+            <Route path="/integrations" element={<ProtectedRoute><IntegrationHub /></ProtectedRoute>} />
             <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><CreateCard /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />

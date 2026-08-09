@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Loader2, Check } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, newIdemKey, idem } from "@/lib/api";
 import { shadeHex, hexToRgba } from "@/lib/accents";
 import { toast } from "sonner";
 
@@ -48,6 +48,7 @@ export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973", 
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const idemRef = useRef(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e) => {
@@ -57,8 +58,10 @@ export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973", 
       return;
     }
     setLoading(true);
+    if (!idemRef.current) idemRef.current = newIdemKey();
     try {
-      await api.post(`/cards/${slug}/leads`, form);
+      await api.post(`/cards/${slug}/leads`, form, idem(idemRef.current));
+      idemRef.current = null;
       setSent(true);
       toast.success("Message sent — thank you");
     } catch (err) {

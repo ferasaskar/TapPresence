@@ -21,7 +21,9 @@
     "language": "Language",
     "team": "Team",
     "command": "Command Center",
-    "industries": "Industry Studio"
+    "industries": "Industry Studio",
+    "signatures": "Signatures",
+    "integrations": "Integrations"
   },
   "team": {
     "title": "Team & Company",
@@ -117,6 +119,31 @@
     "language": "Language",
     "cards": "Cards",
     "manageCard": "Manage card",
-    "logout": "Log out"
+    "logout": "Log out",
+    "subtitle": "Your account and workspace.",
+    "comingSoon": "Profile editing, password change and notification preferences are coming in a later phase."
+  },
+  "signatures": {
+    "title": "Email Signature",
+    "subtitle": "Turn your card into a branded, copy-ready email signature.",
+    "card": "Card",
+    "template": "Template",
+    "fields": "Fields",
+    "photo": "Photo",
+    "qr": "QR code",
+    "titleField": "Job title",
+    "company": "Company",
+    "phone": "Phone",
+    "email": "Email",
+    "link": "Profile link",
+    "copyHtml": "Copy HTML",
+    "copyRich": "Copy signature",
+    "copied": "Copied to clipboard",
+    "classic": "Classic",
+    "compact": "Compact",
+    "modern": "Modern",
+    "locked": "Locked by company",
+    "preview": "Preview",
+    "noCards": "Create a card first to build a signature."
   }
 }

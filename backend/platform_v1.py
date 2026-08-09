@@ -28,7 +28,7 @@ from typing import List, Optional
 
 import jwt
 import bcrypt
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -796,7 +796,11 @@ class ExchangeIn(BaseModel):
 
 
 @platform_router.post("/cards/{slug}/exchange")
-async def contact_exchange(slug: str, body: ExchangeIn):
+async def contact_exchange(slug: str, body: ExchangeIn, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if idempotency_key:
+        prev = await db.idempotency_keys.find_one({"key": idempotency_key, "scope": f"exchange:{slug}"}, {"_id": 0})
+        if prev:
+            return prev["response"]
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
     if not card:
         raise HTTPException(404, "Card not found")
@@ -817,9 +821,16 @@ async def contact_exchange(slug: str, body: ExchangeIn):
         "title": f"New contact from {body.name.strip()}", "body": f"via {body.source}",
         "read": False, "created_at": now_iso(),
     })
+    await dispatch_webhooks(card.get("workspace_id"), "lead.created", {"id": lead["id"], "name": lead["name"], "email": lead["email"], "cardSlug": slug, "source": lead["source"]})
     # Return the owner's contact so the visitor can save it back (mutual exchange).
-    return {"ok": True, "owner": {"name": card.get("identity", {}).get("fullName", ""),
-                                   "vcard_url": f"/api/cards/{slug}/vcard"}}
+    result = {"ok": True, "owner": {"name": card.get("identity", {}).get("fullName", ""),
+                                     "vcard_url": f"/api/cards/{slug}/vcard"}}
+    if idempotency_key:
+        try:
+            await db.idempotency_keys.insert_one({"key": idempotency_key, "scope": f"exchange:{slug}", "response": result, "created_at": now_iso()})
+        except Exception:
+            pass
+    return result
 
 # ------------------------------------------------------------------ campaigns
 class CampaignIn(BaseModel):
@@ -1179,6 +1190,103 @@ async def integrations_status(user: dict = Depends(current_user)):
             "wallet": {"apple": cfg["apple_wallet"], "google": cfg["google_wallet"]},
             "billing": {"stripe": cfg["stripe"], "revenuecat": cfg["revenuecat"]},
             "notes": "Adapters built; connect credentials to activate."}
+
+
+# ------------------------------------------------------------------ Integration Hub (Phase O — provider-neutral internal foundation)
+import hmac as _hmac, hashlib as _hashlib, secrets as _secrets, json as _json, httpx as _httpx
+
+
+async def dispatch_webhooks(workspace_id: str, event: str, payload: dict):
+    """Signed outbound webhook dispatch to tenant-registered endpoints. Best-effort, non-blocking to callers."""
+    if not workspace_id:
+        return
+    hooks = await db.webhooks.find({"workspace_id": workspace_id, "active": True, "events": event}, {"_id": 0}).to_list(100)
+    if not hooks:
+        return
+    body = _json.dumps({"event": event, "data": payload, "ts": now_iso()}, default=str)
+    async with _httpx.AsyncClient(timeout=5) as client:
+        for h in hooks:
+            sig = _hmac.new(h["secret"].encode(), body.encode(), _hashlib.sha256).hexdigest()
+            headers = {"Content-Type": "application/json", "X-TapPresence-Event": event, "X-TapPresence-Signature": f"sha256={sig}"}
+            try:
+                r = await client.post(h["url"], content=body, headers=headers)
+                await db.webhooks.update_one({"id": h["id"]}, {"$set": {"last_delivery": now_iso(), "last_status": r.status_code}})
+            except Exception:
+                await db.webhooks.update_one({"id": h["id"]}, {"$set": {"last_delivery": now_iso(), "last_status": "error"}})
+
+
+class ApiKeyIn(BaseModel):
+    name: str = "API key"
+
+
+class WebhookIn(BaseModel):
+    url: str
+    events: List[str] = []
+
+
+WEBHOOK_EVENTS = ["lead.created", "meeting.booked", "card.published"]
+
+
+@platform_router.get("/workspaces/{wid}/hub")
+async def integration_hub(wid: str, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    keys = await db.api_keys.find({"workspace_id": wid}, {"_id": 0, "key_hash": 0}).sort("created_at", -1).to_list(200)
+    hooks = await db.webhooks.find({"workspace_id": wid}, {"_id": 0, "secret": 0}).sort("created_at", -1).to_list(200)
+    return {"available_events": WEBHOOK_EVENTS, "api_keys": keys, "webhooks": hooks}
+
+
+@platform_router.post("/workspaces/{wid}/api-keys")
+async def create_api_key(wid: str, body: ApiKeyIn, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    raw = "tpk_" + _secrets.token_urlsafe(32)
+    prefix = raw[:12]
+    doc = {"id": str(uuid.uuid4()), "workspace_id": wid, "name": body.name or "API key",
+           "prefix": prefix, "key_hash": _hashlib.sha256(raw.encode()).hexdigest(),
+           "created_at": now_iso(), "last_used": None, "revoked": False, "created_by": user["id"]}
+    await db.api_keys.insert_one(doc)
+    return {"id": doc["id"], "name": doc["name"], "prefix": prefix, "key": raw}  # full key shown ONCE
+
+
+@platform_router.delete("/workspaces/{wid}/api-keys/{key_id}")
+async def revoke_api_key(wid: str, key_id: str, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    await db.api_keys.update_one({"id": key_id, "workspace_id": wid}, {"$set": {"revoked": True}})
+    return {"ok": True}
+
+
+@platform_router.post("/workspaces/{wid}/webhooks")
+async def create_webhook(wid: str, body: WebhookIn, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    if not body.url.startswith("http"):
+        raise HTTPException(400, "Invalid URL")
+    bad = [e for e in body.events if e not in WEBHOOK_EVENTS]
+    if bad:
+        raise HTTPException(400, f"Unknown events: {bad}")
+    secret = "whsec_" + _secrets.token_urlsafe(24)
+    doc = {"id": str(uuid.uuid4()), "workspace_id": wid, "url": body.url, "events": body.events or WEBHOOK_EVENTS,
+           "secret": secret, "active": True, "created_at": now_iso(), "last_delivery": None, "last_status": None}
+    await db.webhooks.insert_one(doc)
+    return {"id": doc["id"], "workspace_id": wid, "url": doc["url"], "events": doc["events"],
+            "active": True, "created_at": doc["created_at"], "secret": secret}  # secret shown once
+
+
+@platform_router.delete("/workspaces/{wid}/webhooks/{hook_id}")
+async def delete_webhook(wid: str, hook_id: str, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    await db.webhooks.delete_one({"id": hook_id, "workspace_id": wid})
+    return {"ok": True}
+
+
+@platform_router.post("/workspaces/{wid}/webhooks/{hook_id}/test")
+async def test_webhook(wid: str, hook_id: str, user: dict = Depends(current_user)):
+    await require_ws_admin(user, wid)
+    h = await db.webhooks.find_one({"id": hook_id, "workspace_id": wid}, {"_id": 0})
+    if not h:
+        raise HTTPException(404, "Webhook not found")
+    await dispatch_webhooks(wid, h["events"][0] if h.get("events") else "lead.created", {"test": True, "message": "TapPresence test event"})
+    updated = await db.webhooks.find_one({"id": hook_id}, {"_id": 0, "secret": 0})
+    return {"ok": True, "last_status": updated.get("last_status")}
+
 
 async def require_ws_admin(user: dict, wid: str):
     if user.get("role") == "SUPER_ADMIN":

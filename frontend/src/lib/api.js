@@ -22,3 +22,7 @@ export const resolveImg = (url) => {
 export const vcardUrl = (slug) => `${API_BASE}/cards/${slug}/vcard`;
 export const qrUrl = (slug) => `${API_BASE}/cards/${slug}/qr`;
 export const posterUrl = (slug) => `${API_BASE}/cards/${slug}/poster`;
+
+// Phase P: stable idempotency key per logical submission (retry-safe public writes).
+export const newIdemKey = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+export const idem = (key) => ({ headers: { "Idempotency-Key": key } });

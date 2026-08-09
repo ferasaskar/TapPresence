@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { api } from "@/lib/api";
+import { api, newIdemKey, idem } from "@/lib/api";
 import { Loader2, Clock, Video, MapPin, Phone, ChevronRight, ArrowLeft, CalendarCheck, PartyPopper, Copy } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,6 +24,7 @@ export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653"
   const [f, setF] = useState({ name: "", email: "", phone: "", note: "" });
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(null);
+  const idemRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -54,8 +55,10 @@ export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653"
   const confirm = async () => {
     if (!f.name.trim() || !(f.email.trim() || f.phone.trim())) { toast.error("Name and email or phone required"); return; }
     setSaving(true);
+    if (!idemRef.current) idemRef.current = newIdemKey();
     try {
-      const { data } = await api.post(`/cards/${slug}/book`, { meeting_type_id: mt.id, start: slot, ...f, visitor_tz: visitorTz });
+      const { data } = await api.post(`/cards/${slug}/book`, { meeting_type_id: mt.id, start: slot, ...f, visitor_tz: visitorTz }, idem(idemRef.current));
+      idemRef.current = null;
       setDone(data); setStep("done");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Could not book");

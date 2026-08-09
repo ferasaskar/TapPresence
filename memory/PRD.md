@@ -263,7 +263,25 @@ Non-sensitive UX/analytics-presentation phase in `ExecutiveBlackGold.jsx` (+ tin
 - Tests: compiles (pre-existing warning only); sticky hidden→visible on scroll verified; 390px no overflow; Exchange tap fires `/track` + opens dialog (network-captured); preview isolation via publicView.
 
 ## ROADMAP PROGRESS REPORT (running)
-- **COMPLETE**: A1 Typography · A2 Public Card Conversion · J Analytics Rollups · D Onboarding · F Notification Center (+secured notifications) · G Localization (EN/AR-RTL/ES) · M Team/Company Dashboard · L Admin Industry Studio · K Super Admin Command Center
+- **COMPLETE**: A1 Typography · A2 Public Card Conversion · J Analytics Rollups · D Onboarding · F Notification Center (+secured notifications) · G Localization arch (EN/AR-RTL/ES) · M Team/Company · L Industry Studio · K Command Center · N Email Signature Manager · O Integration Hub foundation · P Offline/Reliability (idempotency)
+- **PARTIAL — Localization coverage (G ext)**: DONE on nav/shell, Home, Settings, Notifications, Signatures, Team, funnel/onboarding. REMAINING (English for now, per-screen consistent): Meetings, Leads, Card creation/editor, Scanner, Analytics dialog, Super Admin/Industry Studio/Integrations internal tools, public marketing/login/register.
+
+## PHASE N — Email Signature Manager (2026-08-09) — IMPLEMENTED & verified
+Frontend-only, reuses existing card data + QR + workspace branding — no new backend system.
+- `lib/signature.js` (email-safe table+inline-style HTML, absolute URLs, 3 templates classic/compact/modern) + `pages/Signatures.jsx` at `/signatures`: card select, template, field toggles, live preview, Copy HTML + Copy rich (ClipboardItem). Corporate-locked fields (from workspace `locked_fields`) are disabled + lock-iconed. Localized. NOT connected to M365/Workspace (deferred).
+- Verified: preview renders real signature (name/title/company + View-my-card + QR); Company field locked for Feras via branding; template switch works.
+
+## PHASE O — Integration Hub foundation (2026-08-09) — IMPLEMENTED & verified
+Provider-neutral internal architecture (platform_v1), workspace-admin scoped. NO external providers connected.
+- Backend: `dispatch_webhooks()` (HMAC-SHA256 signed, `X-TapPresence-Signature`); `GET /workspaces/{wid}/hub`; API keys `POST` (key shown once, sha256 hash stored, prefix), `DELETE` (revoke); webhooks `POST` (secret once), `DELETE`, `POST /{id}/test`. Events: lead.created, meeting.booked, card.published. Wired real dispatch into lead (server+platform) & meeting.booked.
+- Frontend: `pages/IntegrationHub.jsx` at `/integrations` — API keys (create/reveal-once/revoke), webhooks (URL + event subscriptions, test, delete, secret reveal-once), external providers shown "not connected". Nav for workspace admins/super-admin.
+- Tests: member→403; api-key create/redaction; webhook create/signed-test-dispatch (HTTP fired); hub redacts key_hash+secret; delete/revoke 200. UI verified. Test data cleaned.
+
+## PHASE P — Offline / Event Reliability foundation (2026-08-09) — IMPLEMENTED & verified
+Idempotency keys → retry-safe public writes (booth/offline resilience). Additive, non-destructive.
+- Backend: `idempotency_lookup/store` (+ inline in platform exchange) keyed by `Idempotency-Key` header, scoped per endpoint+slug; applied to public lead (`/cards/{slug}/leads`), exchange (`/cards/{slug}/exchange`), booking (`/cards/{slug}/book`). Duplicate-key race safe (first write wins).
+- Frontend: `lib/api.js` `newIdemKey()`/`idem()`; ExchangeContactDialog, BookMeetingDialog, InquiryForm send a stable per-submission key (reset on success, reused on retry).
+- Tests: two identical lead POSTs with same key → exactly 1 lead created (deduped); public exchange smoke test confirms header sent + success flow intact. Test data cleaned.
 - **PARTIAL (existing foundations)**: Localization (public done, dashboard strings pending — G) · Entitlements (model done, enforcement scanner-only — C) · Notifications (data+GET done, BUT workspace-scoped not ownership-scoped — see NEEDS APPROVAL) · Team (backend done, dashboard UI pending — M) · Industry overrides (backend done, studio UI pending — L) · Super Admin (config APIs done, tower UI pending — K)
 - **PENDING (internal safe, next)**: N Email Signature Manager · G string-coverage extension (Meetings/Leads/CreateCard/Settings/Admin/marketing) · Team/Studio/Command RTL physical-property polish
 
