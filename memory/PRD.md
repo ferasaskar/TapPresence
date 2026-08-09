@@ -158,6 +158,14 @@ User directive: every app page must match the premium home-page look (black #050
 - Profile-completion flow (answer to user's question): Dashboard `/admin` → New card / Edit → tabs (Identity/Industry/Contact/Social/Services/Projects/Booking) → Published toggle → live preview → Save.
 - QA (iteration_10): 100% FE — login→dashboard→editor save/publish, dialogs, activate, legal, intensity/position/opacity controls all work; no console errors; no overflow at 1440/390; `/feras-askar` + `/industries` regressions clean. Fixed 2 minor findings (full-position distinct; dialog a11y descriptions).
 
+## Single Card-Creation Pipeline (/templates studio) (2026-06-10, iteration 11) — IMPLEMENTED & QA-PASSED (5/5)
+User directive: exactly ONE creation flow. Card Manager → Create Card → Templates page → Choose Industry → Customize Style → Enter Information → Live Preview → Save/Publish → Your Cards. Remove duplicate paths + customer-facing template chooser (keep legacy renderers for existing cards).
+- **New `/templates` studio** (`pages/CreateCard.jsx`, protected): 3-step wizard with a persistent live full-profile preview (`create-preview`). Step 1 "Choose Your Industry" (12 clickable `IndustryCard`s, `choose-industry-{id}`) → Step 2 "Customize Your Style" (`IndustryCustomizer`) → Step 3 "Your Information" (slug + `CardInfoTabs`). Header + bottom **Save Draft** / **Publish Card** (`save-draft-button`, `publish-button`, `publish-button-bottom`). Slug auto-derives from full name.
+- **Extracted `CardInfoTabs.jsx`** (Identity/Industry/Contact/Social/Services/Projects/Booking) + `emptyCard`/`mergeCard`; reused by both CreateCard and CardEditor. New cards silently default `templateId=executive-black-gold`.
+- **Removed the customer-facing template selector** (Executive/Beige/Future) from `CardEditor` (existing cards keep their templateId when edited — legacy renderer untouched). Removed dashboard **"Industry Templates"** link.
+- **Admin dashboard**: `Create Card` (renamed) + empty-state `Create your first card` both `navigate('/templates')`. Editing an existing card still opens the inline `CardEditor`.
+- QA (iteration_11): 5/5 journeys pass — new-user publish, existing-user save-draft, direct /templates, legacy card edit (no `editor-template` in DOM, /feras-askar intact), no duplicate creation path. Fixed the one finding (mobile /templates header overflow → flex-wrap + collapse labels).
+
 
 
 

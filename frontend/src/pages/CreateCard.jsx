@@ -76,19 +76,19 @@ export default function CreateCard() {
 
       {/* header */}
       <header className="sticky top-0 z-40 border-b border-white/8 bg-[#050607]/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-4 sm:px-8">
           <button onClick={() => navigate("/admin")} className="flex items-center gap-2 text-sm text-white/60 transition-colors hover:text-white" data-testid="create-back">
-            <ArrowLeft className="h-4 w-4" /> Card Manager
+            <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Card Manager</span>
           </button>
-          <div className="flex items-center gap-2.5">
+          <div className="hidden items-center gap-2.5 md:flex">
             <AriadniMark className="h-5 w-5 text-[#D6A653]" />
             <span className="text-[15px] font-medium">Create Your Card</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => save(false)} disabled={saving || !industryChosen} className="rounded-full border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="save-draft-button">
+            <Button onClick={() => save(false)} disabled={saving || !industryChosen} className="rounded-full border border-white/15 bg-transparent px-3 text-white hover:bg-white/5 sm:px-4" data-testid="save-draft-button">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Draft"}
             </Button>
-            <Button onClick={() => save(true)} disabled={saving || !industryChosen} className="rounded-full bg-[#D6A653] font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-95" data-testid="publish-button">
+            <Button onClick={() => save(true)} disabled={saving || !industryChosen} className="rounded-full bg-[#D6A653] px-3 font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-95 sm:px-4" data-testid="publish-button">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish Card"}
             </Button>
           </div>
