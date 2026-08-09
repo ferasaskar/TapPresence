@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only verification of the industry BACKGROUND IMAGE fix and all showcase/public-profile buttons. Confirmed via computed CSS that the industry image URL (.jpeg) is embedded in backgroundImage AND merged with a directional linear-gradient scrim on BOTH /industries preview (data-testid=showcase-preview) and /feras-askar public profile. Switching industries changes the URL (real_estate skyline -> technology neural -> healthcare medical). Opacity slider actually mutates the gradient alphas (30% -> aTop=0.08 image very visible; 10% -> aTop=0.5 image faint). Intensity soft/medium/rich re-render. bgstyle-skyline (image) vs bgstyle-blueprint (repeating-linear-gradient pattern) swap correctly. All showcase testids present (chip-*, device-*, industry-*, accent-*, position-*, upload-custom-bg, accent-custom, showcase-create/apply/home). On /feras-askar the picture is clearly visible behind content and page remains readable (name/bio/CTAs visible). Action buttons wired: hero-message-button href=sms:+971501234567, hero-book-call-button/cta-book-button href=cal.com, save-contact-button -> /api/cards/feras-askar/vcard, share-button, download-poster, wallet-apple/google, social-linkedin/instagram/x, inquiry-submit (Send message) inline form works. Discoverability: landing explore-templates -> /industries confirmed. Mobile /industries at 390px has scrollWidth==clientWidth (no horizontal overflow). No console errors observed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "industryRootStyle in /app/frontend/src/lib/industries.js: correct directional scrim implementation; aTop clamps guarantee readability floor while exposing image at low opacity. Verified via computed CSS.",
+    "opacityPct slider min=0 max=30 (percent) mapped to background_opacity 0..0.3 works as designed. Consider adding aria-label for accessibility."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "Not required for public routes tested",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Background image bug is fully resolved. Verified computed style contains both linear-gradient overlay AND url(...jpeg) for /industries preview across multiple industries (real_estate, technology, healthcare) and templates (executive-black-gold, beige-luxury). Also verified on /feras-askar (beige + real_estate skyline). Opacity slider is controlled input; tests must use keyboard ArrowLeft/Right or Playwright's fill() to modify (not raw DOM value assignment). Style buttons use data-testid=bgstyle-<id>, not style-<id>.",
+  "rca of the issue": "Previous implementation applied a single flat rgba overlay with alpha ~0.85-0.9 which effectively hid the image, especially on the light Beige template. Fix in industryRootStyle() builds a 3-stop directional linear-gradient (aTop lighter, aBot denser), computed from opacity*intensity multiplier and clamped by template brightness (isLight). Result: picture visible at top, text readable over the denser bottom. Confirmed by inspecting computedStyle.backgroundImage at /industries and /feras-askar."
+}

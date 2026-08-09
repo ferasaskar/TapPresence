@@ -60,8 +60,10 @@ export function industryRootStyle(card, baseRgb, acHex) {
 
   const opacity = clamp(card.background_opacity ?? ind.defaultOpacity, 0, 0.3);
   const mult = { soft: 0.8, medium: 1, rich: 1.25 }[card.background_intensity || "medium"] || 1;
-  const vis = clamp(opacity * mult, 0, 0.36);
-  const overlayA = 1 - vis;
+  const rgbAvg = baseRgb.split(",").reduce((a, n) => a + Number(n), 0) / 3;
+  const isLight = rgbAvg > 140;
+  let vis = clamp(opacity * mult, 0, 0.4);
+  if (isLight) vis *= 0.6; // keep light templates readable
 
   const posMap = { left: "left center", right: "right center", center: "center", full: "center" };
   const pos = posMap[card.background_position || "center"] || "center";
@@ -77,12 +79,18 @@ export function industryRootStyle(card, baseRgb, acHex) {
     return {};
   }
 
-  const overlay = `linear-gradient(180deg, rgba(${baseRgb},${(overlayA * 0.86).toFixed(3)}), rgba(${baseRgb},${Math.min(1, overlayA + 0.06).toFixed(3)}))`;
+  // Directional readability scrim: lighter at top (image clearly visible), denser
+  // toward the content below so text stays readable while the picture still shows.
+  const aTop = clamp((isLight ? 0.88 : 0.72) - vis * 2.2, isLight ? 0.5 : 0.08, 0.92);
+  const aMid = clamp(aTop + 0.22, 0, 1);
+  const aBot = clamp(aTop + 0.44, 0, 1);
+  const overlay = `linear-gradient(180deg, rgba(${baseRgb},${aTop.toFixed(3)}) 0%, rgba(${baseRgb},${aMid.toFixed(3)}) 55%, rgba(${baseRgb},${aBot.toFixed(3)}) 100%)`;
   return {
     backgroundImage: `${overlay}, ${layer}`,
     backgroundSize: `cover, ${size}`,
     backgroundPosition: `center, ${pos}`,
     backgroundRepeat: `no-repeat, ${rep}`,
+    backgroundAttachment: "scroll",
   };
 }
 
