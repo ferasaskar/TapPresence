@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import IndustryCustomizer from "@/components/admin/IndustryCustomizer";
+import IndustryCards from "@/components/landing/IndustryCards";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { ASSETS } from "@/components/landing/data";
 import { ArrowLeft, ArrowRight, Smartphone, Monitor } from "lucide-react";
@@ -77,6 +78,17 @@ export default function IndustryShowcase() {
         <p className="mt-4 max-w-[620px] text-[15px] leading-relaxed text-neutral-400">
           Choose your industry, set your brand color and adjust the background intensity to create a stunning digital identity that represents your business perfectly.
         </p>
+      </section>
+
+      {/* signature industry cards */}
+      <section className="mx-auto max-w-[1280px] px-4 pt-12 sm:px-8">
+        <IndustryCards />
+      </section>
+
+      {/* interactive builder heading */}
+      <section className="mx-auto max-w-[1280px] px-4 pt-16 sm:px-8">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#D6A653]">Build Your Own</p>
+        <h2 className="mt-2 text-[26px] font-semibold text-white">Customize &amp; preview live</h2>
       </section>
 
       {/* main: live preview + customizer */}

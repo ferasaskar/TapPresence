@@ -136,6 +136,10 @@ Data-driven "one base template + industry skin + accent + layered background" �
 - Fix: rewrote to a **directional 3-stop scrim** (lighter at top so the picture shows, denser toward content for readability), with an `isLight` brightness check keeping light templates subtle; opacity×intensity drives visibility.
 - Verified (iteration_8, 100% FE): computed `backgroundImage` contains the industry `.jpeg` URL + gradient on both `/industries` preview and `/feras-askar`; switching industry changes the URL; opacity slider mutates alphas; photo vs CSS-pattern styles swap; ALL buttons work (showcase chips/device/industry/accent/style/position/CTAs; public-profile Message→sms, Book a Call→cal.com, Save→vCard, Share, Poster, Wallet, socials, inquiry submit); no console errors; no mobile overflow.
 
+### Reference-match 3-card showcase (2026-06-09)
+- Added `components/landing/IndustryCards.jsx` — pixel-faithful 3-card row (Real Estate/Alex Morgan/gold, Technology/Daniel Quinn/blue, Healthcare/Dr. Sophia Bennett/green) matching the user's reference: visible industry backgrounds (skyline, neural, medical + cross & heartbeat), gold ARIADNI ID logo, accent portrait ring, role/company in accent, 4 circular action buttons, Exchange Contact, "Tap your card", industry label beneath. Role-accurate portraits. Featured at the top of `/industries` above the interactive live builder. Verified via desktop screenshot; responsive grid (1/2/3 cols).
+
+
 
 
 
