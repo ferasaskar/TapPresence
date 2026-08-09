@@ -62,7 +62,7 @@ export const INDUSTRY_CARDS = [
   { id: "finance", label: "Finance", icon: LineChart, accentId: "emerald", accent: "#46B98A", base: "8,17,15",
     name: "Ethan Walker", role: "Financial Advisor", company: "Summit Financial Group",
     portrait: U("1767175620484-1ed37931a0d1"),
-    image: IMG + "782d7af414bb8a53251e87281bfe15d15ad0a94fcda7ed8c0491bd9be6c7a5db.jpeg" },
+    image: IMG + "a65a77af4957647464ce6d58166727775627447a03beb081f887f6da7025702a.jpeg" },
 
   { id: "custom", label: "Custom Industry", icon: Plus, accentId: "platinum", accent: "#B9BEC7", base: "13,13,15",
     name: "Your Name", role: "Your Title", company: "Your Company",

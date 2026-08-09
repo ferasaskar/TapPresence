@@ -139,6 +139,17 @@ Data-driven "one base template + industry skin + accent + layered background" �
 ### Reference-match 3-card showcase (2026-06-09)
 - Added `components/landing/IndustryCards.jsx` — pixel-faithful 3-card row (Real Estate/Alex Morgan/gold, Technology/Daniel Quinn/blue, Healthcare/Dr. Sophia Bennett/green) matching the user's reference: visible industry backgrounds (skyline, neural, medical + cross & heartbeat), gold ARIADNI ID logo, accent portrait ring, role/company in accent, 4 circular action buttons, Exchange Contact, "Tap your card", industry label beneath. Role-accurate portraits. Featured at the top of `/industries` above the interactive live builder. Verified via desktop screenshot; responsive grid (1/2/3 cols).
 
+## Unified Master Industry-Card System (2026-06-10, iteration 9) — IMPLEMENTED & QA-PASSED (100% FE)
+User directive: ALL 12 industries must render in ONE identical premium card structure (the attached showcase reference is the visual source of truth). Only background mood, accent color, industry icon and content change — never the layout.
+- **`lib/industryCards.js`** (new): single `INDUSTRY_CARDS` data array of all 12 presets (real_estate, business, sales, technology, healthcare, legal, education, hospitality, automotive, beauty, finance, custom) — each with `label, icon, accentId, accent hex, base rgb, name/role/company, portrait, image` (healthcare has `decoration:'medical'`). `previewCardConfig(form)` maps live editor state → card config.
+- **`components/landing/IndustryCard.jsx`** (new): the ONE master card component — accent-glow rounded frame, ARIADNI ID header, centered circular portrait w/ accent ring, name/role/company hierarchy, 4 circular OUTLINED action icons (Call/Email/WhatsApp/Save) w/ labels, "Exchange Contact" outlined button, "))) Tap your card", industry label+icon below. testids: `ind-card-{id}`, `ind-action-{id}-{call|email|whatsapp|save}`, `ind-exchange-{id}`, `ind-label-{id}`.
+- **`IndustryCards.jsx`** rewritten: renders all 12 via `IndustryCard` in a responsive grid (1/2/3/4 cols).
+- **`/industries` builder** now renders the master card in `showcase-preview` (removed the old TemplateRenderer preview + template chips + device toggle). Picking an industry auto-sets its recommended accent AND swaps demo person content so the preview fully reflects the industry family. Accent swatches recolor the live card.
+- Accents: added **`red`** option (accents.js ACCENT_OPTIONS + all 3 template SETS) for Automotive; Sales→purple.
+- Distinct **finance** background generated (dark emerald charts + skyline) so no two industries share an image.
+- QA (iteration_9): 100% FE — all 12 cards render identical structure, live preview reacts to every industry + accent (incl. red), no console errors, no overflow at 1440/390, `/feras-askar` regression clean.
+- NOTE: `IndustryCard` is currently used on the `/industries` showcase + builder (marketing/preview surface). The full-page public profile templates (Executive Black Gold etc.) remain the actual published-profile renderer and are unchanged.
+
 
 
 
