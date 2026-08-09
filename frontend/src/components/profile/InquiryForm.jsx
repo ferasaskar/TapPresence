@@ -35,7 +35,7 @@ const V = {
   },
 };
 
-export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973" }) => {
+export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973", embedded = false }) => {
   const v = V[variant] || V.beige;
   // Black variant: derive button + input styling from the SELECTED accent so
   // the form matches the rest of the card (no hardcoded gold).
@@ -70,7 +70,7 @@ export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973" }
 
   if (sent) {
     return (
-      <section className={`mt-6 ${v.card} text-center`} style={v.cardStyle} data-testid="inquiry-success">
+      <section className={embedded ? "text-center" : `mt-6 ${v.card} text-center`} style={embedded ? undefined : v.cardStyle} data-testid="inquiry-success">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: accentColor }}>
           <Check className="w-6 h-6 text-white" />
         </div>
@@ -81,9 +81,9 @@ export const InquiryForm = ({ slug, variant = "beige", accentColor = "#B89973" }
   }
 
   return (
-    <section className={`mt-6 ${v.card}`} style={v.cardStyle} data-testid="inquiry-form">
-      <p className="text-[11px] uppercase tracking-[0.35em] mb-2" style={{ color: accentColor }}>Get in touch</p>
-      <h2 className={`${v.heading} mb-5`}>Send a message</h2>
+    <section className={embedded ? "" : `mt-6 ${v.card}`} style={embedded ? undefined : v.cardStyle} data-testid="inquiry-form">
+      {!embedded && <p className="text-[11px] uppercase tracking-[0.35em] mb-2" style={{ color: accentColor }}>Get in touch</p>}
+      {!embedded && <h2 className={`${v.heading} mb-5`}>Send a message</h2>}
       <form onSubmit={submit} className="space-y-3">
         <input className={v.input} style={inputStyle} placeholder="Your name" value={form.name} onChange={set("name")} data-testid="inquiry-name" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

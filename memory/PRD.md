@@ -190,6 +190,14 @@ User: published card must match the approved showcase — accent-consistent pane
 - **Deferred/architected (NOT_CONFIGURED)**: reminder sending (schedule stored: 24h+1h), Google/Outlook sync. Team = card-level owner (workspace access enforced via `_can_access_card`).
 - QA (iteration_14): backend 14/14 pytest, frontend 100% (CTAs, exchange, full booking, guest manage, dashboard, booking editor, AI). Testing agent fixed a critical `list+tuple` TypeError that 500'd the today/upcoming tabs; I then fixed the Past-tab visibility for completed-future meetings. feras-askar has native booking ON as the live demo.
 
+## Public card mobile-first redesign (2026-08-09) — ExecutiveBlackGold layout only
+User report on /feras-askar mobile: Exchange/Book CTAs felt "missing" (they were buried BELOW Services+Projects), card was "far too long", wanted single Call + compact sections. Root cause: CTA bar rendered after services/projects. Fix (template-engine level, `ExecutiveBlackGold.jsx`; industry/accent untouched):
+- New mobile hierarchy: PROFILE HERO → QUICK ACTIONS (Call·WhatsApp·Email·Message, one compact 4-col row, single Call only) → PRIMARY CTAs (Exchange Contact + Book a Meeting, 2-col, directly below quick actions, on first screen) → CAPABILITIES (compact 2-col cards, line-clamp-2) → PROJECTS (horizontal snap carousel on mobile, 2-col on sm+) → MESSAGE (compact "Send a Message" CTA opening InquiryForm in a modal — form no longer permanently open) → UTILITIES (Save·Share·QR 3-col compact; QR toggles inline; Apple/Google Wallet; QR Poster tucked under a "More" toggle) → footer/socials.
+- `InquiryForm` gained an `embedded` prop (renders without the outer card wrapper/heading) for use inside the message modal.
+- No duplicate Call CTA anywhere (Call lives only in Quick Actions).
+- Dialog/booking wiring unchanged from iteration 14 (Exchange/Book dialogs + backend). New testids: cta-message-button, message-dialog, message-section, utilities-section, qr-toggle, more-toggle.
+- Verified: top-of-page mobile layout renders with both CTAs on the first screen (screenshot). NOTE: preview screenshot tool only captures the top viewport, so below-fold sections (projects carousel, message modal, utilities) and dialog-open states were implemented + code-verified but NOT visually confirmed in-tool; user is self-testing (their chosen option b).
+
 
 
 
