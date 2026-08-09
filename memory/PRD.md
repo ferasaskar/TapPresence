@@ -360,11 +360,17 @@ User-approved commercial rules enforced; provider-neutral (NO real payment provi
 - **DEMO GUARD (highlighted)**: upgrade activation is DEMO/TEST behavior only via `ALLOW_DEMO_BILLING`; a future payment provider must become the authoritative activation source before production. NO Stripe connected.
 - QA (iteration_15): backend 17/17 pytest (`/app/backend/tests/test_commercial_core.py`), frontend 9/9. Post-review hardening: non-numeric referral pct now 400 (was 500). feras-askar preserved; all qa_ throwaway accounts cleaned.
 
-## REMAINING SAFE ROADMAP (approved, auto-continue) — NOT YET DONE
-- **Localization coverage** (extend existing i18n): Meetings, Leads, CreateCard/editor, Scanner, Analytics dialog, Super Admin / Industry Studio / Integrations internal tools, public marketing/login/register.
-- **Consent / Privacy Center** (audit first — must not touch sensitive account deletion/export semantics without classification).
+## LANDING CURRENCY AUTO-DETECT (2026-06, iteration 15c) — IMPLEMENTED & verified
+Public pricing auto-selects the visitor's market using ONLY safe browser/locale signals — no external geolocation provider, no FX conversion. Detection is a DEFAULT; manual choice always wins and persists.
+- **`lib/market.js`**: `detectMarket()` (locale region via `Intl.Locale(navigator.language).region` → country, e.g. ar-AE→AE→AED; secondary timezone hints Asia/Dubai→AE, Asia/Riyadh→SA, Europe/London→GB, generic Europe/*→EUR); `countryToMarket()` (AE→AED, SA→SAR, GB→GBP, Eurozone set→EUR, US→USD); `getPreferredMarket(supported, fallback)` = saved manual pref (localStorage `tp_market`) → detected → configured default; only returns a market present in the configured `markets`, else safe fallback (USD). `saveMarketPreference()`.
+- **PricingSection**: on mount picks preferred market and loads `/api/commercial/pricing?market=`; manual `changeMarket()` saves + reloads. All prices from authoritative config; JSON-LD SEO uses the resolved config. Billing unchanged (defaults to workspace region currency).
+- **Verified (isolated browser contexts)**: UAE→AED, Saudi→SAR, UK→GBP, US→USD, Germany→EUR, Japan(unsupported)→USD fallback, and manual USD pref persisted over UAE locale. Missing-market + regional-price fallback handled by backend `resolve_market_pricing` (verified earlier). Landing↔Billing consistency + Super-Admin-price-change propagation verified in the 9-step curl test.
+
+## REMAINING SAFE ROADMAP (approved, auto-continue) — NEXT
+- **Full EN/AR/ES localization coverage**: Meetings, Leads, CreateCard/editor, Scanner, Analytics dialog, internal admin tools, login/register/marketing.
+- **Consent / Privacy Center** (audit-first; additive cookie/consent + privacy hub without touching sensitive delete/export semantics).
 - **Scanner commercial exposure** deeper surfacing (usage already on Billing).
-- **DEFERRED EXTERNAL** (unchanged): Stripe/RevenueCat/social login/Wallet certs/email/push/SMS/CRM connectors/DNS/SSO/App Store; auth hardening/2FA; destructive cleanup (LeadsDialog, scheduled→confirmed).
+- **DEFERRED EXTERNAL**: Stripe/RevenueCat/social login/Wallet certs/email/push/SMS/CRM/DNS/SSO/App Store; auth hardening/2FA; destructive cleanup.
 
 ## PRICING SINGLE SOURCE OF TRUTH — Public site + dedicated Referral page (2026-06, iteration 15b) — IMPLEMENTED & verified
 User directive: ONE authoritative pricing config across Super Admin → Billing → Public site → trial messaging → referral. No hard-coded prices anywhere; annual savings DERIVED from prices.

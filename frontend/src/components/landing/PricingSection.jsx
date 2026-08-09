@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Check, Crown, Users, Sparkles, Building2, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { getPreferredMarket, saveMarketPreference } from "@/lib/market";
 
 const fmtMoney = (sym, n) => `${sym}${Number(n).toFixed(2).replace(/\.00$/, "")}`;
 
@@ -15,10 +16,20 @@ export default function PricingSection() {
 
   const load = (mk) => api.get(`/commercial/pricing${mk ? `?market=${mk}` : ""}`).then(({ data }) => {
     setData(data);
-    if (!mk) setMarket(data.pricing.market);
+    if (mk) setMarket(data.pricing.market);
   }).catch(() => {});
-  useEffect(() => { load(); }, []);
-  useEffect(() => { if (market) load(market); /* eslint-disable-next-line */ }, [market]);
+
+  // On mount: fetch config, then auto-select the visitor's preferred market (saved > detected > default).
+  useEffect(() => {
+    api.get("/commercial/pricing").then(({ data }) => {
+      const pref = getPreferredMarket(data.markets, data.pricing.market);
+      if (pref === data.pricing.market) { setData(data); setMarket(pref); }
+      else { setMarket(pref); load(pref); }
+    }).catch(() => {});
+  }, []);
+
+  // Manual selection always wins and is remembered locally.
+  const changeMarket = (m) => { saveMarketPreference(m); setMarket(m); load(m); };
 
   const pricing = data?.pricing;
   const sym = pricing?.symbol || "$";
@@ -74,7 +85,7 @@ export default function PricingSection() {
           ))}
         </div>
         {yr ? <span className="text-xs text-[#D6A653]" data-testid="landing-save-badge">Save {pricing.pro_annual_savings_pct}% annually</span> : null}
-        <select value={market || ""} onChange={(e) => setMarket(e.target.value)} data-testid="landing-market"
+        <select value={market || ""} onChange={(e) => changeMarket(e.target.value)} data-testid="landing-market"
           className="rounded-full border border-white/12 bg-white/5 px-3 py-1.5 text-sm text-white/80">
           {data.markets.map((m) => <option key={m} value={m} className="bg-[#0D1014]">{m}</option>)}
         </select>
