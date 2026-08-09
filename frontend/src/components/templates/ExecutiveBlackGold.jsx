@@ -31,7 +31,7 @@ export const ExecutiveBlackGold = ({ data }) => {
   const projects = orderedProjects(data.projects);
   const location = [id.city, id.country].filter(Boolean).join(", ");
 
-  const iconRow = [actions.call, actions.whatsapp, actions.email, actions.meet, actions.message].filter(Boolean);
+  const iconRow = [actions.call, actions.whatsapp, actions.email, actions.message].filter(Boolean);
 
   const GOLD = accentHex("executive-black-gold", data.accent, data.custom_accent_color);
   const [g1, g2, g3] = accentGrad("executive-black-gold", data.accent);
@@ -78,14 +78,14 @@ export const ExecutiveBlackGold = ({ data }) => {
           {id.bio ? <p className="mt-6 max-w-sm text-[15px] leading-relaxed text-neutral-400">{id.bio}</p> : null}
         </motion.header>
 
-        {/* ACTION ICON ROW */}
-        <motion.div {...fade(1)} className="mt-10 flex items-center justify-center gap-3">
+        {/* ACTION BUTTON ROW — Call · WhatsApp · Email · Message */}
+        <motion.div {...fade(1)} className="mt-10 grid grid-cols-4 gap-3" data-testid="hero-actions">
           {iconRow.map((a) => (
             <ActionButton
               key={a.key}
               action={a}
               testId={`hero-action-${a.key}`}
-              className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border text-[10px] uppercase tracking-wider text-neutral-300 transition-all duration-300 hover:-translate-y-1"
+              className="flex h-[70px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border text-[10px] uppercase tracking-[0.14em] text-neutral-300 transition-all duration-300 hover:-translate-y-1"
               iconClassName="w-5 h-5"
             />
           ))}
@@ -210,7 +210,7 @@ export const ExecutiveBlackGold = ({ data }) => {
       <style>{`
         [data-testid="availability-badge"]{ color:${GOLD}; border:1px solid ${gGlow}; }
         [data-testid="availability-badge"] span{ background:${GOLD}; }
-        [data-testid="hero-action-call"],[data-testid="hero-action-whatsapp"],[data-testid="hero-action-email"],[data-testid="hero-action-meet"],[data-testid="hero-action-message"]{ border-color:${gBorder}; background:#111112; }
+        [data-testid="hero-action-call"],[data-testid="hero-action-whatsapp"],[data-testid="hero-action-email"],[data-testid="hero-action-message"]{ border-color:${gBorder}; background:#111112; }
         [data-testid="save-contact-button"]{ border-color:${gBorder}; background:#111112; color:#e5e5e5; }
         [data-testid="save-contact-button"] svg{ color:${GOLD}; }
         [data-testid="qr-block"]{ border-color:${gBorder}; background:#111112; }

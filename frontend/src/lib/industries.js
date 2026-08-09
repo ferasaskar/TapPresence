@@ -4,8 +4,8 @@
 const IMG = "https://static.prod-images.emergentagent.com/jobs/b7cf9ea3-4027-4bce-9aa9-3953ffa20ee3/images/";
 
 export const INDUSTRIES = [
-  { id: "real_estate", name: "Real Estate", icon: "Building2", image: IMG + "d2c82f9a132290384b7015b8d3f12f0c7f766a1213e5f91e4eb2794e8bb247f6.jpeg", accent: "gold", defaultOpacity: 0.15,
-    styles: [{ id: "skyline", label: "City Skyline", type: "image" }, { id: "blueprint", label: "Blueprint", type: "pattern", pattern: "grid" }, { id: "architecture", label: "Architecture", type: "pattern", pattern: "lines" }] },
+  { id: "real_estate", name: "Real Estate", icon: "Building2", image: IMG + "465d7e2adf70d8fc52f9d1a7edb0c7d6129d2bf8c381f35c44e1a73551b33b14.jpeg", accent: "gold", defaultOpacity: 0.13,
+    styles: [{ id: "residence", label: "Luxury Residence", type: "image" }, { id: "skyline", label: "City Skyline", type: "image" }, { id: "blueprint", label: "Blueprint", type: "pattern", pattern: "grid" }, { id: "architecture", label: "Architecture", type: "pattern", pattern: "lines" }] },
   { id: "business", name: "Business & Consulting", icon: "Briefcase", image: IMG + "9b16db82a5b24fb91253e6046b321b26daa4bbab3090d35ee1a845babcf66635.jpeg", accent: "platinum", defaultOpacity: 0.14,
     styles: [{ id: "glass", label: "Glass Towers", type: "image" }, { id: "geometry", label: "Geometry", type: "pattern", pattern: "grid" }] },
   { id: "sales", name: "Sales & Marketing", icon: "TrendingUp", image: IMG + "782d7af414bb8a53251e87281bfe15d15ad0a94fcda7ed8c0491bd9be6c7a5db.jpeg", accent: "gold", defaultOpacity: 0.15,
