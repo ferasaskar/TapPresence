@@ -51,7 +51,7 @@ export default function IndustryShowcase() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050607] text-neutral-200" style={{ fontFamily: "'Geist','Inter',sans-serif" }} data-testid="industry-showcase">
+    <div className="min-h-screen overflow-x-hidden bg-[#050607] text-neutral-200" style={{ fontFamily: "'Geist','Inter',sans-serif" }} data-testid="industry-showcase">
       {/* header */}
       <header className="sticky top-0 z-40 border-b border-white/8 bg-[#050607]/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4 sm:px-8">
@@ -97,7 +97,7 @@ export default function IndustryShowcase() {
 
           <div className="flex justify-center">
             {device === "mobile" ? (
-              <div className="w-full max-w-[390px] overflow-hidden rounded-[36px] border-4 border-neutral-800 bg-black shadow-2xl">
+              <div className="w-full max-w-[340px] overflow-hidden rounded-[36px] border-4 border-neutral-800 bg-black shadow-2xl sm:max-w-[390px]">
                 <div className="h-[680px] overflow-y-auto" data-testid="showcase-preview">
                   <TemplateRenderer data={demo} />
                 </div>

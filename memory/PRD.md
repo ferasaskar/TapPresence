@@ -125,6 +125,13 @@ Data-driven "one base template + industry skin + accent + layered background" �
 - **Assets**: 11 generated premium dark industry backgrounds (CDN). Custom industry = user upload via existing storage.
 - QA (iteration_6): backend 5/5; all 8 combos, template independence, existing-card regression, MEMBER locked-fields revert, mobile 2-col grid + no overflow, Arabic RTL — all pass. Demo `feras-askar` = Beige Luxury + Real Estate skyline @20%.
 
+### Fix (2026-06-09, iteration 7) — "I can't find the new designs" (discoverability)
+- Root cause: Industry personalization lived only inside Admin → Card editor → "Industry" tab (buried on mobile; accounts with 0 cards had nothing to open).
+- Fix: new **browsable showcase page `/industries`** (`pages/IndustryShowcase.jsx`) — hero "Industry Template System", base-template chips, mobile/desktop toggle, live interactive `TemplateRenderer` preview + the full IndustryCustomizer panel. Registered BEFORE the `/:slug` catch-all in `App.js`.
+- Discoverable from: Card Manager header button (`industry-templates-link`) and landing "Explore Templates". CTAs → `/register`.
+- Verified (iteration_7): 13/13 critical FE tests pass — route renders, preview reacts (industry/accent/template/opacity/device), discoverable from dashboard + landing, `/feras-askar` regression clean. Minor 390px overflow fixed (overflow-x-hidden + smaller mobile frame; scrollWidth=clientWidth=390).
+
+
 
 
 
