@@ -243,7 +243,15 @@ UX/UI only; reused existing APIs/models. One tiny additive backend endpoint (lea
 - **Targeted tests (curl)**: lead stage update→200 & persists; invalid stage→400; cross-tenant stage change→**403**; meetings upcoming/past/cancelled→200 scoped to feras-askar only. Frontend compiles (mobile layout OK). Added `.aria-pop` dark dropdown styling. NOTE: authed pages not screenshottable in-tool — visual review left to user.
 - Roadmap phases (Typography, Referral, Billing, Native App) NOT started.
 
-## AI Follow-up discoverability restore (2026-08-09)
+## GLOBAL PRODUCT MASTER ROADMAP — approved (2026-08-09)
+User approved the full phase-by-phase roadmap (A1→A2→B→C→D→E→F→G→H→I→J→K→L→M→N→O→P→【Native Q】→R→S→T→U→V→W→External). Governance: audit-before-each-phase, reuse-only/implement-gap-only, one source of truth per system, backward compatible (no destructive migration w/o approval), backend-authz source of truth, global/mobile-first, external integrations last, targeted tests then STOP for manual approval, never auto-continue. POSTPONED (kept, not dropped): T white-label, U enterprise, V enrichment, W advanced AI. Debt items deferred to a dedicated safe cleanup phase: retire unused LeadsDialog.jsx; normalize meeting `scheduled`→`confirmed`.
+
+## PHASE A1 — Card Typography & Readability (2026-08-09) — IMPLEMENTED & verified
+Engine-level typography/readability upgrade in `ExecutiveBlackGold.jsx` ONLY (the live renderer for all new cards + the create-flow live preview, so preview↔published parity preserved automatically). No backend, no data, no new fields — fully backward compatible.
+- Fluid `clamp()` name sizing (1.85rem→3rem) with `overflow-wrap:anywhere` + `text-wrap:balance` so long/RTL/Spanish names never overflow (verified: 35-char single word at 360px = no horizontal overflow).
+- Readability tuning: role 15px, company/location tightened tracking, bio 15px/1.7 line-height with `text-wrap:pretty`; section headings fluid clamp + balance; service descriptions 13px/1.55. RTL letter-spacing neutralized via `[dir=rtl]`.
+- Reused: entire accent/industry/crop/CTA engine untouched. NOT touched: backend, CardData model, DB, legacy Beige/Future templates, dialogs, CTA logic.
+- Tests: frontend compiles (only pre-existing eslint warning); `/feras-askar` 200; mobile 390px + 360px no overflow; long-name stress no overflow. Optional per-card typography preset = POSTPONED (avoids premature architecture).
 Audit: pre-Phase-3 the only inbox AI was per-lead **AI follow-up** in the now-orphaned `LeadsDialog.jsx` (still in code, unused). Phase 3 moved the SAME feature (same `POST /ai/followup`, same channel/tone/language, editable draft, copy, no auto-send) into the `/leads` Lead Details modal — nothing lost, only less discoverable.
 Fix (UI-only, no new AI/backend/CRM): added a clear **AI Follow-up** quick action (sparkle icon; "AI Follow-up" on ≥sm, "AI" on mobile) on every lead row in `pages/Leads.jsx`, next to Call/WhatsApp/Email. It calls `openAI(l)` → opens that lead's existing detail modal → scrolls to `#lead-ai-section` (the existing AI panel). No duplicate AI component; `LeadsDialog.jsx` left unused. Verified: compiles; `/ai/followup` still returns draft-only (provider openai:gpt-5.4), no auto-send.
 

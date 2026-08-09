@@ -101,13 +101,17 @@ export const ExecutiveBlackGold = ({ data }) => {
             className="mb-4 inline-flex items-center gap-2 rounded-full px-4 py-1 text-xs tracking-widest uppercase"
             dotClassName="w-1.5 h-1.5 rounded-full"
           />
-          <h1 data-testid="hero-name" className="font-serif text-4xl leading-none tracking-tight sm:text-5xl" style={{ color: GOLD }}>
+          <h1
+            data-testid="hero-name"
+            className="tp-name font-serif"
+            style={{ color: GOLD, fontSize: "clamp(1.85rem, 8.5vw, 3rem)", lineHeight: 1.05, letterSpacing: "-0.01em" }}
+          >
             {id.fullName}
           </h1>
-          <p className="mt-3 text-base tracking-wide text-neutral-300">{id.jobTitle}</p>
-          {id.company ? <p className="mt-1 text-sm tracking-[0.2em] uppercase text-neutral-500">{id.company}</p> : null}
-          {location ? <p className="mt-2 text-xs tracking-widest uppercase text-neutral-600">{location}</p> : null}
-          {id.bio ? <p className="mt-4 max-w-sm text-[14px] leading-relaxed text-neutral-400">{id.bio}</p> : null}
+          {id.jobTitle ? <p className="tp-balance mt-3 text-[15px] leading-relaxed tracking-wide text-neutral-200 sm:text-base">{id.jobTitle}</p> : null}
+          {id.company ? <p className="tp-balance mt-1.5 text-[13px] tracking-[0.18em] uppercase text-neutral-400">{id.company}</p> : null}
+          {location ? <p className="tp-balance mt-2 text-[11px] tracking-[0.15em] uppercase text-neutral-500">{location}</p> : null}
+          {id.bio ? <p className="tp-pretty mt-4 max-w-sm text-[15px] leading-[1.7] text-neutral-300">{id.bio}</p> : null}
         </motion.header>
 
         {/* QUICK ACTIONS — Call · WhatsApp · Email · Message */}
@@ -172,7 +176,7 @@ export const ExecutiveBlackGold = ({ data }) => {
           <section className="mt-12" data-testid="services-section">
             <motion.div {...fade(0)}>
               <Overline>Capabilities</Overline>
-              <h2 className="mb-5 font-serif text-2xl tracking-tight text-neutral-100">What I offer</h2>
+              <h2 className="tp-balance mb-5 font-serif tracking-tight text-neutral-100" style={{ fontSize: "clamp(1.4rem, 5.5vw, 1.6rem)", lineHeight: 1.2 }}>What I offer</h2>
             </motion.div>
             <div className="grid grid-cols-2 gap-3">
               {services.map((s, i) => {
@@ -186,8 +190,8 @@ export const ExecutiveBlackGold = ({ data }) => {
                     style={{ borderColor: gBorder, backgroundColor: panelTint }}
                   >
                     <Icon className="mb-2 h-[18px] w-[18px]" strokeWidth={1.5} style={{ color: GOLD }} />
-                    <h3 className="mb-1 font-serif text-base leading-snug tracking-tight text-neutral-100">{s.title}</h3>
-                    <p className="line-clamp-2 text-xs leading-relaxed text-neutral-400">{s.description}</p>
+                    <h3 className="tp-balance mb-1 font-serif text-base leading-snug tracking-tight text-neutral-100">{s.title}</h3>
+                    <p className="line-clamp-2 text-[13px] leading-[1.55] text-neutral-400">{s.description}</p>
                   </motion.div>
                 );
               })}
@@ -200,7 +204,7 @@ export const ExecutiveBlackGold = ({ data }) => {
           <section className="mt-12" data-testid="projects-section">
             <motion.div {...fade(0)}>
               <Overline>Portfolio</Overline>
-              <h2 className="mb-5 font-serif text-2xl tracking-tight text-neutral-100">Featured work</h2>
+              <h2 className="tp-balance mb-5 font-serif tracking-tight text-neutral-100" style={{ fontSize: "clamp(1.4rem, 5.5vw, 1.6rem)", lineHeight: 1.2 }}>Featured work</h2>
             </motion.div>
             <div className="proj-scroll -mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0">
               {projects.map((p, i) => {
@@ -298,6 +302,10 @@ export const ExecutiveBlackGold = ({ data }) => {
       <style>{`
         .proj-scroll::-webkit-scrollbar{ display:none; }
         .proj-scroll{ scrollbar-width:none; }
+        .tp-name{ overflow-wrap:anywhere; word-break:break-word; text-wrap:balance; }
+        .tp-balance{ text-wrap:balance; overflow-wrap:anywhere; }
+        .tp-pretty{ text-wrap:pretty; overflow-wrap:anywhere; }
+        [dir="rtl"] .tp-name,[dir="rtl"] .tp-balance,[dir="rtl"] .tp-pretty{ letter-spacing:0 !important; }
         [data-testid="availability-badge"]{ color:${GOLD}; border:1px solid ${gGlow}; background:${panelTint}; }
         [data-testid="availability-badge"] span{ background:${GOLD}; }
         [data-testid="hero-action-call"],[data-testid="hero-action-whatsapp"],[data-testid="hero-action-email"],[data-testid="hero-action-message"]{ border-color:${gBorder}!important; background:${panelTint}!important; }
