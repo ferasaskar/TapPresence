@@ -174,6 +174,13 @@ User: published card must match the approved showcase — accent-consistent pane
 - QA (iteration_12): 6/6 pass via computed-style checks — purple panels rgb(167,139,250), gold rgb(201,162,75), bg tones correct, crop persists & preview↔public transform matrices identical, feras-askar regression gold. Temp cards cleaned up.
 - NOTE: fix currently lives in the default `ExecutiveBlackGold` template (all new cards use it). Beige/Future legacy templates unchanged (existing cards safe).
 
+## Four enhancements: Auto-center, Accent picker, Publish confirmation, Duplicate (2026-06-10, iteration 13) — IMPLEMENTED & QA-PASSED (100%)
+- **Face auto-center** (`ProfilePhotoField`): uses browser `FaceDetector` when available, else a portrait heuristic (scale ~1.15, offsetY ~6). Runs automatically on upload + manual `photo-autocenter` button. Writes `identity.imageScale/imageOffsetX/imageOffsetY`, applied identically in preview + published (`hero-portrait` transform).
+- **Accent picker in studio** (Step 2 via `IndustryCustomizer`): swatches (`accent-{id}`, incl. red) + `accent-custom` color input; recolors the live full preview instantly.
+- **Publish confirmation** (`CreateCard`): after Publish, a "You're live" screen (`publish-success`) with QR (`publish-qr`), shareable link + copy (`publish-link/publish-copy`), View card and Go to dashboard. Save Draft still routes to /admin.
+- **Duplicate card**: `POST /api/admin/cards/{id}/duplicate` (unique `{slug}-copy-xxxxx`, status draft, re.sub strips stacking) + `duplicate-{slug}` button on each dashboard tile.
+- QA (iteration_13): 100% — backend 6/6 pytest, frontend all 4 + regression. Testing agent caught & fixed a critical regression my duplicate insertion caused (the `@api_router.put` decorator for `update_card` was consumed → editing returned 405); decorator restored, verified. All temp cards cleaned; feras-askar untouched.
+
 
 
 
