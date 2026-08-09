@@ -186,6 +186,13 @@ class CardData(BaseModel):
     slug: str
     templateId: str = "beige-luxury"
     accent: str = "gold"
+    custom_accent_color: str = ""
+    industry: str = ""
+    background_style: str = ""
+    background_opacity: float = 0.14
+    background_intensity: str = "medium"
+    background_position: str = "center"
+    custom_background: str = ""
     status: str = "draft"
     identity: Identity = Field(default_factory=Identity)
     contact: Contact = Field(default_factory=Contact)
@@ -206,6 +213,13 @@ class CardUpsert(BaseModel):
     slug: str
     templateId: str = "beige-luxury"
     accent: str = "gold"
+    custom_accent_color: str = ""
+    industry: str = ""
+    background_style: str = ""
+    background_opacity: float = 0.14
+    background_intensity: str = "medium"
+    background_position: str = "center"
+    custom_background: str = ""
     status: str = "draft"
     identity: Identity = Field(default_factory=Identity)
     contact: Contact = Field(default_factory=Contact)
@@ -524,6 +538,13 @@ async def update_card(card_id: str, body: CardUpsert, user: dict = Depends(get_c
             for f in (wsdoc or {}).get("locked_fields", []):
                 if f in ("templateId", "accent"):
                     update[f] = existing.get(f)
+                    if f == "accent":
+                        update["custom_accent_color"] = existing.get("custom_accent_color", "")
+                elif f == "industry":
+                    update["industry"] = existing.get("industry", "")
+                elif f == "background":
+                    for bf in ("background_style", "custom_background", "background_opacity", "background_intensity", "background_position"):
+                        update[bf] = existing.get(bf, update.get(bf))
                 elif f in ("company", "companyLogo"):
                     update.setdefault("identity", {})
                     update["identity"][f] = existing.get("identity", {}).get(f, "")

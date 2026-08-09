@@ -11,6 +11,7 @@ import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
 import { WalletButtons } from "@/components/profile/WalletButtons";
 import { accentValue, hexToRgba } from "@/lib/accents";
+import { industryRootStyle, BASE_RGB } from "@/lib/industries";
 
 const fade = (i = 0) => ({
   initial: { opacity: 0, y: 24 },
@@ -34,10 +35,10 @@ export const FutureProfessional = ({ data }) => {
 
   const panel = [actions.message || actions.whatsapp, actions.email, actions.call, actions.meet].filter(Boolean);
 
-  const { p, s } = accentValue("future-professional", data.accent);
+  const { p, s } = accentValue("future-professional", data.accent, data.custom_accent_color);
 
   return (
-    <div className="relative min-h-screen font-sans text-slate-200 overflow-hidden" style={{ backgroundColor: "#070A16", "--ac": p }}>
+    <div className="relative min-h-screen font-sans text-slate-200 overflow-hidden" style={{ backgroundColor: "#070A16", "--ac": p, ...industryRootStyle(data, BASE_RGB["future-professional"], p) }}>
       <div className="grain-overlay" style={{ opacity: 0.05 }} />
       <div className="pointer-events-none absolute left-1/2 top-[-60px] h-[420px] w-[420px] -translate-x-1/2 rounded-full opacity-30 blur-3xl" style={{ background: `radial-gradient(circle, ${s} 0%, ${p} 55%, transparent 75%)` }} />
 

@@ -11,6 +11,7 @@ import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
 import { WalletButtons } from "@/components/profile/WalletButtons";
 import { accentHex, accentGrad, hexToRgba } from "@/lib/accents";
+import { industryRootStyle, BASE_RGB } from "@/lib/industries";
 
 const fade = (i = 0) => ({
   initial: { opacity: 0, y: 24 },
@@ -32,14 +33,14 @@ export const ExecutiveBlackGold = ({ data }) => {
 
   const iconRow = [actions.call, actions.whatsapp, actions.email, actions.meet, actions.message].filter(Boolean);
 
-  const GOLD = accentHex("executive-black-gold", data.accent);
+  const GOLD = accentHex("executive-black-gold", data.accent, data.custom_accent_color);
   const [g1, g2, g3] = accentGrad("executive-black-gold", data.accent);
   const gBorder = hexToRgba(GOLD, 0.35);
   const gBorder30 = hexToRgba(GOLD, 0.3);
   const gGlow = hexToRgba(GOLD, 0.5);
 
   return (
-    <div className="relative min-h-screen font-sans text-neutral-200 overflow-hidden" style={{ backgroundColor: "#0B0B0C", "--ac": GOLD }}>
+    <div className="relative min-h-screen font-sans text-neutral-200 overflow-hidden" style={{ backgroundColor: "#0B0B0C", "--ac": GOLD, ...industryRootStyle(data, BASE_RGB["executive-black-gold"], GOLD) }}>
       <div className="grain-overlay" style={{ opacity: 0.06 }} />
       {/* soft gold radial glow behind hero */}
       <div className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full opacity-20 blur-3xl" style={{ background: GOLD }} />

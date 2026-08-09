@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { TEMPLATES, TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { ImageUploadField } from "@/components/admin/ImageUploadField";
+import IndustryCustomizer from "@/components/admin/IndustryCustomizer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,8 @@ import { Plus, Trash2, Loader2, ArrowLeft, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 const empty = {
-  slug: "", templateId: "beige-luxury", accent: "gold", status: "draft",
+  slug: "", templateId: "beige-luxury", accent: "gold", custom_accent_color: "", status: "draft",
+  industry: "", background_style: "", background_opacity: 0.14, background_intensity: "medium", background_position: "center", custom_background: "",
   identity: { fullName: "", jobTitle: "", company: "", companyLogo: "", profilePhoto: "", bio: "", city: "", country: "", availabilityBadge: "" },
   contact: { phone: "", whatsapp: "", email: "", website: "", address: "", mapsUrl: "" },
   social: { linkedin: "", instagram: "", x: "", youtube: "", tiktok: "" },
@@ -119,6 +121,7 @@ export default function CardEditor({ initial, onBack, onSaved }) {
         <Tabs defaultValue="identity">
           <TabsList className="flex flex-wrap h-auto">
             <TabsTrigger value="identity">Identity</TabsTrigger>
+            <TabsTrigger value="industry" data-testid="tab-industry">Industry</TabsTrigger>
             <TabsTrigger value="contact">Contact</TabsTrigger>
             <TabsTrigger value="social">Social</TabsTrigger>
             <TabsTrigger value="services">Services</TabsTrigger>
@@ -137,6 +140,10 @@ export default function CardEditor({ initial, onBack, onSaved }) {
               <Field label="Country"><Input value={form.identity.country} onChange={(e) => set("identity.country", e.target.value)} /></Field>
             </div>
             <Field label="Bio"><Textarea value={form.identity.bio} onChange={(e) => set("identity.bio", e.target.value)} rows={3} /></Field>
+          </TabsContent>
+
+          <TabsContent value="industry" className="pt-4">
+            <IndustryCustomizer form={form} set={set} />
           </TabsContent>
 
           <TabsContent value="contact" className="space-y-3 pt-4">

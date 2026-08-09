@@ -11,6 +11,7 @@ import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
 import { WalletButtons } from "@/components/profile/WalletButtons";
 import { accentHex, accentVars } from "@/lib/accents";
+import { industryRootStyle, BASE_RGB } from "@/lib/industries";
 
 const fade = (i = 0) => ({
   initial: { opacity: 0, y: 24 },
@@ -29,10 +30,10 @@ export const BeigeLuxuryExecutive = ({ data }) => {
   const services = orderedServices(data.services);
   const projects = orderedProjects(data.projects);
   const location = [id.city, id.country].filter(Boolean).join(", ");
-  const ac = accentHex("beige-luxury", data.accent);
+  const ac = accentHex("beige-luxury", data.accent, data.custom_accent_color);
 
   return (
-    <div className="relative min-h-screen bg-ivory-bg text-ink font-sans overflow-hidden" style={accentVars(ac)}>
+    <div className="relative min-h-screen bg-ivory-bg text-ink font-sans overflow-hidden" style={{ ...accentVars(ac), ...industryRootStyle(data, BASE_RGB["beige-luxury"], ac) }}>
       <div className="grain-overlay" />
       <div className="relative mx-auto w-full max-w-lg px-6 pb-16 pt-14 sm:px-8">
 

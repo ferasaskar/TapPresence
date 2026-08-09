@@ -639,6 +639,61 @@ async def card_wallet_pass(slug: str, platform: str):
             "pass_url": f"{PUBLIC_APP_URL}/api/cards/{slug}/wallet/{platform}/download"}
 
 
+# ------------------------------------------------------------------ industry catalog (Phase 8, data-driven / admin-manageable later)
+_IMG = "https://static.prod-images.emergentagent.com/jobs/b7cf9ea3-4027-4bce-9aa9-3953ffa20ee3/images/"
+INDUSTRY_CATALOG = [
+    {"id": "real_estate", "name": "Real Estate", "icon": "Building2", "image": _IMG + "d2c82f9a132290384b7015b8d3f12f0c7f766a1213e5f91e4eb2794e8bb247f6.jpeg",
+     "recommended_accent": "gold", "default_opacity": 0.15,
+     "styles": [{"id": "skyline", "label": "City Skyline", "type": "image"}, {"id": "blueprint", "label": "Blueprint", "type": "pattern", "pattern": "grid"}, {"id": "architecture", "label": "Architecture", "type": "pattern", "pattern": "lines"}]},
+    {"id": "business", "name": "Business & Consulting", "icon": "Briefcase", "image": _IMG + "9b16db82a5b24fb91253e6046b321b26daa4bbab3090d35ee1a845babcf66635.jpeg",
+     "recommended_accent": "platinum", "default_opacity": 0.14,
+     "styles": [{"id": "glass", "label": "Glass Towers", "type": "image"}, {"id": "geometry", "label": "Geometry", "type": "pattern", "pattern": "grid"}]},
+    {"id": "sales", "name": "Sales & Marketing", "icon": "TrendingUp", "image": _IMG + "782d7af414bb8a53251e87281bfe15d15ad0a94fcda7ed8c0491bd9be6c7a5db.jpeg",
+     "recommended_accent": "gold", "default_opacity": 0.15,
+     "styles": [{"id": "growth", "label": "Growth", "type": "image"}, {"id": "points", "label": "Data Points", "type": "pattern", "pattern": "dots"}]},
+    {"id": "technology", "name": "Technology & AI", "icon": "Cpu", "image": _IMG + "447272e027a2357ae68521e30e1f5e5501d30bcdf27ede9cc9cbc06be3f47d1e.jpeg",
+     "recommended_accent": "blue", "default_opacity": 0.16,
+     "styles": [{"id": "neural", "label": "Neural Network", "type": "image"}, {"id": "grid", "label": "Data Grid", "type": "pattern", "pattern": "grid"}, {"id": "particles", "label": "Particles", "type": "pattern", "pattern": "dots"}]},
+    {"id": "healthcare", "name": "Healthcare", "icon": "HeartPulse", "image": _IMG + "23ec91a2e4b04c3e104b208e8c055b98d69e973ed86fa385df65f283f480d466.jpeg",
+     "recommended_accent": "emerald", "default_opacity": 0.12,
+     "styles": [{"id": "wave", "label": "Medical Wave", "type": "image"}, {"id": "abstract", "label": "Clean Abstract", "type": "pattern", "pattern": "glow"}]},
+    {"id": "legal", "name": "Legal Services", "icon": "Scale", "image": _IMG + "418c39c0a1ada4ee213ca20117211887c218ff11da800c485497e847481a4489.jpeg",
+     "recommended_accent": "bronze", "default_opacity": 0.14,
+     "styles": [{"id": "columns", "label": "Columns", "type": "image"}, {"id": "marble", "label": "Marble Lines", "type": "pattern", "pattern": "lines"}]},
+    {"id": "education", "name": "Education & Training", "icon": "GraduationCap", "image": _IMG + "452ba54873e3fcbe3946fab9d9f17bd96505a3f60812683840ecad5806913147.jpeg",
+     "recommended_accent": "gold", "default_opacity": 0.13,
+     "styles": [{"id": "academic", "label": "Academic", "type": "image"}, {"id": "geometry", "label": "Geometry", "type": "pattern", "pattern": "grid"}]},
+    {"id": "hospitality", "name": "Hospitality", "icon": "Hotel", "image": _IMG + "96c623ebb474f490a218d010805b8da0e5b3ff3a17743583f509367ef9e6df04.jpeg",
+     "recommended_accent": "gold", "default_opacity": 0.15,
+     "styles": [{"id": "interior", "label": "Luxury Interior", "type": "image"}, {"id": "warm", "label": "Warm Light", "type": "pattern", "pattern": "glow"}]},
+    {"id": "automotive", "name": "Automotive", "icon": "Car", "image": _IMG + "bfa23a5b48b5e3109555190832019296ad5ef55be922dfa0abf083d40796c4bf.jpeg",
+     "recommended_accent": "platinum", "default_opacity": 0.15,
+     "styles": [{"id": "luxury_car", "label": "Luxury Car", "type": "image"}, {"id": "speed", "label": "Speed Lines", "type": "pattern", "pattern": "lines"}]},
+    {"id": "beauty", "name": "Beauty & Wellness", "icon": "Flower2", "image": _IMG + "2ee971f749a68580d1b69c42348edcd63ffa4c8d40b64f45565920e79697a3bd.jpeg",
+     "recommended_accent": "rose", "default_opacity": 0.13,
+     "styles": [{"id": "editorial", "label": "Editorial", "type": "image"}, {"id": "soft", "label": "Soft Light", "type": "pattern", "pattern": "glow"}]},
+    {"id": "finance", "name": "Finance", "icon": "LineChart", "image": _IMG + "782d7af414bb8a53251e87281bfe15d15ad0a94fcda7ed8c0491bd9be6c7a5db.jpeg",
+     "recommended_accent": "gold", "default_opacity": 0.14,
+     "styles": [{"id": "market", "label": "Market Data", "type": "image"}, {"id": "lines", "label": "Financial Lines", "type": "pattern", "pattern": "lines"}]},
+    {"id": "custom", "name": "Custom Industry", "icon": "Plus", "image": "",
+     "recommended_accent": "gold", "default_opacity": 0.14,
+     "styles": [{"id": "custom", "label": "Custom Image", "type": "custom"}]},
+]
+
+
+@platform_router.get("/industries")
+async def list_industries():
+    """Industry personalization catalog. Overrides from DB (Super Admin managed) merge over defaults."""
+    overrides = await db.industry_overrides.find({}, {"_id": 0}).to_list(200)
+    by_id = {o["id"]: o for o in overrides}
+    out = []
+    for ind in INDUSTRY_CATALOG:
+        merged = {**ind, **by_id.get(ind["id"], {})}
+        if merged.get("status", "active") != "disabled":
+            out.append(merged)
+    return {"industries": out}
+
+
 # ------------------------------------------------------------------ contact exchange (unified lead)
 class ExchangeIn(BaseModel):
     name: str

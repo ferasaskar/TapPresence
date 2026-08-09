@@ -1,0 +1,40 @@
+{
+  "summary": "Phase 8 Industry Template Personalization verified end-to-end. Backend: 5/5 pytest cases pass — GET /api/industries returns exactly the 12 industries with all required keys; PUT /api/admin/cards/{id} persists industry/background_style/accent/background_opacity/background_intensity/background_position and public GET /api/cards/feras-askar reflects them; custom accent hex (#22d3ee with accent='custom') persists on both admin update response and public GET; a card without industry (feras-mahmmoud) has industry=None and background_style=None (regression preserved); the locked_fields code path was validated with a live MEMBER user in a workspace where SUPER_ADMIN set locked_fields=['industry','accent','background'] — attempted MEMBER PUT of technology/blue/neural/opacity 0.25/rich was correctly reverted to the pre-existing values (industry='', accent='gold', background_style=''). Frontend: admin login OK, editor Industry tab renders with the premium dark IndustryCustomizer; all required data-testids present (industry-<id> for 12 items, accent-gold/blue/emerald/rose/gold/platinum/bronze/purple + accent-custom color input, bgstyle-<id>, bg-opacity slider + bg-opacity-value %, intensity-soft/medium/rich, position-left/center/right/full) — ONLY MISS: 'upload-custom-bg' is actually rendered as 'upload-custom-bg-button' / 'upload-custom-bg-file' / 'upload-custom-bg-url' because ImageUploadField appends '-button/-file/-url' to testId (see IndustryCustomizer.jsx:106 -> ImageUploadField.jsx:50). Live preview reactivity works: selecting Technology & AI + accent-blue + bgstyle-neural + moving the opacity slider (16% -> 18%) updated the LIVE PREVIEW without saving; switching the base template between Beige Luxury Executive, Executive Black Gold, and Future Professional all show the same subtle neural background under the card content (template-independent, ONE base + skin architecture confirmed). Save flow works: admin-save-button click persisted; public /api/cards/feras-askar afterward returned industry=technology, background_style=neural, accent=blue, templateId=future-professional. Mobile (390px) public profile: horizontal overflow = 0px, background subtle, text readable. Mobile editor at 390px shows the industry grid as 2 columns (matches spec). Arabic RTL: clicked the AR toggle on public profile — layout flipped correctly (Arabic text lines render RTL, industry background continues to render underneath because it's language-neutral). Regression: feras-mahmmoud still returns industry=None, no background skin, renders normally. State was restored: feras-askar reverted back to real_estate/skyline/gold/executive-black-gold at the end so the demo remains as the main agent left it.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_industries_phase8.py",
+    "/app/test_reports/pytest/phase8_results.xml",
+    "/app/test_reports/phase8_editor.png",
+    "/app/test_reports/phase8_exec_black_gold.png",
+    "/app/test_reports/phase8_mobile_public.png",
+    "/app/test_reports/phase8_mobile_ar.png",
+    "/app/test_reports/phase8_mobile_editor.png"
+  ],
+  "action_items": [
+    "OPTIONAL / minor: the review request expects data-testid='upload-custom-bg' but the ImageUploadField suffixes the id, producing 'upload-custom-bg-button'/'-file'/'-url'. Either accept the suffixed ids (they are already unique and usable) or add a wrapping data-testid='upload-custom-bg' on the outer container in IndustryCustomizer.jsx line ~106 so E2E tests that key on the exact literal keep passing."
+  ],
+  "critical_code_review_comments": [
+    "Locked-fields logic in server.py update_card only reverts when role == 'MEMBER'. WORKSPACE_ADMIN/MANAGER can still change locked branding — this matches the spec ('a MEMBER's PUT must NOT change those') but worth double-checking business intent.",
+    "CardUpsert default background_opacity=0.14 is applied on every PUT — so a MEMBER PUT with an unlocked 'background' will always overwrite opacity to 0.14 unless the client echoes the existing value. Frontend CardEditor does hydrate `form` from initial card, so this is fine in practice; just noting that partial PATCH semantics are absent (PUT replaces).",
+    "GET /api/industries is public (no auth required) — intentional and correct for the editor + potential landing-page use.",
+    "INDUSTRY_CATALOG image URLs are hard-coded to a static.prod-images CDN prefix. If the CDN slug ever changes, all 11 default images would break in one shot. Consider persisting them under industry_overrides via seed so an admin can rotate.",
+    "industryRootStyle in frontend uses background_opacity as a float — verified live preview updates continuously; good.",
+    "No API-level validation on background_opacity range (0.0–1.0) or background_intensity/position enum. Frontend clamps, but the backend accepts any float/str. Low priority but worth adding pydantic constraints.",
+    "Regression protection is preserved: cards with industry='' render as before because industryRootStyle returns {} for empty industry (verified via feras-mahmmoud public profile)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_industries_phase8.py"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (editor + live preview + save + public reflect + mobile + RTL)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN). Ephemeral member 'lockmember-<hex>@example.com / Test@1234' auto-registered inside test_locked_branding_member_cannot_change and its scratch card is deleted at end.",
+  "seed_data_creation": "Only ephemeral test data created and cleaned up inside the locked-branding test. Restored feras-askar to real_estate/skyline/gold/executive-black-gold at end of run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 8 is stable. Reusable pytest at /app/backend/tests/test_industries_phase8.py covers catalog, persistence, custom hex accent, regression (no-industry cards), and MEMBER locked_fields enforcement. Base URL is auto-loaded from /app/frontend/.env if REACT_APP_BACKEND_URL isn't in env. feras-askar is the live demo (Real Estate + Executive Black Gold + Gold + City Skyline + 15%). If you need to test other combos, use the editor's Industry tab live preview without saving.",
+  "rca of the issue": "N/A — no failures."
+}
