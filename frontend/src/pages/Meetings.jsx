@@ -5,7 +5,7 @@ import { Loader2, ArrowLeft, Clock, User, Mail, Phone, CalendarDays, Sparkles, C
 import { toast } from "sonner";
 
 const TABS = ["today", "upcoming", "past", "cancelled"];
-const STATUS_OPTS = ["scheduled", "confirmed", "completed", "cancelled", "no-show"];
+const STATUS_OPTS = ["requested", "scheduled", "confirmed", "completed", "cancelled", "no-show", "declined", "time_proposed"];
 const badge = (s) => ({
   scheduled: "text-[#D6A653] border-[#D6A653]/40 bg-[#D6A653]/10",
   confirmed: "text-emerald-300 border-emerald-400/40 bg-emerald-400/10",
@@ -84,6 +84,12 @@ export default function Meetings() {
                     {m.note ? <p className="mt-2 text-sm text-white/60">“{m.note}”</p> : null}
                   </div>
                   <div className="flex flex-col items-end gap-2">
+                    {m.status === "requested" ? (
+                      <div className="flex gap-2" data-testid={`meeting-approve-${m.id}`}>
+                        <button onClick={() => setStatus(m, "confirmed")} className="rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-400/20" data-testid={`meeting-accept-${m.id}`}>Accept</button>
+                        <button onClick={() => setStatus(m, "declined")} className="rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-400/20" data-testid={`meeting-decline-${m.id}`}>Decline</button>
+                      </div>
+                    ) : null}
                     <select value={m.status} onChange={(e) => setStatus(m, e.target.value)} className="rounded-lg border border-white/12 bg-[#0A0B0D] px-2 py-1.5 text-xs text-white" data-testid={`meeting-status-${m.id}`}>
                       {STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>

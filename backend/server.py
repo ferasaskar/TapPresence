@@ -210,6 +210,7 @@ class CardData(BaseModel):
     booking: Booking = Field(default_factory=Booking)
     workspace_id: Optional[str] = None
     owner_user_id: Optional[str] = None
+    created_by: Optional[str] = None
     languages: List[str] = Field(default_factory=lambda: ["en"])
     i18n: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -520,6 +521,7 @@ async def create_card(body: CardUpsert, user: dict = Depends(get_current_user)):
     doc = card.model_dump()
     doc["workspace_id"] = wsid
     doc["owner_user_id"] = user["id"]
+    doc["created_by"] = user["id"]
     await db.digital_cards.insert_one(doc)
     return await db.digital_cards.find_one({"id": card.id}, {"_id": 0})
 
@@ -542,7 +544,8 @@ async def duplicate_card(card_id: str, user: dict = Depends(get_current_user)):
     doc = card.model_dump()
     ms = await db.memberships.find_one({"user_id": user["id"]}, {"_id": 0})
     doc["workspace_id"] = existing.get("workspace_id") or (ms["workspace_id"] if ms else None)
-    doc["owner_user_id"] = user["id"]
+    doc["owner_user_id"] = existing.get("owner_user_id") or user["id"]
+    doc["created_by"] = user["id"]
     await db.digital_cards.insert_one(doc)
     return await db.digital_cards.find_one({"id": card.id}, {"_id": 0})
 
@@ -595,28 +598,51 @@ async def delete_card(card_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.get("/admin/leads")
 async def list_leads(slug: str = None, user: dict = Depends(get_current_user)):
-    q = {"cardSlug": slug} if slug else {}
-    leads = await db.leads.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    # Tenant isolation: only leads on cards the caller can access.
+    q = await _card_query(user)
+    cards = await db.digital_cards.find(q, {"_id": 0, "slug": 1}).to_list(5000)
+    slugs = [c["slug"] for c in cards]
+    if slug is not None:
+        if slug not in slugs:
+            raise HTTPException(status_code=403, detail="Not your card")
+        lq = {"cardSlug": slug}
+    else:
+        lq = {"cardSlug": {"$in": slugs}}
+    leads = await db.leads.find(lq, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return leads
+
+
+async def _lead_or_403(lead_id: str, user: dict):
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    card = await db.digital_cards.find_one({"slug": lead.get("cardSlug")}, {"_id": 0})
+    if not card or not await _can_access_card(user, card):
+        raise HTTPException(status_code=403, detail="Not your lead")
+    return lead
 
 
 @api_router.patch("/admin/leads/{lead_id}")
 async def mark_lead_read(lead_id: str, user: dict = Depends(get_current_user)):
+    await _lead_or_403(lead_id, user)
     await db.leads.update_one({"id": lead_id}, {"$set": {"read": True}})
     return {"ok": True}
 
 
 @api_router.delete("/admin/leads/{lead_id}")
 async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
+    await _lead_or_403(lead_id, user)
     await db.leads.delete_one({"id": lead_id})
     return {"ok": True}
 
 
 @api_router.get("/admin/cards/{card_id}/analytics")
 async def card_analytics(card_id: str, user: dict = Depends(get_current_user)):
-    card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0, "slug": 1})
+    card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    if not await _can_access_card(user, card):
+        raise HTTPException(status_code=403, detail="Not your card")
     slug = card["slug"]
     events = await db.analytics_events.find({"cardSlug": slug}, {"_id": 0}).to_list(10000)
     views = sum(1 for e in events if e["type"] == "view")
@@ -645,7 +671,7 @@ DEFAULT_MTS = [
     {"title": "30 Min Consultation", "duration": 30},
     {"title": "45 Min Meeting", "duration": 45},
 ]
-ACTIVE_STATUSES = ("scheduled", "confirmed")
+ACTIVE_STATUSES = ("scheduled", "confirmed", "requested", "time_proposed")
 
 
 class MeetingTypeIn(BaseModel):
@@ -657,6 +683,7 @@ class MeetingTypeIn(BaseModel):
     enabled: bool = True
     price: Optional[float] = None
     order: int = 0
+    confirmation_mode: str = "auto"  # auto | approval
 
 
 class AvailabilityIn(BaseModel):
@@ -696,7 +723,7 @@ async def _get_meeting_types(card_id: str, only_enabled=False, seed=True):
         for i, d in enumerate(DEFAULT_MTS):
             mt = {"id": str(uuid.uuid4()), "card_id": card_id, "title": d["title"], "description": "",
                   "duration": d["duration"], "location_type": "video", "location_detail": "",
-                  "enabled": True, "price": None, "order": i}
+                  "enabled": True, "price": None, "order": i, "confirmation_mode": "auto"}
             await db.meeting_types.insert_one(dict(mt))
             mts.append(mt)
     if only_enabled:
@@ -832,6 +859,8 @@ async def public_book(slug: str, body: BookIn):
         })
 
     manage_token = uuid.uuid4().hex + uuid.uuid4().hex[:8]
+    approval = str(mt.get("confirmation_mode", "auto")) == "approval"
+    status = "requested" if approval else "scheduled"
     meeting = {
         "id": str(uuid.uuid4()), "manage_token": manage_token, "card_id": card["id"], "cardSlug": slug,
         "workspace_id": card.get("workspace_id"), "owner_user_id": card.get("owner_user_id"),
@@ -841,16 +870,16 @@ async def public_book(slug: str, body: BookIn):
         "owner_timezone": tzname, "visitor_name": body.name.strip(), "visitor_email": body.email.strip(),
         "visitor_phone": body.phone.strip(), "visitor_tz": body.visitor_tz or "UTC", "note": body.note.strip(),
         "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(),
-        "status": "scheduled", "created_at": now, "updated_at": now,
+        "status": status, "confirmation_mode": "approval" if approval else "auto", "created_at": now, "updated_at": now,
         "reminders": [{"offset_hours": 24, "status": "scheduled", "provider": "NOT_CONFIGURED"},
                       {"offset_hours": 1, "status": "scheduled", "provider": "NOT_CONFIGURED"}],
-        "history": [{"at": now, "event": "booked", "by": "guest"}],
+        "history": [{"at": now, "event": "requested" if approval else "booked", "by": "guest"}],
     }
     await db.meetings.insert_one(dict(meeting))
-    await db.leads.update_one({"id": lead_id}, {"$push": {"timeline": {"at": now, "event": "meeting_booked", "detail": mt["title"]}}})
+    await db.leads.update_one({"id": lead_id}, {"$push": {"timeline": {"at": now, "event": "meeting_requested" if approval else "meeting_booked", "detail": mt["title"]}}})
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "meeting_booked",
-        "title": f"Meeting booked by {body.name.strip()}", "body": f"{mt['title']} · via /{slug}", "read": False, "created_at": now,
+        "title": (f"Meeting request from {body.name.strip()}" if approval else f"Meeting booked by {body.name.strip()}"), "body": f"{mt['title']} · via /{slug}", "read": False, "created_at": now,
     })
     await db.analytics_events.insert_one({"id": str(uuid.uuid4()), "cardSlug": slug, "type": "tap", "key": "booking_completed", "created_at": now})
     meeting.pop("_id", None)
@@ -977,7 +1006,7 @@ async def admin_meetings(filter: str = "upcoming", user: dict = Depends(get_curr
         base["$or"] = [{"start_utc": {"$lt": now}}, {"status": {"$in": ["completed", "no-show"]}}]
         base["status"] = {"$nin": ["cancelled"]}
     elif filter == "cancelled":
-        base["status"] = "cancelled"
+        base["status"] = {"$in": ["cancelled", "declined"]}
     ms = await db.meetings.find(base, {"_id": 0}).sort("start_utc", 1 if filter != "past" else -1).to_list(2000)
     return ms
 
@@ -991,13 +1020,101 @@ async def admin_meeting_status(meeting_id: str, body: Dict[str, Any], user: dict
     if not card or not await _can_access_card(user, card):
         raise HTTPException(status_code=403, detail="Not your meeting")
     status = str(body.get("status", "")).lower()
-    if status not in ("scheduled", "confirmed", "completed", "cancelled", "no-show", "rescheduled"):
+    if status not in ("scheduled", "confirmed", "completed", "cancelled", "no-show", "rescheduled", "requested", "declined"):
         raise HTTPException(status_code=400, detail="Invalid status")
     now = datetime.now(timezone.utc).isoformat()
     await db.meetings.update_one({"id": meeting_id}, {"$set": {"status": status, "updated_at": now},
                                  "$push": {"history": {"at": now, "event": f"status:{status}", "by": user.get("email")}}})
     if status == "completed" and m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_completed", "detail": m.get("meeting_type_title", "")}}})
+    if status == "confirmed" and m.get("lead_id"):
+        await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_confirmed", "detail": m.get("meeting_type_title", "")}}})
+    if status in ("cancelled", "declined") and m.get("lead_id"):
+        await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
+    return {"ok": True}
+
+
+class OwnerAssignIn(BaseModel):
+    owner_user_id: Optional[str] = None
+
+
+@api_router.put("/admin/cards/{card_id}/owner")
+async def assign_card_owner(card_id: str, body: OwnerAssignIn, user: dict = Depends(get_current_user)):
+    """Assign a card to a workspace member (business owner). Creator stays in created_by.
+    Only SUPER_ADMIN or a workspace admin/manager may reassign."""
+    card = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    wsid = card.get("workspace_id")
+    if user.get("role") != "SUPER_ADMIN":
+        role = await member_role(user["id"], wsid) if wsid else None
+        if role not in ADMIN_WS_ROLES:
+            raise HTTPException(status_code=403, detail="Only a workspace admin can assign card owners")
+    target = (body.owner_user_id or "").strip() or None
+    if target:
+        mem = await db.memberships.find_one({"user_id": target, "workspace_id": wsid}, {"_id": 0})
+        if not mem:
+            raise HTTPException(status_code=400, detail="That user is not a member of this workspace")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.digital_cards.update_one({"id": card_id}, {"$set": {"owner_user_id": target, "updated_at": now}})
+    # keep meeting ownership pointer in sync (access is via card, this is denormalized convenience)
+    await db.meetings.update_many({"card_id": card_id}, {"$set": {"owner_user_id": target}})
+    return await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
+
+
+@api_router.get("/admin/workspaces/{workspace_id}/members")
+async def list_ws_members(workspace_id: str, user: dict = Depends(get_current_user)):
+    """Assignable members of a workspace (for the owner-assignment control)."""
+    if user.get("role") != "SUPER_ADMIN":
+        role = await member_role(user["id"], workspace_id)
+        if role not in ADMIN_WS_ROLES:
+            raise HTTPException(status_code=403, detail="Not allowed")
+    ms = await db.memberships.find({"workspace_id": workspace_id}, {"_id": 0}).to_list(500)
+    uids = [m["user_id"] for m in ms]
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "password_hash": 0}).to_list(500)
+    role_by = {m["user_id"]: m.get("role") for m in ms}
+    return [{"id": u["id"], "name": u.get("name", ""), "email": u.get("email", ""), "role": role_by.get(u["id"])} for u in users]
+
+
+@api_router.post("/admin/meetings/{meeting_id}/propose")
+async def admin_propose_time(meeting_id: str, body: Dict[str, Any], user: dict = Depends(get_current_user)):
+    """Owner proposes a new time on a meeting (used with Requires-Approval). Guest must accept."""
+    m = await db.meetings.find_one({"id": meeting_id}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    card = await db.digital_cards.find_one({"id": m["card_id"]}, {"_id": 0})
+    if not card or not await _can_access_card(user, card):
+        raise HTTPException(status_code=403, detail="Not your meeting")
+    try:
+        start_utc = datetime.fromisoformat(str(body.get("start", "")).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start time")
+    end_utc = start_utc + timedelta(minutes=int(m["duration"]))
+    now = datetime.now(timezone.utc).isoformat()
+    await db.meetings.update_one({"id": meeting_id}, {"$set": {
+        "proposed_start_utc": start_utc.isoformat(), "proposed_end_utc": end_utc.isoformat(),
+        "status": "time_proposed", "updated_at": now},
+        "$push": {"history": {"at": now, "event": "time_proposed", "by": user.get("email")}}})
+    return {"ok": True}
+
+
+@api_router.post("/meetings/manage/{token}/accept-proposal")
+async def manage_accept_proposal(token: str):
+    m = await db.meetings.find_one({"manage_token": token}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    ps = m.get("proposed_start_utc")
+    if not ps:
+        raise HTTPException(status_code=400, detail="No proposed time to accept")
+    start_utc = datetime.fromisoformat(ps)
+    end_utc = start_utc + timedelta(minutes=int(m["duration"]))
+    now = datetime.now(timezone.utc).isoformat()
+    await db.meetings.update_one({"manage_token": token}, {"$set": {
+        "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(), "status": "confirmed",
+        "proposed_start_utc": None, "proposed_end_utc": None, "updated_at": now},
+        "$push": {"history": {"at": now, "event": "proposal_accepted", "by": "guest"}}})
+    if m.get("lead_id"):
+        await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_confirmed", "detail": m.get("meeting_type_title", "")}}})
     return {"ok": True}
 
 

@@ -92,6 +92,13 @@ export default function BookingEditor({ form, set, cardId }) {
                       <F label="Location detail / link"><Input value={mt.location_detail || ""} onChange={(e) => upMt(i, "location_detail", e.target.value)} /></F>
                     </div>
                     <F label="Description"><Input value={mt.description || ""} onChange={(e) => upMt(i, "description", e.target.value)} /></F>
+                    <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                      <div>
+                        <p className="text-xs font-medium text-white">Requires approval</p>
+                        <p className="text-[11px] text-white/45">Guests send a request; you Accept, Decline or Propose a new time. Off = auto-confirm.</p>
+                      </div>
+                      <Switch checked={mt.confirmation_mode === "approval"} onCheckedChange={(v) => upMt(i, "confirmation_mode", v ? "approval" : "auto")} data-testid={`mt-approval-${i}`} />
+                    </div>
                     <Button size="sm" onClick={() => saveMt(mts[i])} className="rounded-lg bg-[#D6A653] text-[#050607] hover:bg-[#E8B764]" data-testid={`mt-save-${i}`}>Save type</Button>
                   </div>
                 ))}

@@ -143,7 +143,10 @@ export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653"
         {step === "done" && done && (
           <div className="py-4 text-center" data-testid="book-success">
             <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full" style={{ background: `${ac}22` }}><PartyPopper className="h-7 w-7" style={{ color: ac }} /></span>
-            <h3 className="text-2xl font-light">You're booked</h3>
+            <h3 className="text-2xl font-light">{done.meeting.status === "requested" ? "Meeting request sent" : "You're booked"}</h3>
+            {done.meeting.status === "requested" ? (
+              <p className="mx-auto mt-1 max-w-xs text-sm text-white/60" data-testid="book-pending-note">Waiting for confirmation{ownerName ? ` from ${ownerName}` : ""}. You'll be notified once it's confirmed.</p>
+            ) : null}
             <div className="mx-auto mt-4 max-w-xs rounded-xl border p-4 text-left text-sm" style={{ borderColor: `${ac}40`, background: `${ac}0f` }}>
               <p className="font-medium text-white">{done.meeting.meeting_type_title}</p>
               <p className="text-white/70">{fmtDay(date)} · {fmtTime(done.meeting.start_utc, visitorTz)} ({visitorTz})</p>
