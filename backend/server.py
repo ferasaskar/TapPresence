@@ -974,7 +974,7 @@ async def admin_meetings(filter: str = "upcoming", user: dict = Depends(get_curr
         base["start_utc"] = {"$gte": now}
         base["status"] = {"$in": list(ACTIVE_STATUSES) + ["rescheduled"]}
     elif filter == "past":
-        base["start_utc"] = {"$lt": now}
+        base["$or"] = [{"start_utc": {"$lt": now}}, {"status": {"$in": ["completed", "no-show"]}}]
         base["status"] = {"$nin": ["cancelled"]}
     elif filter == "cancelled":
         base["status"] = "cancelled"

@@ -181,6 +181,15 @@ User: published card must match the approved showcase — accent-consistent pane
 - **Duplicate card**: `POST /api/admin/cards/{id}/duplicate` (unique `{slug}-copy-xxxxx`, status draft, re.sub strips stacking) + `duplicate-{slug}` button on each dashboard tile.
 - QA (iteration_13): 100% — backend 6/6 pytest, frontend all 4 + regression. Testing agent caught & fixed a critical regression my duplicate insertion caused (the `@api_router.put` decorator for `update_card` was consumed → editing returned 405); decorator restored, verified. All temp cards cleaned; feras-askar untouched.
 
+## Native ARIADNI Meetings & Calendar + Exchange Contact CTA (2026-06-10, iteration 14) — IMPLEMENTED & QA-PASSED (14/14 BE + FE)
+- **Public CTAs** (ExecutiveBlackGold): `cta-exchange-button` "Exchange Contact" (primary, accent gradient) + `cta-book-button` "Book a Meeting". Exchange opens `ExchangeContactDialog` (visitor → CRM lead + returns owner vCard). Book opens `BookMeetingDialog` (multi-step: type → date → slots → details → confirm → "You're booked" + manage link), fully accent-themed.
+- **Native booking engine** (server.py): meeting_types (auto-seed 15/30/45), availability (Mon–Fri 9–18 Asia/Dubai defaults), timezone-aware slot engine `_day_slots` (ZoneInfo, buffers, min-notice, max-window, overlap + blocked), **double-booking prevention** (409). Public: `GET /cards/{slug}/booking`, `GET /cards/{slug}/slots`, `POST /cards/{slug}/book`. Guest manage (secure token): `GET/POST /meetings/manage/{token}` (+cancel/reschedule) — no account needed.
+- **CRM integration**: booking creates/updates a lead (source `meeting_booking`), lead timeline `meeting_booked`→`meeting_completed`, notification + `booking_completed` analytics event. Exchange creates a lead too.
+- **Dashboard** `/meetings` (`meetings-link` in header): tabs Today/Upcoming/Past/Cancelled, status change (scheduled/confirmed/completed/cancelled/no-show), and AI **Draft follow-up** on completed (reuses `/ai/followup`, review-only). Past tab now always includes completed/no-show.
+- **Owner settings** (editor Booking tab, `BookingEditor`): native toggle, timezone, meeting-types CRUD, availability editor. External booking URL kept as fallback when native OFF.
+- **Deferred/architected (NOT_CONFIGURED)**: reminder sending (schedule stored: 24h+1h), Google/Outlook sync. Team = card-level owner (workspace access enforced via `_can_access_card`).
+- QA (iteration_14): backend 14/14 pytest, frontend 100% (CTAs, exchange, full booking, guest manage, dashboard, booking editor, AI). Testing agent fixed a critical `list+tuple` TypeError that 500'd the today/upcoming tabs; I then fixed the Past-tab visibility for completed-future meetings. feras-askar has native booking ON as the live demo.
+
 
 
 
