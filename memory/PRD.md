@@ -208,6 +208,14 @@ User directive: fix meeting ownership/isolation + guest UX + confirmation model 
 - **BookingEditor**: per-meeting-type "Requires approval" toggle. **BookMeetingDialog**: pending copy when requested. **Meetings.jsx**: Accept/Decline quick actions on requested + status options include requested/declined/time_proposed (full redesign deferred to Phase 3).
 - QA: targeted backend curl tests only (no broad agents, per user). Frontend Phase 1 code-verified + manage page mounts. PHASE 2 (owner dashboard + role-aware nav) and PHASE 3 (Meetings + Inbox redesign) NOT started — awaiting user approval. Typography/readability presets explicitly deferred to a separate later phase.
 
+## Meetings action-model UX (2026-08-09) — raw status dropdown removed
+User reported the raw status dropdown exposed invalid actions (e.g. confirmed→time_proposed) then failed with "Could not update". Replaced with **context-aware actions** + human-readable labels (Meetings.jsx). No new status logic; backend validation stays the source of truth.
+- Labels only (never raw enums): Pending Approval / New Time Proposed / Confirmed / Completed / Cancelled / Declined / No-show.
+- Actions by state: **requested**→Accept·Decline·Propose New Time; **time_proposed**→Revise proposal·Cancel (shows proposed time; guest accepts via guest flow); **scheduled|confirmed|rescheduled** (all shown as "Confirmed")→Reschedule·Mark Completed·No-show·Cancel; **completed**→View Lead·AI Follow-up (no status editing); **cancelled|declined|no-show**→View details (read-only). Invalid actions are never rendered.
+- New backend action `POST /api/admin/meetings/{id}/reschedule` (owner direct reschedule; reuses the same `_day_slots`/`_existing_intervals` engine — no duplicate scheduling logic). Inline date/slot picker drives Propose & Reschedule.
+- Verified via targeted curl: auto→scheduled, owner reschedule→rescheduled(time moved), completed, PATCH status=time_proposed→**400 rejected**, approval→requested→propose→time_proposed→revise, decline→declined. Test data cleaned; feras-askar has its 6 real meetings.
+- ⚠️ **NORMALIZATION FLAG (not actioned):** `scheduled` (auto-confirm bookings) has **no distinct business meaning** from `confirmed`/`rescheduled` — all are "active/agreed" (same slot-hold, same tabs, same actions). UI already unifies them as "Confirmed". Recommend a future **safe, non-destructive** normalization (map scheduled→confirmed for new writes, backfill old rows in a migration). NOT removed now to avoid a destructive change.
+
 
 
 

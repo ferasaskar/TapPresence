@@ -1118,6 +1118,34 @@ async def manage_accept_proposal(token: str):
     return {"ok": True}
 
 
+@api_router.post("/admin/meetings/{meeting_id}/reschedule")
+async def admin_reschedule(meeting_id: str, body: Dict[str, Any], user: dict = Depends(get_current_user)):
+    """Owner directly reschedules an active meeting (reuses the same slot-validation engine)."""
+    m = await db.meetings.find_one({"id": meeting_id}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    card = await db.digital_cards.find_one({"id": m["card_id"]}, {"_id": 0})
+    if not card or not await _can_access_card(user, card):
+        raise HTTPException(status_code=403, detail="Not your meeting")
+    try:
+        start_utc = datetime.fromisoformat(str(body.get("start", "")).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid start time")
+    avail = await _get_availability(m["card_id"])
+    tzname = m.get("owner_timezone", "UTC")
+    date_str = start_utc.astimezone(ZoneInfo(tzname)).strftime("%Y-%m-%d")
+    existing = await _existing_intervals(m["card_id"])
+    valid = _day_slots(avail, tzname, int(m["duration"]), date_str, existing, datetime.now(timezone.utc))
+    if start_utc.isoformat() not in valid and start_utc.isoformat() != m["start_utc"]:
+        raise HTTPException(status_code=409, detail="That time is not available")
+    end_utc = start_utc + timedelta(minutes=int(m["duration"]))
+    now = datetime.now(timezone.utc).isoformat()
+    await db.meetings.update_one({"id": meeting_id}, {"$set": {
+        "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(), "status": "rescheduled", "updated_at": now},
+        "$push": {"history": {"at": now, "event": "rescheduled", "by": user.get("email")}}})
+    return {"ok": True}
+
+
 # ------------------------------------------------------------------ uploads
 
 @api_router.post("/upload")

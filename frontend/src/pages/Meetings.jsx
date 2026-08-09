@@ -1,37 +1,88 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import { Loader2, ArrowLeft, Clock, User, Mail, Phone, CalendarDays, Sparkles, Copy } from "lucide-react";
+import { Loader2, ArrowLeft, Clock, User, Mail, Phone, CalendarDays, Sparkles, Copy, Check, X, RotateCw, CalendarClock, CheckCircle2, UserX, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 const TABS = ["today", "upcoming", "past", "cancelled"];
-const STATUS_OPTS = ["requested", "scheduled", "confirmed", "completed", "cancelled", "no-show", "declined", "time_proposed"];
+
+// internal status -> human-readable label (never expose raw enums)
+const LABEL = {
+  requested: "Pending Approval",
+  time_proposed: "New Time Proposed",
+  scheduled: "Confirmed",
+  confirmed: "Confirmed",
+  rescheduled: "Confirmed",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  declined: "Declined",
+  "no-show": "No-show",
+};
 const badge = (s) => ({
-  scheduled: "text-[#D6A653] border-[#D6A653]/40 bg-[#D6A653]/10",
+  requested: "text-[#D6A653] border-[#D6A653]/40 bg-[#D6A653]/10",
+  time_proposed: "text-violet-300 border-violet-400/40 bg-violet-400/10",
+  scheduled: "text-emerald-300 border-emerald-400/40 bg-emerald-400/10",
   confirmed: "text-emerald-300 border-emerald-400/40 bg-emerald-400/10",
+  rescheduled: "text-emerald-300 border-emerald-400/40 bg-emerald-400/10",
   completed: "text-sky-300 border-sky-400/40 bg-sky-400/10",
   cancelled: "text-red-300 border-red-400/40 bg-red-400/10",
+  declined: "text-red-300 border-red-400/40 bg-red-400/10",
   "no-show": "text-orange-300 border-orange-400/40 bg-orange-400/10",
-  rescheduled: "text-violet-300 border-violet-400/40 bg-violet-400/10",
 }[s] || "text-white/60 border-white/20 bg-white/5");
 
+const ACTIVE = ["scheduled", "confirmed", "rescheduled"];
 const fmt = (iso, tz) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz });
+const fmtDay = (d) => new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: tz });
+
+const Act = ({ children, onClick, testId, tone = "default", disabled }) => {
+  const tones = {
+    default: "border-white/15 text-white hover:bg-white/5",
+    ok: "border-emerald-400/40 text-emerald-300 hover:bg-emerald-400/10",
+    danger: "border-red-400/40 text-red-300 hover:bg-red-500/10",
+    gold: "border-[#D6A653]/50 text-[#D6A653] hover:bg-[#D6A653]/10",
+  };
+  return <button onClick={onClick} disabled={disabled} data-testid={testId} className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition-colors disabled:opacity-50 ${tones[tone]}`}>{children}</button>;
+};
 
 export default function Meetings() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("upcoming");
   const [items, setItems] = useState(null);
   const [draft, setDraft] = useState({});
+  const [details, setDetails] = useState({});     // meetingId -> bool (expanded)
+  const [picker, setPicker] = useState(null);      // { id, kind: 'propose'|'reschedule', slug, mtId, date, slots, loading }
+  const [busy, setBusy] = useState("");
 
   const load = () => {
     setItems(null);
     api.get("/admin/meetings", { params: { filter: tab } }).then(({ data }) => setItems(data)).catch(() => setItems([]));
   };
-  useEffect(() => { load(); }, [tab]); // eslint-disable-line
+  useEffect(() => { load(); setPicker(null); }, [tab]); // eslint-disable-line
 
   const setStatus = async (m, status) => {
-    try { await api.patch(`/admin/meetings/${m.id}/status`, { status }); toast.success(`Marked ${status}`); load(); }
-    catch { toast.error("Could not update"); }
+    setBusy(m.id);
+    try { await api.patch(`/admin/meetings/${m.id}/status`, { status }); toast.success(LABEL[status] ? `Marked ${LABEL[status]}` : "Updated"); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Could not update"); }
+    finally { setBusy(""); }
+  };
+
+  const openPicker = (m, kind) => setPicker({ id: m.id, kind, slug: m.cardSlug, mtId: m.meeting_type_id, tz: m.owner_timezone, date: "", slots: [], loading: false });
+  const pickDate = async (d) => {
+    setPicker((p) => ({ ...p, date: d, slots: [], loading: true }));
+    try { const { data } = await api.get(`/cards/${picker.slug}/slots`, { params: { meeting_type_id: picker.mtId, date: d } }); setPicker((p) => ({ ...p, slots: data.slots || [], loading: false })); }
+    catch { setPicker((p) => ({ ...p, slots: [], loading: false })); }
+  };
+  const submitSlot = async (start) => {
+    const { id, kind } = picker;
+    setBusy(id);
+    try {
+      const url = kind === "propose" ? `/admin/meetings/${id}/propose` : `/admin/meetings/${id}/reschedule`;
+      await api.post(url, { start });
+      toast.success(kind === "propose" ? "New time proposed — guest will be asked to accept" : "Meeting rescheduled");
+      setPicker(null); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not update"); }
+    finally { setBusy(""); }
   };
 
   const aiFollowup = async (m) => {
@@ -40,6 +91,45 @@ export default function Meetings() {
       const { data } = await api.post("/ai/followup", { lead_name: m.visitor_name, company: "", notes: `${m.meeting_type_title} meeting on ${fmt(m.start_utc, m.owner_timezone)}`, owner_name: m.owner_name, tone: "professional", channel: "email", language: "en" });
       setDraft((d) => ({ ...d, [m.id]: data.draft }));
     } catch { setDraft((d) => ({ ...d, [m.id]: "" })); toast.error("Could not draft"); }
+  };
+
+  const days = Array.from({ length: 21 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10); });
+
+  const renderActions = (m) => {
+    const s = m.status;
+    if (s === "requested") return (
+      <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
+        <Act tone="ok" onClick={() => setStatus(m, "confirmed")} testId={`meeting-accept-${m.id}`} disabled={busy === m.id}><Check className="h-3.5 w-3.5" /> Accept</Act>
+        <Act tone="danger" onClick={() => setStatus(m, "declined")} testId={`meeting-decline-${m.id}`} disabled={busy === m.id}><X className="h-3.5 w-3.5" /> Decline</Act>
+        <Act tone="gold" onClick={() => openPicker(m, "propose")} testId={`meeting-propose-${m.id}`}><CalendarClock className="h-3.5 w-3.5" /> Propose New Time</Act>
+      </div>
+    );
+    if (s === "time_proposed") return (
+      <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
+        <Act tone="gold" onClick={() => openPicker(m, "propose")} testId={`meeting-revise-${m.id}`}><CalendarClock className="h-3.5 w-3.5" /> Revise proposal</Act>
+        <Act tone="danger" onClick={() => setStatus(m, "cancelled")} testId={`meeting-cancel-${m.id}`} disabled={busy === m.id}><X className="h-3.5 w-3.5" /> Cancel</Act>
+      </div>
+    );
+    if (ACTIVE.includes(s)) return (
+      <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
+        <Act onClick={() => openPicker(m, "reschedule")} testId={`meeting-reschedule-${m.id}`}><RotateCw className="h-3.5 w-3.5" /> Reschedule</Act>
+        <Act tone="ok" onClick={() => setStatus(m, "completed")} testId={`meeting-complete-${m.id}`} disabled={busy === m.id}><CheckCircle2 className="h-3.5 w-3.5" /> Mark Completed</Act>
+        <Act onClick={() => setStatus(m, "no-show")} testId={`meeting-noshow-${m.id}`} disabled={busy === m.id}><UserX className="h-3.5 w-3.5" /> No-show</Act>
+        <Act tone="danger" onClick={() => setStatus(m, "cancelled")} testId={`meeting-cancel-${m.id}`} disabled={busy === m.id}><X className="h-3.5 w-3.5" /> Cancel</Act>
+      </div>
+    );
+    if (s === "completed") return (
+      <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
+        <Act onClick={() => setDetails((d) => ({ ...d, [m.id]: !d[m.id] }))} testId={`meeting-viewlead-${m.id}`}><Eye className="h-3.5 w-3.5" /> View Lead</Act>
+        <Act tone="gold" onClick={() => aiFollowup(m)} testId={`meeting-ai-${m.id}`}><Sparkles className="h-3.5 w-3.5" /> AI Follow-up</Act>
+      </div>
+    );
+    // cancelled / declined / no-show -> read-only, view details only
+    return (
+      <div className="flex flex-wrap justify-end gap-2" data-testid={`meeting-actions-${m.id}`}>
+        <Act onClick={() => setDetails((d) => ({ ...d, [m.id]: !d[m.id] }))} testId={`meeting-viewdetails-${m.id}`}><Eye className="h-3.5 w-3.5" /> View details</Act>
+      </div>
+    );
   };
 
   return (
@@ -72,7 +162,7 @@ export default function Meetings() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-white">{m.meeting_type_title}</span>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${badge(m.status)}`}>{m.status}</span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${badge(m.status)}`} data-testid={`meeting-statuslabel-${m.id}`}>{LABEL[m.status] || m.status}</span>
                     </div>
                     <p className="mt-1 text-sm text-white/70"><Clock className="mr-1 inline h-3.5 w-3.5 text-[#D6A653]" />{fmt(m.start_utc, m.owner_timezone)} <span className="text-white/40">({m.owner_timezone})</span></p>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/55">
@@ -81,23 +171,51 @@ export default function Meetings() {
                       {m.visitor_phone ? <span className="flex items-center gap-1"><Phone className="h-3 w-3" /> {m.visitor_phone}</span> : null}
                       <span className="text-white/35">via /{m.cardSlug}</span>
                     </div>
+                    {m.status === "time_proposed" && m.proposed_start_utc ? (
+                      <p className="mt-2 rounded-lg border border-violet-400/30 bg-violet-400/10 px-3 py-1.5 text-xs text-violet-200" data-testid={`meeting-proposed-${m.id}`}>Proposed new time: {fmt(m.proposed_start_utc, m.owner_timezone)} — awaiting guest acceptance</p>
+                    ) : null}
                     {m.note ? <p className="mt-2 text-sm text-white/60">“{m.note}”</p> : null}
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    {m.status === "requested" ? (
-                      <div className="flex gap-2" data-testid={`meeting-approve-${m.id}`}>
-                        <button onClick={() => setStatus(m, "confirmed")} className="rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-400/20" data-testid={`meeting-accept-${m.id}`}>Accept</button>
-                        <button onClick={() => setStatus(m, "declined")} className="rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-400/20" data-testid={`meeting-decline-${m.id}`}>Decline</button>
-                      </div>
-                    ) : null}
-                    <select value={m.status} onChange={(e) => setStatus(m, e.target.value)} className="rounded-lg border border-white/12 bg-[#0A0B0D] px-2 py-1.5 text-xs text-white" data-testid={`meeting-status-${m.id}`}>
-                      {STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    {m.status === "completed" ? (
-                      <button onClick={() => aiFollowup(m)} className="flex items-center gap-1 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white hover:bg-white/5" data-testid={`meeting-ai-${m.id}`}><Sparkles className="h-3.5 w-3.5 text-[#D6A653]" /> Draft follow-up</button>
+                  <div className="flex flex-col items-end gap-2">{renderActions(m)}</div>
+                </div>
+
+                {/* inline reschedule / propose picker */}
+                {picker && picker.id === m.id && (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4" data-testid={`meeting-picker-${m.id}`}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-xs text-white/60">{picker.kind === "propose" ? "Propose a new time" : "Pick a new time"} (in {m.owner_timezone})</p>
+                      <button onClick={() => setPicker(null)} className="text-xs text-white/50 hover:text-white" data-testid={`meeting-picker-cancel-${m.id}`}>Cancel</button>
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto pb-2">
+                      {days.map((d) => <button key={d} onClick={() => pickDate(d)} className={`shrink-0 rounded-xl border px-3 py-2 text-xs ${picker.date === d ? "bg-[#D6A653] text-black" : "border-white/14 text-white/70"}`} data-testid={`meeting-pdate-${d}`}>{fmtDay(d)}</button>)}
+                    </div>
+                    {picker.loading ? <div className="flex justify-center py-3"><Loader2 className="h-5 w-5 animate-spin text-[#D6A653]" /></div> : picker.date ? (
+                      picker.slots.length === 0 ? <p className="py-2 text-center text-xs text-white/50">No times this day.</p> : (
+                        <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                          {picker.slots.map((sl) => <button key={sl} onClick={() => submitSlot(sl)} disabled={busy === m.id} className="rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 py-2 text-xs text-white" data-testid={`meeting-pslot-${sl}`}>{fmtTime(sl, m.owner_timezone)}</button>)}
+                        </div>
+                      )
+                    ) : <p className="text-center text-xs text-white/45">Pick a day to see times</p>}
+                  </div>
+                )}
+
+                {/* view details / lead */}
+                {details[m.id] && (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/70" data-testid={`meeting-details-${m.id}`}>
+                    <p className="mb-1 text-xs uppercase tracking-wider text-[#D6A653]">Guest</p>
+                    <p>{m.visitor_name}{m.visitor_email ? ` · ${m.visitor_email}` : ""}{m.visitor_phone ? ` · ${m.visitor_phone}` : ""}</p>
+                    {m.note ? <p className="mt-2 text-white/60">Note: “{m.note}”</p> : null}
+                    {Array.isArray(m.history) && m.history.length ? (
+                      <>
+                        <p className="mb-1 mt-3 text-xs uppercase tracking-wider text-[#D6A653]">Status history</p>
+                        <ul className="space-y-0.5 text-xs text-white/55">
+                          {m.history.map((h, i) => <li key={i}>{(h.event || "").replace("status:", "")} · {new Date(h.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{h.by ? ` · ${h.by}` : ""}</li>)}
+                        </ul>
+                      </>
                     ) : null}
                   </div>
-                </div>
+                )}
+
                 {draft[m.id] !== undefined ? (
                   draft[m.id] === "…" ? <div className="mt-3 flex items-center gap-2 text-xs text-white/50"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Drafting…</div> : draft[m.id] ? (
                     <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
