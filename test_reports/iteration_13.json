@@ -1,0 +1,102 @@
+{
+  "summary": "Iteration 13 — verified 4 enhancements (Duplicate, Publish Success, Photo Auto-center, Accent Picker) + regression. FOUND & FIXED one CRITICAL backend regression: PUT /api/admin/cards/{card_id} was returning 405 Method Not Allowed because @api_router.put decorator was accidentally deleted when duplicate_card was inserted (server.py line 545). Restored decorator; card editing now works. Backend tests 6/6 PASS. Frontend E2E: duplicate creates draft copy with correct slug pattern → published card publish-success screen renders with QR/link/copy/view/dashboard, link=<origin>/<slug>, QR src=/api/cards/<slug>/qr, dashboard nav OK; draft flow shows 'Draft saved' toast and routes to /admin; photo auto-center transforms img from matrix(1,0,0,1,0,0) → matrix(1.15,0,0,1.15,0,9.36) matching heuristic; accent swatch swap changes hero-name color live (purple→emerald verified). Regression: /feras-askar gold intact (rgb(201,162,75)), no console errors, no horizontal overflow at 1440 or 390. All test-created cards deleted; feras-askar untouched.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "detailed_results": {
+    "BACKEND_pytest": {
+      "test_duplicate_creates_draft_copy": "PASS - new id != original, slug=<orig>-copy-xxxxx, status=draft, identity copied; original card unchanged and still published",
+      "test_duplicate_of_copy_gets_unique_slug": "PASS - re-based on original slug so no '-copy-xxx-copy-yyy' stacking",
+      "test_update_card_still_works": "PASS after fix (was 405 Method Not Allowed before restoring @api_router.put decorator)",
+      "test_identity_crop_persists": "PASS - POST with imageScale=1.15/offsetX=3/offsetY=6, public GET /api/cards/<slug> returns same values",
+      "test_qr_endpoint": "PASS - /api/cards/feras-askar/qr returns image/*",
+      "test_cleanup": "PASS - all TEST_ cards deleted"
+    },
+    "FRONTEND_duplicate": {
+      "duplicate_button_testid_pattern": "duplicate-{slug} (NOT duplicate-template-hub-184 as stated in review request)",
+      "duplicate_feras-mahmmoud_clicked": true,
+      "cards_before": 5,
+      "cards_after_dup": 6,
+      "copy_slug": "feras-mahmmoud-copy-bf5c3",
+      "copy_status_badge_shows_DRAFT": true,
+      "copy_deleted_via_UI": true,
+      "cards_after_cleanup": 5,
+      "result": "PASS"
+    },
+    "FRONTEND_publish_success": {
+      "publish-success_visible": true,
+      "publish-qr_src": "https://template-hub-184.preview.emergentagent.com/api/cards/qa-autocenter/qr",
+      "publish-link": "https://template-hub-184.preview.emergentagent.com/qa-autocenter",
+      "link_equals_origin_slash_slug": true,
+      "publish-copy_present": true,
+      "publish-view_href": "/qa-autocenter",
+      "publish-dashboard_navigates_to_admin": true,
+      "cleanup": "qa-autocenter DELETE 200",
+      "result": "PASS"
+    },
+    "FRONTEND_draft": {
+      "toast": "Draft saved (visible in screenshot)",
+      "navigated_to_/admin": true,
+      "not_publish-success_screen": true,
+      "result": "PASS"
+    },
+    "FRONTEND_photo_autocenter": {
+      "photo-autocenter_button_present_after_upload": true,
+      "photo-reset_present": true,
+      "photo-zoom_present": true,
+      "crop_transform_before_click": "matrix(1, 0, 0, 1, 0, 0)",
+      "crop_transform_after_click": "matrix(1.15, 0, 0, 1.15, 0, 9.36)",
+      "notes": "Heuristic path (no FaceDetector in chromium) — matches expected scale~1.15, offsetY~6",
+      "result": "PASS"
+    },
+    "FRONTEND_accent_picker": {
+      "accent_swatches_data-testids": ["accent-gold","accent-platinum","accent-blue","accent-emerald","accent-purple","accent-rose","accent-bronze","accent-red","accent-custom"],
+      "hero-name_color_before": "rgb(167, 139, 250)",
+      "hero-name_color_after_emerald_swatch": "rgb(82, 183, 136)",
+      "accent-custom_input_present": true,
+      "notes": "Programmatic 'input' event on the color input did not visibly update the live preview (browser color inputs typically require user interaction). Native user interaction is expected to work; not blocking since swatch swap already updates preview.",
+      "result": "PASS (swatch swap confirmed live)"
+    },
+    "REGRESSION": {
+      "feras-askar_hero_name_color": "rgb(201, 162, 75) (gold)",
+      "console_errors": 0,
+      "horizontal_overflow_1440_public": 0,
+      "horizontal_overflow_390_public": 0,
+      "horizontal_overflow_1440_admin": 0,
+      "horizontal_overflow_390_admin": 0,
+      "admin_new-card_scan_inbox_present": true,
+      "result": "PASS"
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13.py",
+    "/app/test_reports/pytest/iter13_final.xml"
+  ],
+  "critical_code_review_comments": [
+    "CRITICAL FIX APPLIED: /app/backend/server.py line ~545 lost the '@api_router.put(\"/admin/cards/{card_id}\")' decorator when the duplicate endpoint was inserted right above it — every card Edit save would have silently failed with 405. Restored. Regression test added (test_update_card_still_works).",
+    "duplicate_card uses re.sub to strip a trailing '-copy(-xxx)?' before generating a new suffix — clean, prevents ever-growing slugs. Good.",
+    "The 'accent-custom' color <input type='color'> only propagates via native user interaction (onChange). Consider also listening to onInput so programmatic tests and copy-paste hex work. Not a user-visible bug.",
+    "CreateCard.save() uses form.slug.trim() || name.slugify() — if user types only into the slug field with capitals/spaces (as I did in an earlier test), it becomes the source of truth. Consider always slugifying the entered slug to be idempotent (already does .toLowerCase().replace() so this is fine).",
+    "ProfilePhotoField autoCenter chromium fallback returns imageScale=1.15, imageOffsetY≈6, offsetX=0 — deterministic and reasonable. Consider bounding zoom range with visible min/max labels."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (restored @api_router.put decorator for update_card)",
+    "/app/backend/tests/test_iter13.py (new pytest suite for iteration 13)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 pytest incl. update-regression)",
+    "frontend": "100% (Duplicate + Publish Success + Draft flow + Photo Auto-center + Accent picker + regression all PASS)"
+  },
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created temp cards for testing: qa-iter13-orig-* (dup source, orig+copy), qa-iter13-dbl-* (double dup, 3 cards), qa-iter13-upd-* (PUT test), qa-iter13-crop-* (persistence), qa-autocenter (publish flow), qa-draft-user (draft flow). ALL deleted via DELETE /api/admin/cards/{id} + a final sweep script. feras-* untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The PUT /admin/cards/{card_id} decorator regression was fixed in server.py. If similar 'inserted new route above existing one' patterns appear again, always check that subsequent decorators are intact — a simple grep 'async def.*card' vs '@api_router' count is a good sanity check. All 4 iteration-13 enhancements verified end-to-end.",
+  "rca of the issue": "Duplicate endpoint insertion at /app/backend/server.py:524 accidentally consumed the following '@api_router.put(\"/admin/cards/{card_id}\")' decorator line, leaving update_card as an unregistered plain async function. Result: every edit-card PUT returned 405. Reproduction: authenticate → POST /api/admin/cards to create → PUT /api/admin/cards/{id} → observe 405. Fix: re-add the '@api_router.put(\"/admin/cards/{card_id}\")' decorator on the line preceding update_card. Verified with new pytest test_update_card_still_works (now PASS)."
+}

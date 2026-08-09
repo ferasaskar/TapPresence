@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { api, resolveImg } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, Loader2, RotateCcw, ZoomIn } from "lucide-react";
+import { Upload, Loader2, RotateCcw, ZoomIn, ScanFace } from "lucide-react";
+import { toast } from "sonner";
 
 // Profile photo with live circular crop: upload / paste URL, drag to reposition,
 // zoom slider, reset. Framing saved as imageScale / imageOffsetX / imageOffsetY
@@ -16,6 +17,48 @@ export function ProfilePhotoField({ id, set }) {
   const boxRef = useRef(null);
   const drag = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [centering, setCentering] = useState(false);
+
+  const loadImage = (src) => new Promise((res, rej) => {
+    const im = new Image(); im.crossOrigin = "anonymous";
+    im.onload = () => res(im); im.onerror = rej; im.src = src;
+  });
+
+  // Auto-center the face using the browser FaceDetector where available,
+  // with a sensible portrait heuristic fallback otherwise.
+  const autoCenter = async (src) => {
+    setCentering(true);
+    try {
+      if (typeof window !== "undefined" && "FaceDetector" in window) {
+        const fd = new window.FaceDetector({ maxDetectedFaces: 1, fastMode: true });
+        const img = await loadImage(resolveImg(src));
+        const faces = await fd.detect(img);
+        if (faces && faces.length) {
+          const b = faces[0].boundingBox;
+          const cx = (b.x + b.width / 2) / img.width;
+          const cy = (b.y + b.height / 2) / img.height;
+          const fw = b.width / img.width;
+          const s = Math.max(1, Math.min(2.4, 0.62 / Math.max(fw, 0.18)));
+          const cl = (v) => Math.round(Math.max(-60, Math.min(60, v)));
+          set("identity.imageScale", parseFloat(s.toFixed(2)));
+          set("identity.imageOffsetX", cl((0.5 - cx) * 100));
+          set("identity.imageOffsetY", cl((0.5 - cy) * 100));
+          toast.success("Face centered");
+          return;
+        }
+      }
+      set("identity.imageScale", 1.15);
+      set("identity.imageOffsetX", 0);
+      set("identity.imageOffsetY", 6);
+      toast.success("Portrait centered");
+    } catch (e) {
+      set("identity.imageScale", 1.15);
+      set("identity.imageOffsetX", 0);
+      set("identity.imageOffsetY", 6);
+    } finally {
+      setCentering(false);
+    }
+  };
 
   const upload = async (e) => {
     const file = e.target.files?.[0];
@@ -27,6 +70,7 @@ export function ProfilePhotoField({ id, set }) {
       const { data } = await api.post("/upload", f, { headers: { "Content-Type": "multipart/form-data" } });
       set("identity.profilePhoto", data.url);
       set("identity.imageScale", 1); set("identity.imageOffsetX", 0); set("identity.imageOffsetY", 0);
+      autoCenter(data.url);
     } catch (err) { console.error("upload failed", err); }
     finally { setUploading(false); }
   };
@@ -74,6 +118,11 @@ export function ProfilePhotoField({ id, set }) {
             <Button type="button" size="sm" onClick={() => inputRef.current?.click()} disabled={uploading} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="photo-upload-btn">
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Upload className="mr-1 h-4 w-4" /> Upload</>}
             </Button>
+            {url ? (
+              <Button type="button" size="sm" onClick={() => autoCenter(url)} disabled={centering} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="photo-autocenter">
+                {centering ? <Loader2 className="h-4 w-4 animate-spin" /> : <><ScanFace className="mr-1 h-4 w-4 text-[#D6A653]" /> Auto-center</>}
+              </Button>
+            ) : null}
             {url ? (
               <Button type="button" size="sm" onClick={reset} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="photo-reset">
                 <RotateCcw className="mr-1 h-4 w-4" /> Reset

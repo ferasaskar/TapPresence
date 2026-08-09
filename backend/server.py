@@ -1,6 +1,7 @@
 import os
 import io
 import uuid
+import re
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -515,6 +516,29 @@ async def create_card(body: CardUpsert, user: dict = Depends(get_current_user)):
     card = CardData(**body.model_dump())
     doc = card.model_dump()
     doc["workspace_id"] = wsid
+    doc["owner_user_id"] = user["id"]
+    await db.digital_cards.insert_one(doc)
+    return await db.digital_cards.find_one({"id": card.id}, {"_id": 0})
+
+
+@api_router.post("/admin/cards/{card_id}/duplicate")
+async def duplicate_card(card_id: str, user: dict = Depends(get_current_user)):
+    existing = await db.digital_cards.find_one({"id": card_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if not await _can_access_card(user, existing):
+        raise HTTPException(status_code=403, detail="Not your card")
+    base = re.sub(r"-copy(-[a-z0-9]+)?$", "", existing.get("slug", "") or "card")
+    new_slug = f"{base}-copy-{uuid.uuid4().hex[:5]}"
+    while await db.digital_cards.find_one({"slug": new_slug}):
+        new_slug = f"{base}-copy-{uuid.uuid4().hex[:5]}"
+    payload = {k: existing.get(k) for k in CardUpsert.model_fields.keys() if k in existing}
+    payload["slug"] = new_slug
+    payload["status"] = "draft"
+    card = CardData(**payload)
+    doc = card.model_dump()
+    ms = await db.memberships.find_one({"user_id": user["id"]}, {"_id": 0})
+    doc["workspace_id"] = existing.get("workspace_id") or (ms["workspace_id"] if ms else None)
     doc["owner_user_id"] = user["id"]
     await db.digital_cards.insert_one(doc)
     return await db.digital_cards.find_one({"id": card.id}, {"_id": 0})

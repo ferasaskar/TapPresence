@@ -8,7 +8,7 @@ import AnalyticsDialog from "@/components/admin/AnalyticsDialog";
 import ScanCardDialog from "@/components/admin/ScanCardDialog";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, ScanLine, BarChart3, LayoutGrid } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, ScanLine, BarChart3, LayoutGrid, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 const AriadniMark = ({ className = "" }) => (
@@ -49,6 +49,16 @@ export default function Admin() {
       load();
     } catch {
       toast.error("Delete failed");
+    }
+  };
+
+  const duplicate = async (card) => {
+    try {
+      const { data } = await api.post(`/admin/cards/${card.id}/duplicate`);
+      toast.success(`Duplicated → /${data.slug}`);
+      load();
+    } catch {
+      toast.error("Could not duplicate card");
     }
   };
 
@@ -137,6 +147,7 @@ export default function Admin() {
                 <div className="mt-5 flex items-center gap-1.5 border-t border-white/8 pt-4">
                   <button onClick={() => setEditing(c)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 px-3 py-1.5 text-xs text-white/80 transition-colors hover:border-[#D6A653]/50 hover:text-white" data-testid={`edit-${c.slug}`}><Pencil className="h-3.5 w-3.5" /> Edit</button>
                   <button onClick={() => setStatsCard(c)} className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`stats-${c.slug}`}><BarChart3 className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => duplicate(c)} className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`duplicate-${c.slug}`}><Copy className="h-3.5 w-3.5" /></button>
                   <a href={`/${c.slug}`} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`view-${c.slug}`}><ExternalLink className="h-3.5 w-3.5" /></a>
                   <button onClick={() => remove(c)} className="ml-auto rounded-lg p-2 text-red-400/70 transition-colors hover:bg-red-500/10 hover:text-red-400" data-testid={`delete-${c.slug}`}><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>

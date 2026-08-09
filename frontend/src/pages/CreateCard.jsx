@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, qrUrl } from "@/lib/api";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { IndustryCard } from "@/components/landing/IndustryCard";
 import { INDUSTRY_CARDS } from "@/lib/industryCards";
@@ -10,7 +10,7 @@ import CardInfoTabs, { emptyCard } from "@/components/admin/CardInfoTabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, Loader2, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Check, Copy, ExternalLink, PartyPopper } from "lucide-react";
 import { toast } from "sonner";
 
 const AriadniMark = ({ className = "" }) => (
@@ -30,6 +30,7 @@ export default function CreateCard() {
   const [form, setForm] = useState(() => ({ ...emptyCard }));
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [published, setPublished] = useState(null);
 
   const set = (path, value) => {
     setForm((f) => {
@@ -61,14 +62,50 @@ export default function CreateCard() {
     setSaving(true);
     try {
       await api.post("/admin/cards", { ...form, slug, status: publish ? "published" : "draft" });
-      toast.success(publish ? "Card published" : "Draft saved");
-      navigate("/admin");
+      if (publish) {
+        setPublished({ slug, name });
+      } else {
+        toast.success("Draft saved");
+        navigate("/admin");
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || "Could not save card");
     } finally { setSaving(false); }
   };
 
   const industryChosen = !!form.industry;
+
+  if (published) {
+    const link = `${window.location.origin}/${published.slug}`;
+    return (
+      <div className="aria-dark relative flex min-h-screen items-center justify-center overflow-hidden bg-[#050607] px-6 text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="publish-success">
+        <div className="grain-overlay" style={{ opacity: 0.05 }} />
+        <div className="aria-gold-radial pointer-events-none absolute inset-0" />
+        <div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+          <span className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full" style={{ background: "rgba(214,166,83,0.14)", boxShadow: "0 0 30px rgba(214,166,83,0.3)" }}>
+            <PartyPopper className="h-7 w-7 text-[#D6A653]" />
+          </span>
+          <h1 className="text-3xl font-light tracking-tight">You're live</h1>
+          <p className="mt-2 text-sm text-white/55">{published.name ? `${published.name}'s ` : "Your "}card is published and ready to share.</p>
+          <div className="mx-auto mt-6 w-fit rounded-2xl border border-white/10 bg-white p-3">
+            <img src={qrUrl(published.slug)} alt="QR code" className="h-40 w-40 rounded" data-testid="publish-qr" />
+          </div>
+          <div className="mt-5 flex items-center gap-2 rounded-full border border-white/12 bg-black/30 px-4 py-2.5 text-sm">
+            <span className="truncate text-white/70" data-testid="publish-link">{link}</span>
+            <button onClick={() => { navigator.clipboard.writeText(link); toast.success("Link copied"); }} className="ml-auto shrink-0 text-[#D6A653] hover:text-[#E8B764]" data-testid="publish-copy"><Copy className="h-4 w-4" /></button>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <a href={`/${published.slug}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 rounded-full border border-white/15 py-3 text-sm text-white transition-colors hover:bg-white/5" data-testid="publish-view">
+              View card <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <button onClick={() => navigate("/admin")} className="rounded-full bg-[#D6A653] py-3 text-sm font-medium text-[#050607] transition-all hover:bg-[#E8B764]" data-testid="publish-dashboard">
+              Go to dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="create-card-studio">
