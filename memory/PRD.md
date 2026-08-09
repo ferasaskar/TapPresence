@@ -366,10 +366,18 @@ Public pricing auto-selects the visitor's market using ONLY safe browser/locale 
 - **PricingSection**: on mount picks preferred market and loads `/api/commercial/pricing?market=`; manual `changeMarket()` saves + reloads. All prices from authoritative config; JSON-LD SEO uses the resolved config. Billing unchanged (defaults to workspace region currency).
 - **Verified (isolated browser contexts)**: UAE→AED, Saudi→SAR, UK→GBP, US→USD, Germany→EUR, Japan(unsupported)→USD fallback, and manual USD pref persisted over UAE locale. Missing-market + regional-price fallback handled by backend `resolve_market_pricing` (verified earlier). Landing↔Billing consistency + Super-Admin-price-change propagation verified in the 9-step curl test.
 
+## LANGUAGE AUTO-DETECT + RTL + PUBLIC FUNNEL LOCALIZATION (2026-06, iteration 15d) — IMPLEMENTED & verified
+Auto-detect language like currency: DEFAULT only, user choice always wins & persists. Language and currency are INDEPENDENT preferences.
+- **Mechanic (already-present i18n detector, confirmed)**: `i18n/index.js` LanguageDetector order localStorage(`ariadni_lang`)→navigator→htmlTag, `nonExplicitSupportedLngs` (ar-AE→ar, es-ES→es, en-*→en), fallback `en`. `applyDocumentDir()` sets `<html dir/lang>` → TRUE RTL on load + on change. Independence: language uses `ariadni_lang`, currency uses `tp_market` (separate).
+- **Public language switcher** added to Landing navbar + Login + Register (was previously authenticated-only) so visitors can manually override; choice persists via i18n cache.
+- **Localized (EN/AR/ES, returnObjects arrays)**: full Landing (navbar, hero, stats labels, features, journey, templates, teams, testimonials heading, pricing, final CTA, footer tagline/newsletter/copyright), PricingSection, Login, Register. New i18n namespaces `auth` + `landing`. Footer link-group labels remain EN (marketing nav terms) — acceptable partial.
+- **Verified (isolated browser contexts)**: ar-AE→RTL/ar+AED, ar-SA→RTL/ar+SAR, en-AE→LTR/en+AED, en-SA→LTR/en+SAR, es-ES→LTR/es+EUR, en-US→LTR/en+USD, ja-JP→LTR/en+USD (both fallbacks). Manual EN over ar-AE→LTR/en+AED; manual AR over en-US→RTL/ar+USD (INDEPENDENCE proven). Arabic landing: 0px horizontal overflow, pro price "AED 369.99", Arabic pricing/referral text. Language + currency prefs persist independently.
+
 ## REMAINING SAFE ROADMAP (approved, auto-continue) — NEXT
-- **Full EN/AR/ES localization coverage**: Meetings, Leads, CreateCard/editor, Scanner, Analytics dialog, internal admin tools, login/register/marketing.
-- **Consent / Privacy Center** (audit-first; additive cookie/consent + privacy hub without touching sensitive delete/export semantics).
-- **Scanner commercial exposure** deeper surfacing (usage already on Billing).
+- **Deep app-page localization (EN/AR/ES)**: Meetings, Leads, CreateCard/editor, Scanner, Analytics dialog still English-only (Home/Settings/Team/Notifications/Signatures/Billing/Referral already localized). Large multi-phase effort.
+- **Consent / Privacy Center** (audit-first; additive, no sensitive delete/export changes).
+- **Scanner commercial exposure** deeper surfacing.
+- **Referral QR** on the Referral page (scannable invite link).
 - **DEFERRED EXTERNAL**: Stripe/RevenueCat/social login/Wallet certs/email/push/SMS/CRM/DNS/SSO/App Store; auth hardening/2FA; destructive cleanup.
 
 ## PRICING SINGLE SOURCE OF TRUTH — Public site + dedicated Referral page (2026-06, iteration 15b) — IMPLEMENTED & verified

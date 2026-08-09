@@ -196,5 +196,124 @@
     "step2": "Tu amigo se registra y obtiene {{referred}}% de descuento en su plan.",
     "step3": "Ganas {{reward}}% por referido, hasta {{max}}% cada ciclo de facturación (el extra pasa al siguiente ciclo).",
     "fairUse": "Las autorreferencias no cuentan. Las recompensas son solo descuentos porcentuales — sin pagos en efectivo."
+  },
+  "auth": {
+    "welcomeBack": "Bienvenido de nuevo",
+    "signInSub": "Inicia sesión en tu estudio",
+    "email": "Correo",
+    "password": "Contraseña",
+    "signIn": "Iniciar sesión",
+    "newHere": "¿Nuevo aquí?",
+    "createYourId": "Crea tu ID",
+    "createTitle": "Crea tu ID",
+    "createSubDefault": "Publica un perfil premium en minutos.",
+    "createSubNfc": "Crea tu cuenta y luego pide y activa tu tarjeta NFC.",
+    "createSubTeam": "Inicia tu espacio de trabajo e invita a tu equipo.",
+    "fullName": "Nombre completo",
+    "workEmail": "Correo de trabajo",
+    "workspaceOptional": "Espacio / empresa (opcional)",
+    "createAccount": "Crear cuenta",
+    "haveAccount": "¿Ya tienes una cuenta?",
+    "signInLink": "Iniciar sesión",
+    "referralBanner": "🎁 Fuiste invitado — se aplicará un descuento por referido a tu plan.",
+    "genericError": "Algo salió mal."
+  },
+  "landing": {
+    "nav": ["Producto", "Plantillas", "Soluciones", "Recursos", "Precios", "Nosotros"],
+    "login": "Iniciar sesión",
+    "createId": "Crea tu ID",
+    "hero": {
+      "badge": "El futuro de la identidad profesional",
+      "title1": "Tu identidad",
+      "title2": "profesional.",
+      "title3": "Reinventada.",
+      "subtitle": "Tarjetas digitales, tecnología NFC, seguimiento con IA y analíticas inteligentes — todo en una plataforma potente.",
+      "ctaCreate": "Crea tu ID",
+      "ctaTeams": "Para equipos"
+    },
+    "stats": ["Profesionales", "Países", "Conexiones", "Disponibilidad"],
+    "featuresTitle": "Una identidad. Todas las formas de conectar.",
+    "features": [
+      { "title": "Toque NFC", "desc": "Comparte al instante con un toque." },
+      { "title": "Código QR", "desc": "Escaneable desde cualquier cámara." },
+      { "title": "Cartera digital", "desc": "Guarda en Apple y Google Wallet." },
+      { "title": "Compartir en equipo", "desc": "Una marca para todo tu equipo." },
+      { "title": "Seguimiento con IA", "desc": "Borradores inteligentes tras cada reunión." },
+      { "title": "Analíticas", "desc": "Ve vistas, toques y conversiones." }
+    ],
+    "journey": {
+      "eyebrow": "Inteligente. Simple. Potente.",
+      "title1": "Del toque a la",
+      "title2": "conexión real.",
+      "desc": "ARIADNI ID convierte cada interacción en una oportunidad duradera.",
+      "cta": "Míralo en acción",
+      "steps": [
+        { "title": "Toca o escanea", "desc": "Tocan tu tarjeta o escanean tu QR." },
+        { "title": "Tu perfil", "desc": "Ven tu identidad digital al instante." },
+        { "title": "Guardar contacto", "desc": "Un toque te guarda en su teléfono." },
+        { "title": "Seguimiento con IA", "desc": "La IA redacta el seguimiento perfecto." },
+        { "title": "Convierte", "desc": "Rastrea y convierte toques en negocios." }
+      ]
+    },
+    "templates": {
+      "eyebrow": "Plantillas premium",
+      "title1": "Diseñadas para impresionar.",
+      "title2": "Creadas para rendir.",
+      "desc": "Elige una plantilla que refleje tu estilo y haga tu perfil inolvidable.",
+      "cta": "Explorar plantillas",
+      "appNew": "NUEVO",
+      "appTitle": "App ARIADNI ID",
+      "appDesc": "Gestiona tu perfil, contactos, analíticas y equipo — desde un solo lugar."
+    },
+    "teams": {
+      "title": "Para equipos y empresas",
+      "desc": "Crea, gestiona y escala la identidad digital de tu equipo. Bloquea la marca, gestiona usuarios y analiza el rendimiento.",
+      "cta": "Saber más",
+      "testimonialsTitle": "Amado por profesionales de todo el mundo"
+    },
+    "pricing": {
+      "eyebrow": "Precios simples y transparentes",
+      "title": "Elige tu plan",
+      "subtitle": "Empieza con una prueba gratis de {{days}} días — sin tarjeta de crédito.",
+      "monthly": "Mensual",
+      "annual": "Anual",
+      "saveAnnually": "Ahorra {{pct}}% al año",
+      "mostPopular": "Más popular",
+      "save": "Ahorra {{pct}}%",
+      "trialName": "Prueba",
+      "trialTag": "Prueba gratis de {{days}} días · sin tarjeta",
+      "proName": "Pro",
+      "proTag": "Para profesionales",
+      "teamName": "Equipo",
+      "teamTag": "Mín {{n}} asientos",
+      "entName": "Empresa",
+      "entTag": "Para organizaciones",
+      "perYear": "/año",
+      "perMonth": "/mes",
+      "perSeatYear": "/asiento / año",
+      "perSeatMonth": "/asiento / mes",
+      "custom": "Personalizado",
+      "startFree": "Empezar gratis",
+      "getPro": "Obtener Pro",
+      "startTeam": "Empezar Equipo",
+      "contactSales": "Contactar ventas",
+      "referralNote": "🎁 Recomienda amigos — obtienen {{referred}}% de descuento y ganas hasta {{max}}% en tu factura.",
+      "featTrial": ["1 tarjeta de perfil", "Analíticas completas", "Seguimientos con IA", "Escáner de tarjetas", "Captura de leads y CRM"],
+      "featPro": ["Hasta 3 tarjetas", "Analíticas de 12 meses", "100 seguimientos IA / mes", "50 escaneos / mes", "Quitar marca", "Pases de cartera"],
+      "featTeam": ["Tarjetas ilimitadas", "Panel de equipo y roles", "Marca de empresa bloqueada", "100 IA / usuario / mes", "API y dominio propio"],
+      "featEnt": ["Todo en Equipo", "Marca blanca", "SSO / SAML", "Soporte dedicado", "Facturación personalizada"]
+    },
+    "finalCta": {
+      "title": "¿Listo para elevar tu identidad profesional?",
+      "subtitle": "Únete a miles de profesionales que confían en ARIADNI ID.",
+      "cta": "Crea tu ID ahora"
+    },
+    "footer": {
+      "tagline": "El futuro de la identidad profesional. Reinventada.",
+      "rights": "Todos los derechos reservados.",
+      "stayConnected": "Mantente conectado",
+      "newsletter": "Recibe novedades y consejos sobre networking digital.",
+      "emailPlaceholder": "Introduce tu correo"
+    }
   }
 }

@@ -196,5 +196,124 @@
     "step2": "Your friend signs up and gets {{referred}}% off their plan.",
     "step3": "You earn {{reward}}% off per referral, up to {{max}}% each billing cycle (extra rolls to the next cycle).",
     "fairUse": "Self-referrals aren't counted. Rewards are percentage discounts only — no cash payouts."
+  },
+  "auth": {
+    "welcomeBack": "Welcome back",
+    "signInSub": "Sign in to your studio",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "newHere": "New here?",
+    "createYourId": "Create your ID",
+    "createTitle": "Create your ID",
+    "createSubDefault": "Publish a premium profile in minutes.",
+    "createSubNfc": "Set up your account, then order & activate your NFC card.",
+    "createSubTeam": "Start your workspace and invite your team.",
+    "fullName": "Full name",
+    "workEmail": "Work email",
+    "workspaceOptional": "Workspace / company (optional)",
+    "createAccount": "Create account",
+    "haveAccount": "Already have an account?",
+    "signInLink": "Sign in",
+    "referralBanner": "🎁 You were invited — a referral discount will be applied to your plan.",
+    "genericError": "Something went wrong."
+  },
+  "landing": {
+    "nav": ["Product", "Templates", "Solutions", "Resources", "Pricing", "About"],
+    "login": "Login",
+    "createId": "Create Your ID",
+    "hero": {
+      "badge": "The Future of Professional Identity",
+      "title1": "Your Professional",
+      "title2": "Identity.",
+      "title3": "Reinvented.",
+      "subtitle": "Digital business cards, NFC technology, AI follow-up and smart analytics — all in one powerful platform.",
+      "ctaCreate": "Create Your ID",
+      "ctaTeams": "For Teams"
+    },
+    "stats": ["Professionals", "Countries", "Connections", "Uptime"],
+    "featuresTitle": "One Identity. Every Way to Connect.",
+    "features": [
+      { "title": "NFC Tap", "desc": "Share instantly with a single tap." },
+      { "title": "QR Code", "desc": "Scannable from any phone camera." },
+      { "title": "Digital Wallet", "desc": "Save to Apple & Google Wallet." },
+      { "title": "Team Sharing", "desc": "One brand across your whole team." },
+      { "title": "AI Follow-up", "desc": "Smart drafts after every meeting." },
+      { "title": "Analytics", "desc": "See views, taps and conversions." }
+    ],
+    "journey": {
+      "eyebrow": "Smart. Simple. Powerful.",
+      "title1": "From Tap to",
+      "title2": "True Connection.",
+      "desc": "ARIADNI ID turns every interaction into a lasting opportunity.",
+      "cta": "See it in Action",
+      "steps": [
+        { "title": "Tap or Scan", "desc": "They tap your card or scan your QR." },
+        { "title": "Your Profile", "desc": "They see your digital identity instantly." },
+        { "title": "Save Contact", "desc": "One tap saves you to their phone." },
+        { "title": "AI Follow-up", "desc": "AI drafts the perfect follow-up." },
+        { "title": "Convert", "desc": "Track and turn taps into deals." }
+      ]
+    },
+    "templates": {
+      "eyebrow": "Premium Templates",
+      "title1": "Designed to Impress.",
+      "title2": "Built to Perform.",
+      "desc": "Choose a template that reflects your style and makes your profile unforgettable.",
+      "cta": "Explore Templates",
+      "appNew": "NEW",
+      "appTitle": "ARIADNI ID App",
+      "appDesc": "Manage your profile, leads, analytics and team — all from one place."
+    },
+    "teams": {
+      "title": "For Teams and Companies",
+      "desc": "Create, manage and scale your team's digital identity. Lock branding, manage users and analyse performance.",
+      "cta": "Learn More",
+      "testimonialsTitle": "Loved by Professionals Worldwide"
+    },
+    "pricing": {
+      "eyebrow": "Simple, transparent pricing",
+      "title": "Choose Your Plan",
+      "subtitle": "Start with a {{days}}-day free trial — no credit card required.",
+      "monthly": "Monthly",
+      "annual": "Annual",
+      "saveAnnually": "Save {{pct}}% annually",
+      "mostPopular": "Most popular",
+      "save": "Save {{pct}}%",
+      "trialName": "Trial",
+      "trialTag": "{{days}}-day free trial · no card required",
+      "proName": "Pro",
+      "proTag": "For professionals",
+      "teamName": "Team",
+      "teamTag": "Min {{n}} seats",
+      "entName": "Enterprise",
+      "entTag": "For organizations",
+      "perYear": "/year",
+      "perMonth": "/month",
+      "perSeatYear": "/seat / year",
+      "perSeatMonth": "/seat / month",
+      "custom": "Custom",
+      "startFree": "Start free",
+      "getPro": "Get Pro",
+      "startTeam": "Start Team",
+      "contactSales": "Contact sales",
+      "referralNote": "🎁 Refer friends — they get {{referred}}% off and you earn up to {{max}}% off your bill.",
+      "featTrial": ["1 profile card", "Full analytics", "AI follow-ups", "Card scanner", "Lead capture & CRM"],
+      "featPro": ["Up to 3 cards", "12-month analytics", "100 AI follow-ups / mo", "50 scans / mo", "Remove branding", "Wallet passes"],
+      "featTeam": ["Unlimited cards", "Team dashboard & roles", "Locked company branding", "100 AI / user / mo", "API & custom domain"],
+      "featEnt": ["Everything in Team", "White-label", "SSO / SAML", "Dedicated support", "Custom invoicing"]
+    },
+    "finalCta": {
+      "title": "Ready to Elevate Your Professional Identity?",
+      "subtitle": "Join thousands of professionals who trust ARIADNI ID.",
+      "cta": "Create Your ID Now"
+    },
+    "footer": {
+      "tagline": "The future of professional identity. Reinvented.",
+      "rights": "All rights reserved.",
+      "stayConnected": "Stay Connected",
+      "newsletter": "Get updates and tips on digital networking.",
+      "emailPlaceholder": "Enter your email"
+    }
   }
 }

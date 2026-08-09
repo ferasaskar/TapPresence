@@ -7,6 +7,8 @@ import HeroVisual from "@/components/landing/HeroVisual";
 import GoldWaveCanvas from "@/components/landing/GoldWaveCanvas";
 import PricingSection from "@/components/landing/PricingSection";
 import { NAV_LINKS, STATS, FEATURES, JOURNEY, TEMPLATES, TESTIMONIALS, FOOTER_GROUPS, ASSETS } from "@/components/landing/data";
+import { useLocale } from "@/i18n/useLocale";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 const reveal = { hidden: { opacity: 0, y: 22 }, show: { opacity: 1, y: 0 } };
 const Reveal = ({ children, delay = 0, className = "", ...rest }) => (
@@ -37,6 +39,8 @@ const Brand = ({ size = "text-xl" }) => (
 /* ---------------------------------------------------------------- NAVBAR */
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const { t } = useLocale();
+  const navLabels = t("landing.nav", { returnObjects: true });
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
     onScroll();
@@ -49,13 +53,14 @@ function Navbar() {
       <div className="mx-auto flex h-[80px] max-w-[1320px] items-center justify-between px-5 sm:px-8 lg:px-12">
         <Brand />
         <nav className="hidden items-center gap-8 text-[15px] lg:flex">
-          {NAV_LINKS.map((l) => (
-            <button key={l.label} onClick={() => goTo(l.to)} className="lp-navlink" data-testid={`nav-${l.label.toLowerCase()}`}>{l.label}</button>
+          {NAV_LINKS.map((l, i) => (
+            <button key={l.label} onClick={() => goTo(l.to)} className="lp-navlink" data-testid={`nav-${l.label.toLowerCase()}`}>{navLabels[i] || l.label}</button>
           ))}
         </nav>
         <div className="flex items-center gap-3">
-          <Link to="/login" className="lp-navlink text-[15px]" data-testid="nav-login">Login</Link>
-          <Link to="/register" className="lp-btn-gold lp-press lp-sweep rounded-xl px-5 py-2.5 text-[14px]" data-testid="nav-register">Create Your ID</Link>
+          <LanguageSwitcher />
+          <Link to="/login" className="lp-navlink text-[15px]" data-testid="nav-login">{t("landing.login")}</Link>
+          <Link to="/register" className="lp-btn-gold lp-press lp-sweep rounded-xl px-5 py-2.5 text-[14px]" data-testid="nav-register">{t("landing.createId")}</Link>
         </div>
       </div>
     </motion.header>
@@ -64,6 +69,7 @@ function Navbar() {
 
 /* ---------------------------------------------------------------- HERO */
 function Hero() {
+  const { t } = useLocale();
   return (
     <section className="relative overflow-hidden">
       <div className="mx-auto grid max-w-[1320px] grid-cols-1 items-center gap-10 px-5 pb-8 pt-14 sm:px-8 lg:grid-cols-[44%_56%] lg:gap-4 lg:px-12 lg:pt-20">
@@ -71,39 +77,39 @@ function Hero() {
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}
             className="inline-flex items-center gap-2 rounded-full border border-[#D6A653]/30 bg-[#0D1014] px-3.5 py-1.5" data-testid="hero-eyebrow">
             <Sparkles className="h-3.5 w-3.5 text-[#F0CD84]" />
-            <span className="text-[12px] text-[#E6C787]">The Future of Professional Identity</span>
+            <span className="text-[12px] text-[#E6C787]">{t("landing.hero.badge")}</span>
           </motion.div>
 
           <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }}
             className="mt-6 font-semibold tracking-[-0.03em] text-white"
             style={{ fontSize: "clamp(42px, 6vw, 70px)", lineHeight: 1.0 }} data-testid="hero-title">
-            Your Professional<br />Identity.<br /><span className="lp-shine">Reinvented.</span>
+            {t("landing.hero.title1")}<br />{t("landing.hero.title2")}<br /><span className="lp-shine">{t("landing.hero.title3")}</span>
           </motion.h1>
 
           <motion.p initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.32 }}
             className="mt-6 max-w-[540px] text-[18px] leading-relaxed text-[#A2A6AD]">
-            Digital business cards, NFC technology, AI follow-up and smart analytics — all in one powerful platform.
+            {t("landing.hero.subtitle")}
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }}
             className="mt-8 flex flex-wrap gap-3">
             <Link to="/register" className="lp-btn-gold lp-press lp-sweep inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-create">
-              Create Your ID <ArrowRight className="h-4 w-4" />
+              {t("landing.hero.ctaCreate")} <ArrowRight className="h-4 w-4" />
             </Link>
             <Link to="/register?intent=team" className="lp-btn-ghost lp-press inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-team">
-              <Users className="h-4 w-4 text-[#D6A653]" /> For Teams
+              <Users className="h-4 w-4 text-[#D6A653]" /> {t("landing.hero.ctaTeams")}
             </Link>
           </motion.div>
 
           <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.54 }}
             className="mt-10 flex flex-wrap gap-x-10 gap-y-5" data-testid="hero-stats">
-            {STATS.map((s) => (
+            {STATS.map((s, i) => (
               <div key={s.label} className="flex flex-col">
                 <div className="flex items-center gap-1.5">
                   <s.icon className="h-3.5 w-3.5 text-[#D6A653]" strokeWidth={1.75} />
                   <span className="lp-gold-text text-2xl font-semibold tracking-tight">{s.value}</span>
                 </div>
-                <span className="mt-0.5 text-[12px] text-[#70757E]">{s.label}</span>
+                <span className="mt-0.5 text-[12px] text-[#70757E]">{t("landing.stats", { returnObjects: true })[i] || s.label}</span>
               </div>
             ))}
           </motion.div>
@@ -118,7 +124,7 @@ function Hero() {
 }
 
 /* ---------------------------------------------------------------- FEATURES */
-function FeatureCard({ f }) {
+function FeatureCard({ f, title, desc }) {
   const ref = useRef(null);
   const [inView, setInView] = useState(false);
   useEffect(() => {
@@ -148,24 +154,26 @@ function FeatureCard({ f }) {
         style={{ background: "radial-gradient(120% 120% at 30% 20%, rgba(255,255,255,0.08), rgba(255,255,255,0.01))" }}>
         <f.icon className="h-5 w-5" style={{ color: f.tint, filter: inView ? `drop-shadow(0 0 8px ${f.tint}66)` : "none" }} strokeWidth={1.75} />
       </div>
-      <h3 className="text-[15px] font-semibold text-white">{f.title}</h3>
-      <p className="mt-2 text-[13px] leading-snug text-[#8A8F97]">{f.desc}</p>
+      <h3 className="text-[15px] font-semibold text-white">{title || f.title}</h3>
+      <p className="mt-2 text-[13px] leading-snug text-[#8A8F97]">{desc || f.desc}</p>
     </div>
   );
 }
 
 function ConnectionFeatures() {
+  const { t } = useLocale();
+  const items = t("landing.features", { returnObjects: true }) || [];
   return (
     <section id="connect" className="mx-auto max-w-[1320px] px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
       <Reveal className="text-center">
         <h2 className="font-semibold tracking-tight text-white" style={{ fontSize: "clamp(26px,3.4vw,36px)" }}>
-          One Identity. Every Way to Connect.
+          {t("landing.featuresTitle")}
         </h2>
       </Reveal>
       <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 lg:gap-4">
         {FEATURES.map((f, i) => (
           <Reveal key={f.title} delay={i * 0.05}>
-            <FeatureCard f={f} />
+            <FeatureCard f={f} title={items[i]?.title} desc={items[i]?.desc} />
           </Reveal>
         ))}
       </div>
@@ -190,6 +198,8 @@ const JourneyVisual = ({ kind }) => {
 function JourneyFlow() {
   const ref = useRef(null);
   const [p, setP] = useState(0);
+  const { t } = useLocale();
+  const steps = t("landing.journey.steps", { returnObjects: true }) || [];
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start 78%", "end 60%"] });
   useMotionValueEvent(scrollYProgress, "change", (v) => setP(Math.min(1, Math.max(0, v))));
   const n = JOURNEY.length;
@@ -200,15 +210,15 @@ function JourneyFlow() {
     <section ref={ref} className="mx-auto max-w-[1320px] px-5 py-16 sm:px-8 lg:px-12 lg:py-24">
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[24%_76%] lg:gap-8">
         <Reveal>
-          <p className="lp-eyebrow text-[12px]">Smart. Simple. Powerful.</p>
+          <p className="lp-eyebrow text-[12px]">{t("landing.journey.eyebrow")}</p>
           <h2 className="mt-3 font-semibold tracking-tight text-white" style={{ fontSize: "clamp(26px,3.2vw,34px)", lineHeight: 1.1 }}>
-            From Tap to<br />True Connection.
+            {t("landing.journey.title1")}<br />{t("landing.journey.title2")}
           </h2>
           <p className="mt-4 text-[15px] leading-relaxed text-[#8A8F97]">
-            ARIADNI ID turns every interaction into a lasting opportunity.
+            {t("landing.journey.desc")}
           </p>
           <button onClick={() => goTo("#templates")} className="lp-btn-ghost lp-press mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="journey-cta">
-            <PlayCircle className="h-4 w-4 text-[#D6A653]" /> See it in Action
+            <PlayCircle className="h-4 w-4 text-[#D6A653]" /> {t("landing.journey.cta")}
           </button>
         </Reveal>
 
@@ -229,8 +239,8 @@ function JourneyFlow() {
                   <JourneyVisual kind={s.kind} />
                 </div>
                 <div className="lp-step-copy">
-                  <h3 className="mt-4 text-[15px] font-semibold text-white">{s.title}</h3>
-                  <p className="mt-1 max-w-[190px] text-[12.5px] leading-snug text-[#8A8F97] lg:max-w-[150px]">{s.desc}</p>
+                  <h3 className="mt-4 text-[15px] font-semibold text-white">{steps[i]?.title || s.title}</h3>
+                  <p className="mt-1 max-w-[190px] text-[12.5px] leading-snug text-[#8A8F97] lg:max-w-[150px]">{steps[i]?.desc || s.desc}</p>
                 </div>
               </div>
             </div>
@@ -253,6 +263,7 @@ const AppBadge = ({ icon: Icon, top, bottom }) => (
 );
 
 function TemplateShowcase() {
+  const { t } = useLocale();
   return (
     <section id="templates" className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-12 lg:py-16">
       <Reveal>
@@ -260,15 +271,15 @@ function TemplateShowcase() {
           <div className="grid grid-cols-1 gap-10 lg:grid-cols-[26%_46%_28%] lg:gap-6">
             {/* left copy */}
             <div>
-              <p className="lp-eyebrow text-[12px]">Premium Templates</p>
+              <p className="lp-eyebrow text-[12px]">{t("landing.templates.eyebrow")}</p>
               <h2 className="mt-3 font-semibold tracking-tight text-white" style={{ fontSize: "clamp(24px,2.8vw,32px)", lineHeight: 1.12 }}>
-                Designed to Impress.<br />Built to Perform.
+                {t("landing.templates.title1")}<br />{t("landing.templates.title2")}
               </h2>
               <p className="mt-4 text-[15px] leading-relaxed text-[#8A8F97]">
-                Choose a template that reflects your style and makes your profile unforgettable.
+                {t("landing.templates.desc")}
               </p>
               <Link to="/industries" className="lp-btn-ghost lp-press mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="explore-templates">
-                Explore Templates <ArrowRight className="h-4 w-4 text-[#D6A653]" />
+                {t("landing.templates.cta")} <ArrowRight className="h-4 w-4 text-[#D6A653]" />
               </Link>
             </div>
 
@@ -300,10 +311,10 @@ function TemplateShowcase() {
 
             {/* right: app promo */}
             <div className="relative overflow-hidden">
-              <span className="inline-block rounded-full border border-[#D6A653]/40 bg-[#0D1014] px-2.5 py-0.5 text-[10px] font-semibold tracking-wide text-[#E6C787]">NEW</span>
-              <h3 className="mt-3 text-[20px] font-semibold text-white">ARIADNI ID App</h3>
+              <span className="inline-block rounded-full border border-[#D6A653]/40 bg-[#0D1014] px-2.5 py-0.5 text-[10px] font-semibold tracking-wide text-[#E6C787]">{t("landing.templates.appNew")}</span>
+              <h3 className="mt-3 text-[20px] font-semibold text-white">{t("landing.templates.appTitle")}</h3>
               <p className="mt-2 text-[14px] leading-relaxed text-[#8A8F97]">
-                Manage your profile, leads, analytics and team — all from one place.
+                {t("landing.templates.appDesc")}
               </p>
               <div className="mt-5 flex flex-wrap gap-2.5">
                 <AppBadge icon={Apple} top="Download on the" bottom="App Store" />
@@ -331,6 +342,7 @@ function TemplateShowcase() {
 
 /* ---------------------------------------------------------------- TEAMS + TESTIMONIALS */
 function TeamsTestimonials() {
+  const { t } = useLocale();
   return (
     <section id="teams" className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-12 lg:py-16">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[33%_67%]">
@@ -339,19 +351,19 @@ function TeamsTestimonials() {
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
               <Users className="h-5 w-5 text-[#D6A653]" strokeWidth={1.6} />
             </div>
-            <h3 className="text-[22px] font-semibold text-white">For Teams and Companies</h3>
+            <h3 className="text-[22px] font-semibold text-white">{t("landing.teams.title")}</h3>
             <p className="mt-3 text-[14px] leading-relaxed text-[#8A8F97]">
-              Create, manage and scale your team's digital identity. Lock branding, manage users and analyse performance.
+              {t("landing.teams.desc")}
             </p>
             <Link to="/register?intent=team" className="lp-btn-ghost lp-press mt-6 inline-flex w-fit items-center gap-2 rounded-xl px-5 py-3 text-[14px]" data-testid="teams-learn-more">
-              Learn More <ArrowRight className="h-4 w-4 text-[#D6A653]" />
+              {t("landing.teams.cta")} <ArrowRight className="h-4 w-4 text-[#D6A653]" />
             </Link>
           </div>
         </Reveal>
 
         <div>
           <Reveal>
-            <h3 className="text-[22px] font-semibold text-white">Loved by Professionals Worldwide</h3>
+            <h3 className="text-[22px] font-semibold text-white">{t("landing.teams.testimonialsTitle")}</h3>
           </Reveal>
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
             {TESTIMONIALS.map((t, i) => (
@@ -380,6 +392,7 @@ function TeamsTestimonials() {
 
 /* ---------------------------------------------------------------- FINAL CTA */
 function FinalCTA() {
+  const { t } = useLocale();
   return (
     <section id="final-cta" className="relative overflow-hidden py-24">
       {/* beloved wave shape as a calm base, live particles animating on top */}
@@ -388,13 +401,13 @@ function FinalCTA() {
       <GoldWaveCanvas variant="cta" className="pointer-events-none absolute inset-0 h-full w-full" />
       <Reveal className="relative z-10 mx-auto max-w-[1320px] px-5 text-center sm:px-8">
         <h2 className="mx-auto max-w-[720px] font-semibold tracking-tight text-white" style={{ fontSize: "clamp(28px,3.6vw,40px)", lineHeight: 1.1 }}>
-          Ready to Elevate Your Professional Identity?
+          {t("landing.finalCta.title")}
         </h2>
         <p className="mx-auto mt-4 max-w-[520px] text-[15px] text-[#A2A6AD]">
-          Join thousands of professionals who trust ARIADNI ID.
+          {t("landing.finalCta.subtitle")}
         </p>
         <Link to="/register" className="lp-btn-gold lp-press lp-sweep mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-[15px]" data-testid="cta-final">
-          Create Your ID Now <ArrowRight className="h-4 w-4" />
+          {t("landing.finalCta.cta")} <ArrowRight className="h-4 w-4" />
         </Link>
       </Reveal>
     </section>
@@ -403,6 +416,7 @@ function FinalCTA() {
 
 /* ---------------------------------------------------------------- FOOTER */
 function Footer() {
+  const { t } = useLocale();
   const linkTarget = (label) => {
     if (label === "Privacy Policy") return "/legal/privacy";
     if (["For Teams", "For Enterprise", "For Individuals", "Industries"].includes(label)) return "/register?intent=team";
@@ -415,9 +429,9 @@ function Footer() {
         <div className="col-span-2">
           <Brand />
           <p className="mt-4 max-w-[240px] text-[13px] leading-relaxed text-[#70757E]">
-            The future of professional identity. Reinvented.
+            {t("landing.footer.tagline")}
           </p>
-          <p className="mt-6 text-[12px] text-[#5b6068]">© {new Date().getFullYear()} ARIADNI ID. All rights reserved.</p>
+          <p className="mt-6 text-[12px] text-[#5b6068]">© {new Date().getFullYear()} ARIADNI ID. {t("landing.footer.rights")}</p>
         </div>
         {FOOTER_GROUPS.map((g) => (
           <div key={g.title}>
@@ -430,10 +444,10 @@ function Footer() {
           </div>
         ))}
         <div className="col-span-2 lg:col-span-1">
-          <h4 className="text-[13px] font-semibold text-white">Stay Connected</h4>
-          <p className="mt-4 text-[12px] text-[#8A8F97]">Get updates and tips on digital networking.</p>
+          <h4 className="text-[13px] font-semibold text-white">{t("landing.footer.stayConnected")}</h4>
+          <p className="mt-4 text-[12px] text-[#8A8F97]">{t("landing.footer.newsletter")}</p>
           <form className="mt-3 flex items-center gap-2" onSubmit={(e) => e.preventDefault()}>
-            <input type="email" placeholder="Enter your email" data-testid="footer-email"
+            <input type="email" placeholder={t("landing.footer.emailPlaceholder")} data-testid="footer-email"
               className="h-10 w-full rounded-lg border border-white/12 bg-[#0D1014] px-3 text-[13px] text-white placeholder:text-[#5b6068] focus:border-[#D6A653]/50 focus:outline-none" />
             <button type="submit" aria-label="Subscribe" className="lp-btn-gold flex h-10 w-11 shrink-0 items-center justify-center rounded-lg" data-testid="footer-subscribe">
               <ArrowRight className="h-4 w-4" />
