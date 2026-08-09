@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -45,63 +44,63 @@ export default function LeadsDialog({ open, onOpenChange, onCountChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="leads-dialog">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><Inbox className="w-5 h-5" /> Inquiry inbox</DialogTitle></DialogHeader>
+      <DialogContent className="aria-dark max-h-[85vh] max-w-2xl overflow-y-auto border-white/10 bg-[#0A0B0D] text-white" data-testid="leads-dialog">
+        <DialogHeader><DialogTitle className="flex items-center gap-2 text-white"><Inbox className="h-5 w-5 text-[#D6A653]" /> Inquiry inbox</DialogTitle></DialogHeader>
         {leads === null ? (
-          <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-[#D6A653]" /></div>
         ) : leads.length === 0 ? (
-          <p className="py-16 text-center text-neutral-500">No inquiries yet.</p>
+          <p className="py-16 text-center text-white/50">No inquiries yet.</p>
         ) : (
           <div className="space-y-3">
             {leads.map((l) => (
-              <div key={l.id} className={`rounded-lg border p-4 ${l.read ? "border-neutral-200 bg-white" : "border-neutral-900/20 bg-amber-50"}`} data-testid={`lead-${l.id}`}>
+              <div key={l.id} className={`rounded-xl border p-4 ${l.read ? "border-white/10 bg-white/[0.02]" : "border-[#D6A653]/30 bg-[#D6A653]/[0.06]"}`} data-testid={`lead-${l.id}`}>
                 <div className="flex items-start justify-between gap-3" onClick={() => markRead(l)}>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-neutral-900">{l.name}</span>
-                      {!l.read ? <Badge className="text-[10px]">New</Badge> : null}
-                      {l.status ? <Badge variant="secondary" className="text-[10px]">{l.status}</Badge> : null}
-                      <span className="text-xs text-neutral-400">/{l.cardSlug}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-white">{l.name}</span>
+                      {!l.read ? <span className="rounded-full bg-[#D6A653] px-2 py-0.5 text-[10px] font-semibold text-[#050607]">New</span> : null}
+                      {l.status ? <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/70">{l.status}</span> : null}
+                      <span className="text-xs text-white/35">/{l.cardSlug}</span>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
-                      {l.email ? <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {l.email}</span> : null}
-                      {l.phone ? <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {l.phone}</span> : null}
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/50">
+                      {l.email ? <span className="flex items-center gap-1"><Mail className="h-3 w-3" /> {l.email}</span> : null}
+                      {l.phone ? <span className="flex items-center gap-1"><Phone className="h-3 w-3" /> {l.phone}</span> : null}
                     </div>
-                    {l.message ? <p className="mt-2 text-sm text-neutral-700">{l.message}</p> : null}
+                    {l.message ? <p className="mt-2 text-sm text-white/75">{l.message}</p> : null}
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); remove(l); }} className="text-red-500" data-testid={`lead-delete-${l.id}`}><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); remove(l); }} className="text-red-400/80 hover:text-red-400" data-testid={`lead-delete-${l.id}`}><Trash2 className="h-4 w-4" /></button>
                 </div>
 
-                <div className="mt-3 flex items-center gap-2 border-t border-neutral-100 pt-3">
-                  <Button size="sm" variant="outline" onClick={() => openDraft(l)} data-testid={`lead-ai-${l.id}`}>
-                    <Sparkles className="w-3.5 h-3.5 mr-1 text-[#B89973]" /> AI follow-up
+                <div className="mt-3 flex items-center gap-2 border-t border-white/8 pt-3">
+                  <Button size="sm" onClick={() => openDraft(l)} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid={`lead-ai-${l.id}`}>
+                    <Sparkles className="mr-1 h-3.5 w-3.5 text-[#D6A653]" /> AI follow-up
                   </Button>
                 </div>
 
                 {draftFor === l.id && (
-                  <div className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3" data-testid={`ai-panel-${l.id}`}>
+                  <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3" data-testid={`ai-panel-${l.id}`}>
                     <div className="grid grid-cols-3 gap-2">
                       <Select value={opts.channel} onValueChange={(v) => setOpts((o) => ({ ...o, channel: v }))}>
                         <SelectTrigger className="h-8 text-xs" data-testid="ai-channel"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="email">Email</SelectItem><SelectItem value="whatsapp">WhatsApp</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent>
+                        <SelectContent className="aria-pop"><SelectItem value="email">Email</SelectItem><SelectItem value="whatsapp">WhatsApp</SelectItem><SelectItem value="sms">SMS</SelectItem></SelectContent>
                       </Select>
                       <Select value={opts.tone} onValueChange={(v) => setOpts((o) => ({ ...o, tone: v }))}>
                         <SelectTrigger className="h-8 text-xs" data-testid="ai-tone"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="professional">Professional</SelectItem><SelectItem value="warm">Warm</SelectItem><SelectItem value="short">Short</SelectItem></SelectContent>
+                        <SelectContent className="aria-pop"><SelectItem value="professional">Professional</SelectItem><SelectItem value="warm">Warm</SelectItem><SelectItem value="short">Short</SelectItem></SelectContent>
                       </Select>
                       <Select value={opts.language} onValueChange={(v) => setOpts((o) => ({ ...o, language: v }))}>
                         <SelectTrigger className="h-8 text-xs" data-testid="ai-language"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem><SelectItem value="es">Español</SelectItem></SelectContent>
+                        <SelectContent className="aria-pop"><SelectItem value="en">English</SelectItem><SelectItem value="ar">العربية</SelectItem><SelectItem value="es">Español</SelectItem></SelectContent>
                       </Select>
                     </div>
-                    <Button size="sm" className="mt-2 w-full" onClick={() => generate(l)} disabled={gen} data-testid={`ai-generate-${l.id}`}>
-                      {gen ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generate draft"}
+                    <Button size="sm" className="mt-2 w-full rounded-lg bg-[#D6A653] font-medium text-[#050607] hover:bg-[#E8B764]" onClick={() => generate(l)} disabled={gen} data-testid={`ai-generate-${l.id}`}>
+                      {gen ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generate draft"}
                     </Button>
                     {draft ? (
                       <div className="mt-2">
                         <Textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={5} dir={RTL.includes(opts.language) ? "rtl" : "ltr"} data-testid="ai-draft" />
-                        <Button size="sm" variant="outline" className="mt-2" onClick={copy} data-testid="ai-copy"><Copy className="w-3.5 h-3.5 mr-1" /> Copy</Button>
-                        <span className="ml-2 text-xs text-neutral-400">Review before sending — AI never sends automatically.</span>
+                        <Button size="sm" className="mt-2 rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" onClick={copy} data-testid="ai-copy"><Copy className="mr-1 h-3.5 w-3.5" /> Copy</Button>
+                        <span className="ml-2 text-xs text-white/40">Review before sending — AI never sends automatically.</span>
                       </div>
                     ) : null}
                   </div>

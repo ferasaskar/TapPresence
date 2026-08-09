@@ -16,8 +16,8 @@ function ProtectedRoute({ children }) {
   const { user, ready } = useAuth();
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
-        <Loader2 className="w-6 h-6 animate-spin text-neutral-400" />
+      <div className="flex min-h-screen items-center justify-center bg-[#050607]">
+        <Loader2 className="w-6 h-6 animate-spin text-[#D6A653]" />
       </div>
     );
   }

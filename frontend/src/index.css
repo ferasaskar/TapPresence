@@ -86,3 +86,28 @@ code {
         @apply bg-background text-foreground;
     }
 }
+
+/* ---- Premium dark app surfaces (auth / dashboard / editor / dialogs) ---- */
+.aria-dark { color-scheme: dark; }
+.aria-dark input:not([type="range"]):not([type="checkbox"]):not([type="file"]),
+.aria-dark textarea,
+.aria-dark [role="combobox"] {
+    background-color: #0A0B0D;
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+.aria-dark input::placeholder,
+.aria-dark textarea::placeholder { color: rgba(255, 255, 255, 0.32); }
+.aria-dark label { color: rgba(255, 255, 255, 0.6); }
+.aria-dark input:focus-visible,
+.aria-dark textarea:focus-visible,
+.aria-dark [role="combobox"]:focus-visible {
+    border-color: #D6A653;
+    box-shadow: 0 0 0 1px rgba(214, 166, 83, 0.55);
+    outline: none;
+}
+/* dark select / dropdown popovers (portaled) */
+.aria-pop { background-color: #0A0B0D !important; border-color: rgba(255, 255, 255, 0.12) !important; color: #fff !important; }
+.aria-pop [role="option"] { color: rgba(255, 255, 255, 0.82); }
+.aria-pop [role="option"][data-highlighted] { background-color: rgba(214, 166, 83, 0.14); color: #fff; }
+.aria-gold-radial { background: radial-gradient(60% 50% at 50% 28%, rgba(214, 166, 83, 0.16), transparent 70%); }

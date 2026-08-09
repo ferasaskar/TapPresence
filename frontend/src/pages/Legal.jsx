@@ -9,12 +9,15 @@ export default function Legal() {
   const { doc } = useParams();
   const c = CONTENT[doc] || { title: "Not found", body: "" };
   return (
-    <div className="min-h-screen bg-ivory-bg font-sans text-ink">
-      <div className="mx-auto max-w-2xl px-6 py-16">
-        <Link to="/" className="font-serif text-2xl tracking-tight">ARIADNI <span className="text-[#B89973]">ID</span></Link>
-        <h1 className="mt-8 font-serif text-4xl tracking-tight" data-testid="legal-title">{c.title}</h1>
-        <p className="mt-2 text-xs uppercase tracking-widest text-[#B89973]">Placeholder — pending legal review</p>
-        <p className="mt-6 leading-relaxed text-ink-soft">{c.body}</p>
+    <div className="aria-dark relative min-h-screen overflow-hidden bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }}>
+      <div className="grain-overlay" style={{ opacity: 0.05 }} />
+      <div className="relative mx-auto max-w-2xl px-6 py-16">
+        <Link to="/" className="text-lg font-semibold tracking-tight text-white">ARIADNI <span className="text-[#D6A653]">ID</span></Link>
+        <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-8">
+          <h1 className="text-3xl font-medium tracking-tight text-white" data-testid="legal-title">{c.title}</h1>
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">Placeholder — pending legal review</p>
+          <p className="mt-6 leading-relaxed text-white/65">{c.body}</p>
+        </div>
       </div>
     </div>
   );

@@ -13,7 +13,9 @@ const RTL = ["ar"];
 const EMPTY = { name: "", title: "", company: "", email: "", phone: "", website: "",
   address: "", city: "", country: "", language: "en", notes: "" };
 
-// Downscale to <=1600px on the long edge and return a jpeg data URL.
+const goldBtn = "rounded-lg bg-[#D6A653] font-medium text-[#050607] transition-all hover:bg-[#E8B764] active:scale-[0.98]";
+const ghostBtn = "rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5";
+
 function shrink(dataUrl, max = 1600, quality = 0.85) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -33,9 +35,9 @@ function shrink(dataUrl, max = 1600, quality = 0.85) {
 
 export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved }) {
   const scannableCards = cards.filter((c) => c.slug);
-  const [step, setStep] = useState("capture"); // capture | review
+  const [step, setStep] = useState("capture");
   const [source, setSource] = useState("business_card_scan");
-  const [image, setImage] = useState("");       // data URL preview
+  const [image, setImage] = useState("");
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(EMPTY);
@@ -63,7 +65,6 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
         video: { facingMode: { ideal: "environment" } }, audio: false });
       streamRef.current = stream;
       setCamActive(true);
-      // wait a tick for the <video> to mount
       setTimeout(() => { if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play?.(); } }, 50);
     } catch (e) {
       setCamError("Camera unavailable — upload a photo instead.");
@@ -126,7 +127,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
 
   const field = (key, label, opts = {}) => (
     <div className="space-y-1">
-      <Label className="text-xs text-neutral-500">{label}</Label>
+      <Label className="text-xs text-white/55">{label}</Label>
       <Input value={draft[key]} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
         dir={RTL.includes(draft.language) && ["name", "company"].includes(key) ? "rtl" : "ltr"}
         data-testid={`scan-field-${key}`} {...opts} />
@@ -135,12 +136,12 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="scan-dialog">
+      <DialogContent className="aria-dark max-h-[90vh] max-w-lg overflow-y-auto border-white/10 bg-[#0A0B0D] text-white" data-testid="scan-dialog">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ScanLine className="w-5 h-5 text-[#B89973]" /> Scan a card
+          <DialogTitle className="flex items-center gap-2 text-white">
+            <ScanLine className="h-5 w-5 text-[#D6A653]" /> Scan a card
           </DialogTitle>
-          <DialogDescription>Capture or upload a business card or event badge, review the details, then save it as a lead.</DialogDescription>
+          <DialogDescription className="text-white/50">Capture or upload a business card or event badge, review the details, then save it as a lead.</DialogDescription>
         </DialogHeader>
 
         {step === "capture" && (
@@ -148,52 +149,52 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
             <div className="flex gap-2">
               <Select value={source} onValueChange={setSource}>
                 <SelectTrigger className="h-9 text-sm" data-testid="scan-source"><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent className="aria-pop">
                   <SelectItem value="business_card_scan">Business card</SelectItem>
                   <SelectItem value="badge_scan">Event badge</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-900 aspect-[4/3] flex items-center justify-center">
+            <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black">
               {image ? (
                 <img src={image} alt="captured card" className="h-full w-full object-contain" data-testid="scan-preview" />
               ) : camActive ? (
                 <video ref={videoRef} playsInline muted className="h-full w-full object-cover" data-testid="scan-camera" />
               ) : (
-                <div className="p-6 text-center text-sm text-neutral-300">{camError || "Point your camera at the card"}</div>
+                <div className="p-6 text-center text-sm text-white/50">{camError || "Point your camera at the card"}</div>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               {image ? (
-                <Button variant="outline" onClick={() => { setImage(""); startCam(); }} data-testid="scan-retake">
-                  <RefreshCw className="w-4 h-4 mr-1" /> Retake
+                <Button onClick={() => { setImage(""); startCam(); }} className={ghostBtn} data-testid="scan-retake">
+                  <RefreshCw className="mr-1 h-4 w-4" /> Retake
                 </Button>
               ) : camActive ? (
-                <Button onClick={capturePhoto} data-testid="scan-capture">
-                  <Camera className="w-4 h-4 mr-1" /> Capture
+                <Button onClick={capturePhoto} className={goldBtn} data-testid="scan-capture">
+                  <Camera className="mr-1 h-4 w-4" /> Capture
                 </Button>
               ) : (
-                <Button variant="outline" onClick={startCam} data-testid="scan-start-camera">
-                  <Camera className="w-4 h-4 mr-1" /> Camera
+                <Button onClick={startCam} className={ghostBtn} data-testid="scan-start-camera">
+                  <Camera className="mr-1 h-4 w-4" /> Camera
                 </Button>
               )}
-              <Button variant="outline" onClick={() => fileRef.current?.click()} data-testid="scan-upload">
-                <Upload className="w-4 h-4 mr-1" /> Upload
+              <Button onClick={() => fileRef.current?.click()} className={ghostBtn} data-testid="scan-upload">
+                <Upload className="mr-1 h-4 w-4" /> Upload
               </Button>
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFile} data-testid="scan-file-input" />
             </div>
 
-            <Button className="w-full" disabled={!image || scanning} onClick={runScan} data-testid="scan-run">
-              {scanning ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Reading…</> : <><ScanLine className="w-4 h-4 mr-1" /> Scan card</>}
+            <Button className={`w-full ${goldBtn}`} disabled={!image || scanning} onClick={runScan} data-testid="scan-run">
+              {scanning ? <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Reading…</> : <><ScanLine className="mr-1 h-4 w-4" /> Scan card</>}
             </Button>
           </div>
         )}
 
         {step === "review" && (
           <div className="space-y-3">
-            <p className="text-xs text-neutral-500">Review &amp; edit the extracted details, then save. Nothing is saved until you confirm.</p>
+            <p className="text-xs text-white/50">Review &amp; edit the extracted details, then save. Nothing is saved until you confirm.</p>
             {field("name", "Full name")}
             <div className="grid grid-cols-2 gap-3">
               {field("title", "Job title")}
@@ -210,15 +211,15 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
               {field("country", "Country")}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-neutral-500">Notes</Label>
+              <Label className="text-xs text-white/55">Notes</Label>
               <Textarea rows={2} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} data-testid="scan-field-notes" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs text-neutral-500">Save to card</Label>
+                <Label className="text-xs text-white/55">Save to card</Label>
                 <Select value={cardSlug} onValueChange={setCardSlug}>
                   <SelectTrigger className="h-9 text-sm" data-testid="scan-target-card"><SelectValue placeholder="Select a card" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="aria-pop">
                     {scannableCards.map((c) => (
                       <SelectItem key={c.slug} value={c.slug}>{c.identity?.fullName || c.slug} (/{c.slug})</SelectItem>
                     ))}
@@ -226,10 +227,10 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-neutral-500">Language</Label>
+                <Label className="text-xs text-white/55">Language</Label>
                 <Select value={draft.language} onValueChange={(v) => setDraft((d) => ({ ...d, language: v }))}>
                   <SelectTrigger className="h-9 text-sm" data-testid="scan-language"><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="aria-pop">
                     <SelectItem value="en">English</SelectItem>
                     <SelectItem value="ar">العربية</SelectItem>
                     <SelectItem value="es">Español</SelectItem>
@@ -238,11 +239,11 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
               </div>
             </div>
             <div className="flex gap-2 pt-1">
-              <Button variant="outline" className="flex-1" onClick={() => { setStep("capture"); setImage(""); startCam(); }} data-testid="scan-back">
-                <RefreshCw className="w-4 h-4 mr-1" /> Rescan
+              <Button className={`flex-1 ${ghostBtn}`} onClick={() => { setStep("capture"); setImage(""); startCam(); }} data-testid="scan-back">
+                <RefreshCw className="mr-1 h-4 w-4" /> Rescan
               </Button>
-              <Button className="flex-1" disabled={saving} onClick={save} data-testid="scan-save">
-                {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />} Save lead
+              <Button className={`flex-1 ${goldBtn}`} disabled={saving} onClick={save} data-testid="scan-save">
+                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />} Save lead
               </Button>
             </div>
           </div>

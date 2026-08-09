@@ -6,15 +6,26 @@ import LeadsDialog from "@/components/admin/LeadsDialog";
 import AnalyticsDialog from "@/components/admin/AnalyticsDialog";
 import ScanCardDialog from "@/components/admin/ScanCardDialog";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3, ScanLine, Palette } from "lucide-react";
+import { motion } from "framer-motion";
+import { Plus, Pencil, Trash2, ExternalLink, LogOut, Loader2, Inbox, BarChart3, ScanLine, Palette, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
+
+const AriadniMark = ({ className = "" }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
+    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
+  </svg>
+);
+
+const HeaderBtn = ({ children, className = "", ...props }) => (
+  <button className={`inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm text-white/80 transition-all hover:border-white/25 hover:text-white active:scale-95 ${className}`} {...props}>
+    {children}
+  </button>
+);
 
 export default function Admin() {
   const { user, logout } = useAuth();
   const [cards, setCards] = useState(null);
-  const [editing, setEditing] = useState(null); // null | {} for new | card obj
+  const [editing, setEditing] = useState(null);
   const [leadsOpen, setLeadsOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -43,8 +54,8 @@ export default function Admin() {
 
   if (editing !== null) {
     return (
-      <div className="min-h-screen bg-white">
-        <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="aria-dark min-h-screen bg-[#050607]" style={{ fontFamily: "'Outfit', sans-serif" }}>
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8">
           <CardEditor
             initial={editing}
             onBack={() => setEditing(null)}
@@ -56,60 +67,81 @@ export default function Admin() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">ARIADNI ID</p>
-            <h1 className="text-lg font-semibold text-neutral-900">Card manager</h1>
+    <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }}>
+      <div className="grain-overlay" style={{ opacity: 0.04 }} />
+
+      <header className="sticky top-0 z-40 border-b border-white/8 bg-[#050607]/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-8">
+          <div className="flex items-center gap-2.5">
+            <AriadniMark className="h-5 w-5 text-[#D6A653]" />
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">ARIADNI ID</p>
+              <h1 className="text-[15px] font-medium leading-tight text-white">Card Manager</h1>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <a href="/industries" data-testid="industry-templates-link">
-              <Button variant="outline" size="sm">
-                <Palette className="w-4 h-4 mr-1 text-[#B89973]" /> Industry Templates
-              </Button>
+              <HeaderBtn><Palette className="h-4 w-4 text-[#D6A653]" /> Industry Templates</HeaderBtn>
             </a>
-            <Button variant="outline" size="sm" onClick={() => setScanOpen(true)} data-testid="scan-button">
-              <ScanLine className="w-4 h-4 mr-1 text-[#B89973]" /> Scan card
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setLeadsOpen(true)} data-testid="inbox-button" className="relative">
-              <Inbox className="w-4 h-4 mr-1" /> Inbox
-              {unread > 0 ? <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-neutral-900 px-1 text-[10px] text-white" data-testid="inbox-unread">{unread}</span> : null}
-            </Button>
-            <span className="text-sm text-neutral-500">{user?.email}</span>
-            <Button variant="ghost" size="sm" onClick={logout} data-testid="logout-button"><LogOut className="w-4 h-4" /></Button>
+            <HeaderBtn onClick={() => setScanOpen(true)} data-testid="scan-button"><ScanLine className="h-4 w-4 text-[#D6A653]" /> Scan card</HeaderBtn>
+            <div className="relative">
+              <HeaderBtn onClick={() => setLeadsOpen(true)} data-testid="inbox-button"><Inbox className="h-4 w-4" /> Inbox</HeaderBtn>
+              {unread > 0 ? <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#D6A653] px-1 text-[10px] font-semibold text-[#050607]" data-testid="inbox-unread">{unread}</span> : null}
+            </div>
+            <span className="hidden text-sm text-white/40 sm:inline">{user?.email}</span>
+            <button onClick={logout} className="rounded-full p-2 text-white/60 transition-colors hover:bg-white/5 hover:text-white" data-testid="logout-button"><LogOut className="h-4 w-4" /></button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-neutral-500">{cards ? `${cards.length} cards` : ""}</h2>
-          <Button onClick={() => setEditing({})} data-testid="new-card-button"><Plus className="w-4 h-4 mr-1" /> New card</Button>
+      <main className="relative mx-auto max-w-7xl px-4 py-10 sm:px-8">
+        <div className="mb-7 flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-light tracking-tight text-white">Your Cards</h2>
+            <p className="mt-1 text-sm text-white/45">{cards ? `${cards.length} ${cards.length === 1 ? "profile" : "profiles"} in your studio` : "Loading…"}</p>
+          </div>
+          <button onClick={() => setEditing({})} className="inline-flex items-center gap-1.5 rounded-full bg-[#D6A653] px-5 py-2.5 text-sm font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-95" data-testid="new-card-button">
+            <Plus className="h-4 w-4" /> New card
+          </button>
         </div>
 
         {cards === null ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>
+          <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-[#D6A653]" /></div>
         ) : cards.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-neutral-300 py-20 text-center text-neutral-500">No cards yet. Create your first one.</div>
+          <div className="flex flex-col items-center rounded-2xl border border-dashed border-white/12 py-24 text-center">
+            <LayoutGrid className="mb-4 h-10 w-10 text-[#D6A653]/40" strokeWidth={1.25} />
+            <p className="text-white/60">No cards yet.</p>
+            <button onClick={() => setEditing({})} className="mt-4 rounded-full border border-[#D6A653]/40 px-5 py-2 text-sm text-[#D6A653] transition-colors hover:bg-[#D6A653]/10" data-testid="empty-new-card">Create your first card</button>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {cards.map((c) => (
-              <div key={c.id} className="rounded-lg border border-neutral-200 bg-white p-5" data-testid={`card-item-${c.slug}`}>
-                <div className="mb-3 flex items-center justify-between">
-                  <Badge variant={c.status === "published" ? "default" : "secondary"}>{c.status}</Badge>
-                  <span className="text-[11px] uppercase tracking-wider text-neutral-400">{tplName(c.templateId)}</span>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {cards.map((c, i) => (
+              <motion.div
+                key={c.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: i * 0.05 }}
+                className="group rounded-2xl border border-white/10 bg-[#0A0B0D] p-6 transition-all hover:border-white/20 hover:shadow-[0_0_30px_rgba(214,166,83,0.08)]"
+                data-testid={`card-item-${c.slug}`}
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <span className={c.status === "published"
+                    ? "rounded-full border border-[#D6A653]/30 bg-[#D6A653]/15 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#D6A653]"
+                    : "rounded-full border border-white/10 bg-white/10 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white/60"}>
+                    {c.status}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-white/35">{tplName(c.templateId)}</span>
                 </div>
-                <h3 className="text-lg font-semibold text-neutral-900">{c.identity?.fullName || c.slug}</h3>
-                <p className="text-sm text-neutral-500">{c.identity?.jobTitle}</p>
-                <p className="mt-1 text-xs text-neutral-400">/{c.slug}</p>
-                <div className="mt-4 flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setEditing(c)} data-testid={`edit-${c.slug}`}><Pencil className="w-3.5 h-3.5 mr-1" /> Edit</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setStatsCard(c)} data-testid={`stats-${c.slug}`}><BarChart3 className="w-3.5 h-3.5" /></Button>
-                  <a href={`/${c.slug}`} target="_blank" rel="noreferrer"><Button size="sm" variant="ghost" data-testid={`view-${c.slug}`}><ExternalLink className="w-3.5 h-3.5" /></Button></a>
-                  <Button size="sm" variant="ghost" className="text-red-500 ml-auto" onClick={() => remove(c)} data-testid={`delete-${c.slug}`}><Trash2 className="w-3.5 h-3.5" /></Button>
+                <h3 className="text-lg font-medium text-white">{c.identity?.fullName || c.slug}</h3>
+                <p className="text-sm text-white/55">{c.identity?.jobTitle}</p>
+                <p className="mt-1 text-xs text-[#D6A653]/80">/{c.slug}</p>
+                <div className="mt-5 flex items-center gap-1.5 border-t border-white/8 pt-4">
+                  <button onClick={() => setEditing(c)} className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 px-3 py-1.5 text-xs text-white/80 transition-colors hover:border-[#D6A653]/50 hover:text-white" data-testid={`edit-${c.slug}`}><Pencil className="h-3.5 w-3.5" /> Edit</button>
+                  <button onClick={() => setStatsCard(c)} className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`stats-${c.slug}`}><BarChart3 className="h-3.5 w-3.5" /></button>
+                  <a href={`/${c.slug}`} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`view-${c.slug}`}><ExternalLink className="h-3.5 w-3.5" /></a>
+                  <button onClick={() => remove(c)} className="ml-auto rounded-lg p-2 text-red-400/70 transition-colors hover:bg-red-500/10 hover:text-red-400" data-testid={`delete-${c.slug}`}><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
         )}

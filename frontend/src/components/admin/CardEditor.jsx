@@ -25,10 +25,12 @@ const empty = {
 
 const Field = ({ label, children }) => (
   <div className="space-y-1.5">
-    <Label className="text-xs text-neutral-600">{label}</Label>
+    <Label className="text-xs text-white/55">{label}</Label>
     {children}
   </div>
 );
+
+const panelCls = "rounded-xl border border-white/10 bg-white/[0.02] p-4";
 
 export default function CardEditor({ initial, onBack, onSaved }) {
   const [form, setForm] = useState(() => ({ ...empty, ...initial, identity: { ...empty.identity, ...(initial?.identity) }, contact: { ...empty.contact, ...(initial?.contact) }, social: { ...empty.social, ...(initial?.social) }, booking: { ...empty.booking, ...(initial?.booking) }, services: initial?.services || [], projects: initial?.projects || [] }));
@@ -72,34 +74,36 @@ export default function CardEditor({ initial, onBack, onSaved }) {
     }
   };
 
+  const tabTrigger = "rounded-lg px-3.5 py-2 text-sm text-white/55 transition-all data-[state=active]:bg-[#D6A653] data-[state=active]:text-[#050607] data-[state=active]:font-medium hover:text-white";
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_400px]">
       {/* FORM */}
       <div>
         <div className="mb-6 flex items-center justify-between">
-          <button onClick={onBack} className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-900" data-testid="editor-back">
-            <ArrowLeft className="w-4 h-4" /> Back
+          <button onClick={onBack} className="flex items-center gap-2 text-sm text-white/55 transition-colors hover:text-white" data-testid="editor-back">
+            <ArrowLeft className="h-4 w-4" /> Back
           </button>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             {form.status === "published" && form.slug ? (
-              <a href={`/${form.slug}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900" data-testid="editor-view-live">
-                View live <ExternalLink className="w-3.5 h-3.5" />
+              <a href={`/${form.slug}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-white/55 transition-colors hover:text-white" data-testid="editor-view-live">
+                View live <ExternalLink className="h-3.5 w-3.5" />
               </a>
             ) : null}
-            <Button onClick={save} disabled={saving} data-testid="admin-save-button">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save card"}
+            <Button onClick={save} disabled={saving} className="rounded-full bg-[#D6A653] font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-95" data-testid="admin-save-button">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save card"}
             </Button>
           </div>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-4 rounded-lg border border-neutral-200 p-4">
+        <div className={`mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4 ${panelCls}`}>
           <Field label="Slug (URL)">
             <Input value={form.slug} onChange={(e) => set("slug", e.target.value)} placeholder="feras-askar" data-testid="editor-slug" />
           </Field>
           <Field label="Template">
             <Select value={form.templateId} onValueChange={(v) => set("templateId", v)}>
               <SelectTrigger data-testid="editor-template"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent className="aria-pop">
                 {TEMPLATES.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -107,29 +111,29 @@ export default function CardEditor({ initial, onBack, onSaved }) {
           <Field label="Accent">
             <Select value={form.accent} onValueChange={(v) => set("accent", v)}>
               <SelectTrigger data-testid="editor-accent"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent className="aria-pop">
                 {ACCENT_OPTIONS.map((a) => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
           <div className="flex items-center gap-3 pt-6">
             <Switch checked={form.status === "published"} onCheckedChange={(v) => set("status", v ? "published" : "draft")} data-testid="editor-published" />
-            <span className="text-sm text-neutral-700">{form.status === "published" ? "Published" : "Draft"}</span>
+            <span className="text-sm text-white/75">{form.status === "published" ? "Published" : "Draft"}</span>
           </div>
         </div>
 
         <Tabs defaultValue="identity">
-          <TabsList className="flex flex-wrap h-auto">
-            <TabsTrigger value="identity">Identity</TabsTrigger>
-            <TabsTrigger value="industry" data-testid="tab-industry">Industry</TabsTrigger>
-            <TabsTrigger value="contact">Contact</TabsTrigger>
-            <TabsTrigger value="social">Social</TabsTrigger>
-            <TabsTrigger value="services">Services</TabsTrigger>
-            <TabsTrigger value="projects">Projects</TabsTrigger>
-            <TabsTrigger value="booking">Booking</TabsTrigger>
+          <TabsList className="flex h-auto flex-wrap gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1.5">
+            <TabsTrigger value="identity" className={tabTrigger}>Identity</TabsTrigger>
+            <TabsTrigger value="industry" className={tabTrigger} data-testid="tab-industry">Industry</TabsTrigger>
+            <TabsTrigger value="contact" className={tabTrigger}>Contact</TabsTrigger>
+            <TabsTrigger value="social" className={tabTrigger}>Social</TabsTrigger>
+            <TabsTrigger value="services" className={tabTrigger}>Services</TabsTrigger>
+            <TabsTrigger value="projects" className={tabTrigger}>Projects</TabsTrigger>
+            <TabsTrigger value="booking" className={tabTrigger}>Booking</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="identity" className="space-y-4 pt-4">
+          <TabsContent value="identity" className="space-y-4 pt-5">
             <ImageUploadField label="Profile photo" value={form.identity.profilePhoto} onChange={(v) => set("identity.profilePhoto", v)} testId="upload-photo" />
             <div className="grid grid-cols-2 gap-3">
               <Field label="Full name"><Input value={form.identity.fullName} onChange={(e) => set("identity.fullName", e.target.value)} data-testid="editor-fullname" /></Field>
@@ -142,28 +146,28 @@ export default function CardEditor({ initial, onBack, onSaved }) {
             <Field label="Bio"><Textarea value={form.identity.bio} onChange={(e) => set("identity.bio", e.target.value)} rows={3} /></Field>
           </TabsContent>
 
-          <TabsContent value="industry" className="pt-4">
+          <TabsContent value="industry" className="pt-5">
             <IndustryCustomizer form={form} set={set} />
           </TabsContent>
 
-          <TabsContent value="contact" className="space-y-3 pt-4">
+          <TabsContent value="contact" className="space-y-3 pt-5">
             {["phone", "whatsapp", "email", "website", "address", "mapsUrl"].map((k) => (
               <Field key={k} label={k}><Input value={form.contact[k]} onChange={(e) => set(`contact.${k}`, e.target.value)} data-testid={`editor-contact-${k}`} /></Field>
             ))}
           </TabsContent>
 
-          <TabsContent value="social" className="space-y-3 pt-4">
+          <TabsContent value="social" className="space-y-3 pt-5">
             {["linkedin", "instagram", "x", "youtube", "tiktok"].map((k) => (
               <Field key={k} label={k}><Input value={form.social[k]} onChange={(e) => set(`social.${k}`, e.target.value)} placeholder="https://" /></Field>
             ))}
           </TabsContent>
 
-          <TabsContent value="services" className="space-y-4 pt-4">
+          <TabsContent value="services" className="space-y-4 pt-5">
             {form.services.map((s, i) => (
-              <div key={i} className="rounded-lg border border-neutral-200 p-4 space-y-3" data-testid={`editor-service-${i}`}>
+              <div key={i} className={`${panelCls} space-y-3`} data-testid={`editor-service-${i}`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-neutral-500">Service {i + 1}</span>
-                  <button onClick={() => delService(i)} className="text-red-500" data-testid={`del-service-${i}`}><Trash2 className="w-4 h-4" /></button>
+                  <span className="text-xs font-medium text-white/50">Service {i + 1}</span>
+                  <button onClick={() => delService(i)} className="text-red-400/80 hover:text-red-400" data-testid={`del-service-${i}`}><Trash2 className="h-4 w-4" /></button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Icon (lucide name)"><Input value={s.icon} onChange={(e) => setService(i, "icon", e.target.value)} placeholder="Building2" /></Field>
@@ -172,15 +176,15 @@ export default function CardEditor({ initial, onBack, onSaved }) {
                 <Field label="Description"><Textarea value={s.description} onChange={(e) => setService(i, "description", e.target.value)} rows={2} /></Field>
               </div>
             ))}
-            <Button variant="outline" onClick={addService} data-testid="add-service"><Plus className="w-4 h-4 mr-1" /> Add service</Button>
+            <Button onClick={addService} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="add-service"><Plus className="mr-1 h-4 w-4" /> Add service</Button>
           </TabsContent>
 
-          <TabsContent value="projects" className="space-y-4 pt-4">
+          <TabsContent value="projects" className="space-y-4 pt-5">
             {form.projects.map((p, i) => (
-              <div key={i} className="rounded-lg border border-neutral-200 p-4 space-y-3" data-testid={`editor-project-${i}`}>
+              <div key={i} className={`${panelCls} space-y-3`} data-testid={`editor-project-${i}`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-neutral-500">Project {i + 1}</span>
-                  <button onClick={() => delProject(i)} className="text-red-500" data-testid={`del-project-${i}`}><Trash2 className="w-4 h-4" /></button>
+                  <span className="text-xs font-medium text-white/50">Project {i + 1}</span>
+                  <button onClick={() => delProject(i)} className="text-red-400/80 hover:text-red-400" data-testid={`del-project-${i}`}><Trash2 className="h-4 w-4" /></button>
                 </div>
                 <ImageUploadField label="Cover image" value={p.coverImage} onChange={(v) => setProject(i, "coverImage", v)} testId={`upload-project-${i}`} />
                 <div className="grid grid-cols-2 gap-3">
@@ -191,20 +195,20 @@ export default function CardEditor({ initial, onBack, onSaved }) {
                 <Field label="Link URL"><Input value={p.url} onChange={(e) => setProject(i, "url", e.target.value)} /></Field>
               </div>
             ))}
-            <Button variant="outline" onClick={addProject} data-testid="add-project"><Plus className="w-4 h-4 mr-1" /> Add project</Button>
+            <Button onClick={addProject} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="add-project"><Plus className="mr-1 h-4 w-4" /> Add project</Button>
           </TabsContent>
 
-          <TabsContent value="booking" className="space-y-3 pt-4">
+          <TabsContent value="booking" className="space-y-3 pt-5">
             <Field label="Booking URL (Calendly / Cal.com)"><Input value={form.booking.bookingUrl} onChange={(e) => set("booking.bookingUrl", e.target.value)} data-testid="editor-booking" /></Field>
           </TabsContent>
         </Tabs>
       </div>
 
       {/* LIVE PREVIEW */}
-      <div className="lg:sticky lg:top-6 h-fit">
-        <p className="mb-3 text-xs uppercase tracking-widest text-neutral-400">Live preview</p>
-        <div className="overflow-hidden rounded-xl border border-neutral-200 shadow-sm" style={{ height: "78vh" }}>
-          <div className="h-full overflow-y-auto" data-testid="editor-preview">
+      <div className="h-fit lg:sticky lg:top-6">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">Live preview</p>
+        <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-[2.2rem] border-[6px] border-[#141518] bg-[#050607] shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10">
+          <div className="overflow-y-auto" style={{ height: "76vh" }} data-testid="editor-preview">
             <TemplateRenderer data={form} />
           </div>
         </div>

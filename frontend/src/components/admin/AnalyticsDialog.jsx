@@ -4,10 +4,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Eye, QrCode, MousePointerClick, Inbox, Loader2 } from "lucide-react";
 
 const Stat = ({ icon: Icon, label, value, testId }) => (
-  <div className="rounded-lg border border-neutral-200 p-4" data-testid={testId}>
-    <Icon className="w-5 h-5 text-neutral-400 mb-3" />
-    <p className="text-2xl font-semibold text-neutral-900">{value}</p>
-    <p className="text-xs uppercase tracking-wide text-neutral-500">{label}</p>
+  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid={testId}>
+    <Icon className="mb-3 h-5 w-5 text-[#D6A653]" />
+    <p className="text-2xl font-semibold text-white">{value}</p>
+    <p className="text-xs uppercase tracking-wide text-white/45">{label}</p>
   </div>
 );
 
@@ -27,12 +27,12 @@ export default function AnalyticsDialog({ card, open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg" data-testid="analytics-dialog">
+      <DialogContent className="aria-dark max-w-lg border-white/10 bg-[#0A0B0D] text-white" data-testid="analytics-dialog">
         <DialogHeader>
-          <DialogTitle>Analytics · {card?.identity?.fullName || card?.slug}</DialogTitle>
+          <DialogTitle className="text-white">Analytics · {card?.identity?.fullName || card?.slug}</DialogTitle>
         </DialogHeader>
         {!data ? (
-          <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-neutral-400" /></div>
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-[#D6A653]" /></div>
         ) : (
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3">
@@ -43,22 +43,22 @@ export default function AnalyticsDialog({ card, open, onOpenChange }) {
             </div>
             {Object.keys(data.tapsByKey || {}).length > 0 && (
               <div>
-                <p className="mb-2 text-xs uppercase tracking-wide text-neutral-500">Taps by action</p>
+                <p className="mb-2 text-xs uppercase tracking-wide text-white/45">Taps by action</p>
                 <div className="space-y-2">
                   {Object.entries(data.tapsByKey).map(([k, v]) => (
                     <div key={k} className="flex items-center gap-3" data-testid={`tapkey-${k}`}>
-                      <span className="w-24 text-sm text-neutral-600">{KEY_LABELS[k] || k}</span>
-                      <div className="h-2 flex-1 rounded-full bg-neutral-100">
-                        <div className="h-2 rounded-full bg-neutral-900" style={{ width: `${(v / maxTap) * 100}%` }} />
+                      <span className="w-24 text-sm text-white/65">{KEY_LABELS[k] || k}</span>
+                      <div className="h-2 flex-1 rounded-full bg-white/10">
+                        <div className="h-2 rounded-full bg-[#D6A653]" style={{ width: `${(v / maxTap) * 100}%` }} />
                       </div>
-                      <span className="w-8 text-right text-sm text-neutral-500">{v}</span>
+                      <span className="w-8 text-right text-sm text-white/50">{v}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
             {data.views + data.scans === 0 ? (
-              <p className="text-center text-sm text-neutral-400">No activity recorded yet. Share the profile to start collecting data.</p>
+              <p className="text-center text-sm text-white/40">No activity recorded yet. Share the profile to start collecting data.</p>
             ) : null}
           </div>
         )}
