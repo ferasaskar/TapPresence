@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useProfile } from "@/context/ProfileContext";
 import { ArrowRight, UserPlus, CalendarClock, MessageCircle, Share2, Printer, QrCode, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { resolveImg, posterUrl } from "@/lib/api";
@@ -36,6 +37,9 @@ export const ExecutiveBlackGold = ({ data }) => {
   const [msgOpen, setMsgOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [showSticky, setShowSticky] = useState(false);
+  const { track, publicView } = useProfile();
+  const ctaRef = useRef(null);
   const actions = buildActions(data);
   const services = orderedServices(data.services);
   const projects = orderedProjects(data.projects);
@@ -57,6 +61,20 @@ export const ExecutiveBlackGold = ({ data }) => {
 
   const portraitTransform = `translate(${id.imageOffsetX || 0}%, ${id.imageOffsetY || 0}%) scale(${id.imageScale || 1})`;
 
+  const bookingActive = b.nativeEnabled || b.bookingUrl;
+  const openExchange = () => { track?.("tap", "cta_exchange"); setExchangeOpen(true); };
+  const openBook = () => { track?.("tap", "cta_book"); setBookOpen(true); };
+  const openMsg = (from = "cta_message") => { track?.("tap", from); setMsgOpen(true); };
+
+  // Sticky mobile conversion bar: show once the primary CTAs scroll out of view.
+  useEffect(() => {
+    const el = ctaRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => setShowSticky(!e.isIntersecting), { rootMargin: "-8px 0px 0px 0px", threshold: 0 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
   const utilBtn = "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-3 text-[10px] uppercase tracking-[0.12em] transition-all duration-300 hover:-translate-y-0.5";
   const utilStyle = { borderColor: gBorder, background: panelTint, color: "#ececec" };
 
@@ -75,7 +93,7 @@ export const ExecutiveBlackGold = ({ data }) => {
       <div className="grain-overlay" style={{ opacity: 0.06 }} />
       <div className="pointer-events-none absolute left-1/2 top-0 h-[420px] w-[420px] -translate-x-1/2 rounded-full opacity-20 blur-3xl" style={{ background: GOLD }} />
 
-      <div className="relative mx-auto w-full max-w-lg px-6 pb-16 pt-12 sm:px-8">
+      <div className="relative mx-auto w-full max-w-lg px-6 pb-28 pt-12 sm:px-8 sm:pb-16">
 
         {/* PROFILE HERO */}
         <motion.header {...fade(0)} className="flex flex-col items-center text-center">
@@ -128,11 +146,11 @@ export const ExecutiveBlackGold = ({ data }) => {
         </motion.div>
 
         {/* PRIMARY CTAs — Exchange Contact + Book a Meeting (directly below quick actions) */}
-        <motion.section {...fade(1)} className="mt-4 grid grid-cols-2 gap-3" data-testid="cta-bar">
+        <motion.section ref={ctaRef} {...fade(1)} className="mt-4 grid grid-cols-2 gap-3" data-testid="cta-bar">
           <button
-            onClick={() => setExchangeOpen(true)}
+            onClick={openExchange}
             data-testid="cta-exchange-button"
-            className="flex items-center justify-center gap-2 rounded-2xl px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide text-black transition-transform duration-300 hover:scale-[1.02]"
+            className="flex items-center justify-center gap-2 rounded-2xl px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide text-black transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]"
             style={{ background: `linear-gradient(90deg,${g1},${g2},${g3})` }}
           >
             <UserPlus className="h-4 w-4 shrink-0" /> Exchange Contact
@@ -140,9 +158,9 @@ export const ExecutiveBlackGold = ({ data }) => {
           {(b.nativeEnabled || b.bookingUrl) ? (
             b.nativeEnabled ? (
               <button
-                onClick={() => setBookOpen(true)}
+                onClick={openBook}
                 data-testid="cta-book-button"
-                className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02]"
+                className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]"
                 style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
               >
                 <CalendarClock className="h-4 w-4 shrink-0" /> Book a Meeting
@@ -152,8 +170,9 @@ export const ExecutiveBlackGold = ({ data }) => {
                 href={b.bookingUrl}
                 target="_blank"
                 rel="noreferrer"
+                onClick={() => track?.("tap", "cta_book")}
                 data-testid="cta-book-button"
-                className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02]"
+                className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]"
                 style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
               >
                 <CalendarClock className="h-4 w-4 shrink-0" /> Book a Meeting
@@ -161,9 +180,9 @@ export const ExecutiveBlackGold = ({ data }) => {
             )
           ) : (
             <button
-              onClick={() => setMsgOpen(true)}
+              onClick={() => openMsg("cta_book")}
               data-testid="cta-book-button"
-              className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02]"
+              className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]"
               style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
             >
               <MessageCircle className="h-4 w-4 shrink-0" /> Send a Message
@@ -240,7 +259,7 @@ export const ExecutiveBlackGold = ({ data }) => {
         {/* MESSAGE — compact CTA that opens the form in a modal */}
         <motion.section {...fade(0)} className="mt-12" data-testid="message-section">
           <button
-            onClick={() => setMsgOpen(true)}
+            onClick={() => openMsg("cta_message")}
             data-testid="cta-message-button"
             className="flex w-full items-center justify-center gap-2 rounded-2xl border px-6 py-4 text-xs font-medium uppercase tracking-widest transition-transform duration-300 hover:scale-[1.01]"
             style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
@@ -299,9 +318,42 @@ export const ExecutiveBlackGold = ({ data }) => {
         </footer>
       </div>
 
+      {/* STICKY MOBILE CONVERSION BAR — appears after the primary CTAs scroll away */}
+      {publicView && (
+      <div
+        data-testid="sticky-cta-bar"
+        className={`tp-sticky fixed inset-x-0 bottom-0 z-40 sm:hidden ${showSticky ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-full opacity-0"}`}
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <div
+          className="mx-auto grid max-w-lg grid-cols-2 gap-2.5 px-4 pt-3"
+          style={{ background: `linear-gradient(180deg, transparent, rgb(${scrimBase}) 42%)` }}
+        >
+          <button
+            onClick={openExchange}
+            data-testid="sticky-exchange-button"
+            className="flex items-center justify-center gap-2 rounded-2xl px-3 py-3.5 text-[11px] font-semibold uppercase tracking-wide text-black shadow-lg transition-transform duration-200 active:scale-[0.97]"
+            style={{ background: `linear-gradient(90deg,${g1},${g2},${g3})`, boxShadow: `0 8px 30px ${hexToRgba(GOLD, 0.35)}` }}
+          >
+            <UserPlus className="h-4 w-4 shrink-0" /> Exchange
+          </button>
+          <button
+            onClick={bookingActive ? (b.nativeEnabled ? openBook : () => { track?.("tap", "cta_book"); window.open(b.bookingUrl, "_blank"); }) : () => openMsg("cta_book")}
+            data-testid="sticky-book-button"
+            className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-3.5 text-[11px] font-semibold uppercase tracking-wide backdrop-blur-md transition-transform duration-200 active:scale-[0.97]"
+            style={{ borderColor: gBorder, color: GOLD, background: hexToRgba(GOLD, 0.12) }}
+          >
+            {bookingActive ? <CalendarClock className="h-4 w-4 shrink-0" /> : <MessageCircle className="h-4 w-4 shrink-0" />}
+            {bookingActive ? "Book" : "Message"}
+          </button>
+        </div>
+      </div>
+      )}
+
       <style>{`
         .proj-scroll::-webkit-scrollbar{ display:none; }
         .proj-scroll{ scrollbar-width:none; }
+        .tp-sticky{ transition: transform .35s cubic-bezier(.22,1,.36,1), opacity .35s ease; }
         .tp-name{ overflow-wrap:anywhere; word-break:break-word; text-wrap:balance; }
         .tp-balance{ text-wrap:balance; overflow-wrap:anywhere; }
         .tp-pretty{ text-wrap:pretty; overflow-wrap:anywhere; }
@@ -319,8 +371,7 @@ export const ExecutiveBlackGold = ({ data }) => {
         [data-testid="social-icons"] a:hover{ color:${GOLD}; border-color:${GOLD}; }
       `}</style>
 
-      <ExchangeContactDialog open={exchangeOpen} onOpenChange={setExchangeOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />
-      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />
+      <ExchangeContactDialog open={exchangeOpen} onOpenChange={setExchangeOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />
 
       {/* MESSAGE modal */}
       <Dialog open={msgOpen} onOpenChange={setMsgOpen}>

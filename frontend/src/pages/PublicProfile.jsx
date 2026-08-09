@@ -64,7 +64,7 @@ export default function PublicProfile() {
   const isRtl = RTL.includes(active);
 
   return (
-    <ProfileContext.Provider value={{ track }}>
+    <ProfileContext.Provider value={{ track, publicView: true }}>
       <div data-testid="public-profile" dir={isRtl ? "rtl" : "ltr"}>
         {langs.length > 1 && (
           <div className="pointer-events-none fixed top-3 z-50 flex w-full justify-center" data-testid="lang-switcher">

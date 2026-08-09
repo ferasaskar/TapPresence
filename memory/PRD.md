@@ -252,6 +252,40 @@ Engine-level typography/readability upgrade in `ExecutiveBlackGold.jsx` ONLY (th
 - Readability tuning: role 15px, company/location tightened tracking, bio 15px/1.7 line-height with `text-wrap:pretty`; section headings fluid clamp + balance; service descriptions 13px/1.55. RTL letter-spacing neutralized via `[dir=rtl]`.
 - Reused: entire accent/industry/crop/CTA engine untouched. NOT touched: backend, CardData model, DB, legacy Beige/Future templates, dialogs, CTA logic.
 - Tests: frontend compiles (only pre-existing eslint warning); `/feras-askar` 200; mobile 390px + 360px no overflow; long-name stress no overflow. Optional per-card typography preset = POSTPONED (avoids premature architecture).
+
+## PHASE A2 — Public Card Conversion Polish (2026-08-09) — IMPLEMENTED & verified
+Non-sensitive UX/analytics-presentation phase in `ExecutiveBlackGold.jsx` (+ tiny context flag). Reuses existing `/track` event system and dialogs — no new event semantics, no backend change.
+- **Sticky mobile conversion bar**: fixed bottom Exchange + Book/Message bar, appears via IntersectionObserver only after the primary CTAs scroll out of view (`sm:hidden`, safe-area padding, accent-themed). Container bottom padding raised on mobile so content is never obscured.
+- **CTA intent tracking**: primary + sticky Exchange/Book/Message now fire `track("tap", cta_exchange|cta_book|cta_message)` (additive tap keys the analytics already aggregates generically). Feeds the Phase J funnel.
+- **Micro-interactions**: `active:scale` press feedback on CTAs.
+- **Regression guard**: sticky bar (viewport-`fixed`) gated behind new `ProfileContext.publicView` flag (default false) → renders ONLY on the real public page, never in editor/showcase live previews. PublicProfile sets `publicView:true`.
+- Reused: ExchangeContactDialog/BookMeetingDialog/InquiryForm, ProfileContext `track`, accent engine. NOT changed: backend, models, DB, event semantics, legacy templates.
+- Tests: compiles (pre-existing warning only); sticky hidden→visible on scroll verified; 390px no overflow; Exchange tap fires `/track` + opens dialog (network-captured); preview isolation via publicView.
+
+## ROADMAP PROGRESS REPORT (running)
+- **COMPLETE**: A1 Typography/Readability · A2 Public Card Conversion Polish · J Analytics Rollups (owner funnel) · D Onboarding Activation (frontend)
+- **PARTIAL (existing foundations)**: Localization (public done, dashboard strings pending — G) · Entitlements (model done, enforcement scanner-only — C) · Notifications (data+GET done, BUT workspace-scoped not ownership-scoped — see NEEDS APPROVAL) · Team (backend done, dashboard UI pending — M) · Industry overrides (backend done, studio UI pending — L) · Super Admin (config APIs done, tower UI pending — K)
+- **PENDING (internal, non-sensitive next)**: K super-admin tower UI · L industry studio UI · M team dashboard UI · N signature manager · G localization
+- **NEEDS APPROVAL (sensitive)**:
+  - 🔴 **Notifications isolation**: `GET /api/notifications` scopes by `workspace_id` only. In a shared workspace (e.g. ARIADNI HQ) a MEMBER would see OTHER members' event notifications. Currently 0 leak observed only because Mona/Luis have no events yet — the scoping itself is not ownership-aware. Building a notification center requires making this ownership-scoped = a permissions change → needs approval before implementation.
+  - C entitlement enforcement rules · B referral reward economics · I auth hardening/2FA · any data migration
+- **DEFERRED EXTERNAL**: Stripe/RevenueCat/Wallet certs/social login/email/push/CRM connectors/Zapier/DNS/custom-domain SSL/SSO/App Store
+- **POSTPONED (kept)**: T white-label · U enterprise · V enrichment · W advanced AI · per-card typography preset · legacy cleanup (LeadsDialog, scheduled→confirmed)
+
+## PHASE J — Analytics Rollups / Owner Funnel (2026-08-09) — IMPLEMENTED & verified
+Additive read-only reporting; no writes, no new event semantics.
+- **Backend**: `GET /api/admin/analytics/overview?days=` — aggregates across ALL cards the caller can access (reuses `_card_query` scoping + existing `analytics_events`/`leads`/`meetings`). Returns funnel (views→engaged→leads→meetings_booked→completed), totals, 30-day views/scans trend, top tap actions. Read-only.
+- **Frontend**: new `components/admin/AnalyticsOverview.jsx` on owner Home — funnel bars with step conversion %, SVG sparkline trend, top-action chips. Wired in `Home.jsx`.
+- Reused: existing analytics events + card scoping. NOT changed: event capture, semantics, other endpoints.
+- Tests: Feras (MEMBER) scoped to his 2 cards (168 views); Admin global 5 cards (186 views) — isolation preserved. Mobile 390px renders funnel+sparkline+chips, no overflow. Authed dashboard screenshot confirmed.
+
+## PHASE D — Onboarding Activation (2026-08-09) — IMPLEMENTED & verified
+Pure-frontend activation guidance over existing scoped data (no backend, no auth changes — profile/password edit endpoints DEFERRED as auth-sensitive).
+- New `components/admin/OnboardingChecklist.jsx` on Home: Create → Add photo → Publish → Share/first view → First lead, with progress bar; each incomplete step is a shortcut; auto-hides once all complete.
+- Reused: cards/leads/overview data already fetched by Home. NOT changed: backend, auth.
+- Tests: compiles; for a fully-set-up user (Feras) the checklist is correctly hidden; no overflow at 390px; dashboard intact. (Incomplete-user display is logic-driven from the same data.)
+
+
 Audit: pre-Phase-3 the only inbox AI was per-lead **AI follow-up** in the now-orphaned `LeadsDialog.jsx` (still in code, unused). Phase 3 moved the SAME feature (same `POST /ai/followup`, same channel/tone/language, editable draft, copy, no auto-send) into the `/leads` Lead Details modal — nothing lost, only less discoverable.
 Fix (UI-only, no new AI/backend/CRM): added a clear **AI Follow-up** quick action (sparkle icon; "AI Follow-up" on ≥sm, "AI" on mobile) on every lead row in `pages/Leads.jsx`, next to Call/WhatsApp/Email. It calls `openAI(l)` → opens that lead's existing detail modal → scrolls to `#lead-ai-section` (the existing AI panel). No duplicate AI component; `LeadsDialog.jsx` left unused. Verified: compiles; `/ai/followup` still returns draft-only (provider openai:gpt-5.4), no auto-send.
 

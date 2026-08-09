@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { api, resolveImg } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { OwnerNav } from "@/components/admin/OwnerNav";
+import { AnalyticsOverview } from "@/components/admin/AnalyticsOverview";
+import { OnboardingChecklist } from "@/components/admin/OnboardingChecklist";
 import { Loader2, Eye, QrCode, MousePointerClick, Inbox, Pencil, ExternalLink, Share2, CalendarDays, Plus, Clock, User, CheckCircle2, CircleDot } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,6 +31,7 @@ export default function Home() {
   const [stats, setStats] = useState(null);
   const [newLeads, setNewLeads] = useState(0);
   const [meetings, setMeetings] = useState([]);
+  const [overview, setOverview] = useState(null);
 
   useEffect(() => {
     api.get("/admin/cards").then(({ data }) => {
@@ -38,6 +41,7 @@ export default function Home() {
     }).catch(() => { setCards([]); setStats({}); });
     api.get("/admin/leads").then(({ data }) => setNewLeads(data.filter((l) => !l.read).length)).catch(() => {});
     api.get("/admin/meetings", { params: { filter: "upcoming" } }).then(({ data }) => setMeetings(data)).catch(() => {});
+    api.get("/admin/analytics/overview", { params: { days: 30 } }).then(({ data }) => setOverview(data)).catch(() => {});
   }, []);
 
   const primary = cards?.[0];
@@ -101,12 +105,15 @@ export default function Home() {
 
             {/* Right: stats + upcoming */}
             <div className="space-y-6 lg:col-span-2">
+              <OnboardingChecklist primary={primary} overview={overview} newLeads={newLeads} onNavigate={navigate} />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="home-stats">
                 <Stat icon={Eye} label="Profile views" value={stats?.views} testId="home-views" />
                 <Stat icon={MousePointerClick} label="NFC / taps" value={stats?.taps} testId="home-taps" />
                 <Stat icon={QrCode} label="QR scans" value={stats?.scans} testId="home-scans" />
                 <Stat icon={Inbox} label="New leads" value={newLeads} testId="home-newleads" />
               </div>
+
+              <AnalyticsOverview data={overview} />
 
               <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="home-upcoming">
                 <div className="mb-3 flex items-center justify-between">

@@ -677,6 +677,60 @@ async def card_analytics(card_id: str, user: dict = Depends(get_current_user)):
     return {"views": views, "scans": scans, "taps": len(taps), "tapsByKey": by_key,
             "leads": leads_count, "series": series}
 
+
+@api_router.get("/admin/analytics/overview")
+async def analytics_overview(days: int = 30, user: dict = Depends(get_current_user)):
+    """Read-only conversion funnel + trend aggregated across all cards the caller can access.
+    Reuses existing analytics_events / leads / meetings — no writes, no new event semantics."""
+    from collections import Counter
+    days = max(1, min(int(days or 30), 365))
+    q = await _card_query(user)
+    cards = await db.digital_cards.find(q, {"_id": 0, "id": 1, "slug": 1, "status": 1}).to_list(5000)
+    slugs = [c["slug"] for c in cards]
+    ids = [c["id"] for c in cards]
+    published = sum(1 for c in cards if c.get("status") == "published")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    events = await db.analytics_events.find(
+        {"cardSlug": {"$in": slugs}, "created_at": {"$gte": cutoff}}, {"_id": 0}).to_list(50000)
+    views = sum(1 for e in events if e["type"] == "view")
+    scans = sum(1 for e in events if e["type"] == "scan")
+    taps = [e for e in events if e["type"] == "tap"]
+    by_key = Counter((e.get("key") or "other") for e in taps)
+    top_actions = [{"key": k, "count": v} for k, v in by_key.most_common(6)]
+
+    leads_total = await db.leads.count_documents({"cardSlug": {"$in": slugs}}) if slugs else 0
+    leads_window = await db.leads.count_documents(
+        {"cardSlug": {"$in": slugs}, "created_at": {"$gte": cutoff}}) if slugs else 0
+    meetings_booked = await db.meetings.count_documents(
+        {"card_id": {"$in": ids}, "created_at": {"$gte": cutoff}}) if ids else 0
+    meetings_completed = await db.meetings.count_documents(
+        {"card_id": {"$in": ids}, "status": "completed"}) if ids else 0
+
+    day_counts = Counter()
+    for e in events:
+        if e["type"] in ("view", "scan"):
+            day_counts[e["created_at"][:10]] += 1
+    series = sorted([{"date": k, "count": v} for k, v in day_counts.items()], key=lambda x: x["date"])[-min(days, 30):]
+
+    return {
+        "range_days": days,
+        "cards": len(cards),
+        "published": published,
+        "funnel": {
+            "views": views,
+            "engaged": len(taps),
+            "leads": leads_window,
+            "meetings_booked": meetings_booked,
+            "meetings_completed": meetings_completed,
+        },
+        "totals": {"views": views, "scans": scans, "taps": len(taps), "leads_all_time": leads_total},
+        "top_actions": top_actions,
+        "series": series,
+    }
+
+
+
 # ------------------------------------------------------------------ native meetings / calendar
 DEFAULT_AVAIL = {"days": [1, 2, 3, 4, 5], "start": "09:00", "end": "18:00",
                  "buffer_before": 0, "buffer_after": 15, "min_notice_hours": 2,
