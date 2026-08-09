@@ -23,7 +23,8 @@
     "command": "Command Center",
     "industries": "Industry Studio",
     "signatures": "Signatures",
-    "integrations": "Integrations"
+    "integrations": "Integrations",
+    "billing": "Billing"
   },
   "team": {
     "title": "Team & Company",

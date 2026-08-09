@@ -78,23 +78,45 @@ def default_region(country_code="US"):
             "default_currency": m["currency"], "billing_country": m["code"]}
 
 # ------------------------------------------------------------------ entitlements
+TRIAL_DAYS = 14
+# Central entitlement matrix (approved). Backend is the source of truth.
+# Quotas: *_limit with *_period ("month" | "total"); analytics_months (0 = unlimited).
 PLAN_ENTITLEMENTS = {
-    "free": {"max_cards": 1, "premium_templates": False, "analytics": "basic", "leads": True,
-             "wallet": True, "ai_followup": False, "scanner": False, "team": False,
-             "crm": False, "white_label": False, "custom_domain": False, "campaigns": False},
-    "pro": {"max_cards": 3, "premium_templates": True, "analytics": "full", "leads": True,
-            "wallet": True, "ai_followup": True, "scanner": True, "team": False,
-            "crm": False, "white_label": False, "custom_domain": False, "campaigns": True},
-    "team": {"max_cards": 9999, "premium_templates": True, "analytics": "full", "leads": True,
-             "wallet": True, "ai_followup": True, "scanner": True, "team": True,
-             "crm": True, "white_label": False, "custom_domain": True, "campaigns": True},
-    "enterprise": {"max_cards": 99999, "premium_templates": True, "analytics": "full", "leads": True,
-                   "wallet": True, "ai_followup": True, "scanner": True, "team": True,
-                   "crm": True, "white_label": True, "custom_domain": True, "campaigns": True},
-    "white_label": {"max_cards": 99999, "premium_templates": True, "analytics": "full", "leads": True,
-                    "wallet": True, "ai_followup": True, "scanner": True, "team": True,
-                    "crm": True, "white_label": True, "custom_domain": True, "campaigns": True},
+    "trial": {"max_cards": 1, "premium_templates": True, "analytics": "full", "analytics_months": 1,
+              "leads": True, "wallet": True, "crm": True, "campaigns": True,
+              "ai_followup": True, "ai_limit": 10, "ai_period": "total",
+              "scanner": True, "scanner_limit": 10, "scanner_period": "total",
+              "team": False, "remove_branding": False, "white_label": False, "custom_domain": False, "api": False},
+    "pro": {"max_cards": 3, "premium_templates": True, "analytics": "full", "analytics_months": 12,
+            "leads": True, "wallet": True, "crm": True, "campaigns": True,
+            "ai_followup": True, "ai_limit": 100, "ai_period": "month",
+            "scanner": True, "scanner_limit": 50, "scanner_period": "month",
+            "team": False, "remove_branding": True, "white_label": False, "custom_domain": False, "api": False},
+    "team": {"max_cards": 9999, "premium_templates": True, "analytics": "full", "analytics_months": 24,
+             "leads": True, "wallet": True, "crm": True, "campaigns": True,
+             "ai_followup": True, "ai_limit": 100, "ai_period": "month",
+             "scanner": True, "scanner_limit": 100, "scanner_period": "month",
+             "team": True, "remove_branding": True, "white_label": False, "custom_domain": True, "api": True},
+    "enterprise": {"max_cards": 99999, "premium_templates": True, "analytics": "full", "analytics_months": 0,
+                   "leads": True, "wallet": True, "crm": True, "campaigns": True,
+                   "ai_followup": True, "ai_limit": 1000000, "ai_period": "month",
+                   "scanner": True, "scanner_limit": 1000000, "scanner_period": "month",
+                   "team": True, "remove_branding": True, "white_label": True, "custom_domain": True, "api": True},
+    # legacy — existing (grandfathered) workspaces without a subscription resolve to active
+    "free": {"max_cards": 1, "premium_templates": True, "analytics": "full", "analytics_months": 12,
+             "leads": True, "wallet": True, "crm": True, "campaigns": True,
+             "ai_followup": True, "ai_limit": 100, "ai_period": "month",
+             "scanner": True, "scanner_limit": 50, "scanner_period": "month",
+             "team": False, "remove_branding": True, "white_label": False, "custom_domain": False, "api": False},
+    "white_label": {"max_cards": 99999, "premium_templates": True, "analytics": "full", "analytics_months": 0,
+                    "leads": True, "wallet": True, "crm": True, "campaigns": True,
+                    "ai_followup": True, "ai_limit": 1000000, "ai_period": "month",
+                    "scanner": True, "scanner_limit": 1000000, "scanner_period": "month",
+                    "team": True, "remove_branding": True, "white_label": True, "custom_domain": True, "api": True},
 }
+
+# provider-neutral subscription states; card stays live through cancel_at_period_end
+ACTIVE_STATES = {"trialing", "active", "cancel_at_period_end"}
 
 DEFAULT_PLANS = [
     {"id": "free", "name": "Free", "price_month": 0, "price_year": 0, "public": True},
@@ -153,12 +175,134 @@ async def workspace_ids_for(user: dict):
     return [m["workspace_id"] for m in ms]
 
 
+def effective_status(ws: dict) -> str:
+    """Compute provider-neutral subscription status; auto-expire trials. Existing (no sub) = active (grandfathered)."""
+    sub = (ws or {}).get("subscription")
+    if not sub:
+        return "active"
+    st = sub.get("status", "active")
+    if st == "trialing" and sub.get("trial_ends_at") and now_iso() > sub["trial_ends_at"]:
+        return "trial_expired"
+    return st
+
+
 async def resolve_entitlements(workspace_id: str) -> dict:
     ws = await db.workspaces.find_one({"id": workspace_id}, {"_id": 0})
-    plan = (ws or {}).get("plan", "free")
+    sub = (ws or {}).get("subscription") or {}
+    plan = sub.get("plan") or (ws or {}).get("plan", "free")
+    status = effective_status(ws)
     ent = dict(PLAN_ENTITLEMENTS.get(plan, PLAN_ENTITLEMENTS["free"]))
     ent["plan"] = plan
+    ent["status"] = status
+    ent["active"] = status in ACTIVE_STATES
+    ent["trial_ends_at"] = sub.get("trial_ends_at")
+    ent["current_period_end"] = sub.get("current_period_end")
+    ent["seats"] = sub.get("seats")
+    if not ent["active"]:
+        # locked (trial_expired / past_due / cancelled): preserve all data, block premium actions & public card
+        ent["ai_followup"] = False
+        ent["scanner"] = False
     return ent
+
+
+def _usage_period_key(period: str) -> str:
+    return "total" if period == "total" else datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+async def get_usage(subject_id: str, metric: str, period: str) -> int:
+    d = await db.usage_counters.find_one({"subject_id": subject_id, "metric": metric, "period": _usage_period_key(period)}, {"_id": 0})
+    return (d or {}).get("count", 0)
+
+
+async def incr_usage(subject_id: str, metric: str, period: str):
+    pk = _usage_period_key(period)
+    await db.usage_counters.update_one(
+        {"subject_id": subject_id, "metric": metric, "period": pk},
+        {"$inc": {"count": 1}, "$setOnInsert": {"subject_id": subject_id, "metric": metric, "period": pk}},
+        upsert=True)
+
+
+async def enforce_quota(user: dict, ws_id: str, metric: str):
+    """metric: 'ai' or 'scanner'. Raises 402 if inactive, 429 if over plan limit. Returns (ent, period)."""
+    if user.get("role") == "SUPER_ADMIN":
+        return PLAN_ENTITLEMENTS["enterprise"], "month"
+    ent = await resolve_entitlements(ws_id) if ws_id else PLAN_ENTITLEMENTS["free"]
+    if not ent.get("active"):
+        raise HTTPException(402, "Subscription required — your trial has ended.")
+    if not ent.get(metric if metric != "ai" else "ai_followup", False):
+        raise HTTPException(403, f"{metric} is not available on your plan")
+    limit = ent.get(f"{metric}_limit")
+    period = ent.get(f"{metric}_period", "month")
+    used = await get_usage(user["id"], metric, period)
+    if limit is not None and used >= limit:
+        raise HTTPException(429, f"You've reached your {metric} limit ({limit}/{period}) for the {ent['plan']} plan.")
+    return ent, period
+
+
+# ------------------------------------------------------------------ Commercial Core: billing (provider-neutral — NO real payment)
+PRICES = {
+    "pro": {"month": 9.99, "year": 99.99},
+    "team": {"month": 5.0, "year": 50.0, "min_seats": 3},
+}
+
+
+class SubscribeIn(BaseModel):
+    plan: str
+    interval: str = "month"  # month | year
+    seats: int = 1
+
+
+async def _primary_ws_id(user: dict):
+    ms = await memberships_for(user["id"])
+    owned = next((m for m in ms if m.get("role") == "WORKSPACE_OWNER"), None)
+    return (owned or (ms[0] if ms else {})).get("workspace_id")
+
+
+@platform_router.get("/billing")
+async def get_billing(user: dict = Depends(current_user)):
+    ws_id = await _primary_ws_id(user)
+    if not ws_id:
+        raise HTTPException(404, "No workspace")
+    ent = await resolve_entitlements(ws_id)
+    ai_used = await get_usage(user["id"], "ai", ent.get("ai_period", "month"))
+    sc_used = await get_usage(user["id"], "scanner", ent.get("scanner_period", "month"))
+    return {
+        "plan": ent["plan"], "status": ent["status"], "active": ent["active"],
+        "trial_ends_at": ent.get("trial_ends_at"), "current_period_end": ent.get("current_period_end"),
+        "seats": ent.get("seats"), "entitlements": ent, "prices": PRICES,
+        "usage": {"ai": {"used": ai_used, "limit": ent.get("ai_limit"), "period": ent.get("ai_period")},
+                  "scanner": {"used": sc_used, "limit": ent.get("scanner_limit"), "period": ent.get("scanner_period")}},
+    }
+
+
+@platform_router.post("/billing/subscribe")
+async def subscribe(body: SubscribeIn, user: dict = Depends(current_user)):
+    """Provider-neutral activation. Does NOT connect a real payment provider (deferred).
+    Reactivates the SAME card/URL/QR/NFC by flipping subscription to active."""
+    ws_id = await _primary_ws_id(user)
+    await require_ws_admin(user, ws_id)
+    if body.plan not in ("pro", "team", "enterprise"):
+        raise HTTPException(400, "Invalid plan")
+    if body.interval not in ("month", "year"):
+        raise HTTPException(400, "Invalid interval")
+    seats = 1
+    if body.plan == "team":
+        seats = max(int(body.seats or 3), PRICES["team"]["min_seats"])
+    days = 365 if body.interval == "year" else 30
+    sub = {"plan": body.plan, "status": "active", "interval": body.interval, "seats": seats,
+           "trial_ends_at": None,
+           "current_period_end": (datetime.now(timezone.utc) + timedelta(days=days)).isoformat(),
+           "updated_at": now_iso()}
+    await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription": sub, "plan": body.plan}})
+    return {"ok": True, "subscription": sub, "entitlements": await resolve_entitlements(ws_id)}
+
+
+@platform_router.post("/billing/cancel")
+async def cancel_subscription(user: dict = Depends(current_user)):
+    ws_id = await _primary_ws_id(user)
+    await require_ws_admin(user, ws_id)
+    await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription.status": "cancel_at_period_end", "subscription.updated_at": now_iso()}})
+    return {"ok": True, "status": "cancel_at_period_end"}
 
 
 async def audit(workspace_id, actor_id, action, meta=None):
@@ -277,7 +421,10 @@ async def register(body: RegisterIn, request: Request):
     ws_id = str(uuid.uuid4())
     await db.workspaces.insert_one({
         "id": ws_id, "name": body.workspace_name.strip() or (body.name.strip() or "My Workspace"),
-        "type": "individual", "plan": "free", "owner_id": uid,
+        "type": "individual", "plan": "trial", "owner_id": uid,
+        "subscription": {"plan": "trial", "status": "trialing",
+                         "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)).isoformat(),
+                         "current_period_end": None, "seats": 1, "interval": None},
         "region": region, "tax": {"tax_country": region["country_code"], "tax_inclusive": False,
                                    "tax_id": "", "status": "unregistered"},
         "branding": {}, "locked_fields": [], "created_at": now_iso(),
@@ -927,6 +1074,9 @@ async def ai_followup(body: FollowupIn, user: dict = Depends(current_user)):
     """Drafts a follow-up. User must review + send (AI never auto-sends).
     Uses the configured LLM (Emergent universal key) with a deterministic
     multilingual template as a guaranteed fallback."""
+    _ms = await memberships_for(user["id"])
+    _ws_id = _ms[0]["workspace_id"] if _ms else None
+    _ent, _period = await enforce_quota(user, _ws_id, "ai")
     provider = "template"
     text = _draft_followup(body)
     key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
@@ -954,8 +1104,10 @@ async def ai_followup(body: FollowupIn, user: dict = Depends(current_user)):
         "id": str(uuid.uuid4()), "user_id": user["id"], "provider": provider,
         "channel": body.channel, "tone": body.tone, "language": body.language, "created_at": now_iso(),
     })
+    await incr_usage(user["id"], "ai", _period)
+    _used = await get_usage(user["id"], "ai", _period)
     return {"provider": provider, "channel": body.channel, "language": body.language, "draft": text,
-            "rtl": body.language in RTL_LANGUAGES,
+            "rtl": body.language in RTL_LANGUAGES, "usage": {"used": _used, "limit": _ent.get("ai_limit"), "period": _period},
             "note": "Review before sending. AI drafts only; it never sends automatically."}
 
 
@@ -1007,9 +1159,10 @@ def _parse_scan_json(raw: str) -> dict:
 async def scan_card(body: ScanIn, user: dict = Depends(current_user)):
     """OCR a business card / event badge into a STRUCTURED DRAFT. Never creates a lead.
     The user must review + confirm the draft via /scan/confirm to persist a CRM lead."""
-    ent = await _user_entitlements(user)
-    if not ent.get("scanner"):
-        raise HTTPException(403, "Scanner is not available on your plan")
+    _ms = await memberships_for(user["id"])
+    _ws_id = _ms[0]["workspace_id"] if _ms else None
+    _ent, _period = await enforce_quota(user, _ws_id, "scanner")
+    await incr_usage(user["id"], "scanner", _period)
     source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
     image_b64 = _strip_data_url(body.image_base64)
     if not image_b64:

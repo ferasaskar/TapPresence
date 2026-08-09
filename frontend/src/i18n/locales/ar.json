@@ -23,7 +23,8 @@
     "command": "مركز القيادة",
     "industries": "استوديو المجالات",
     "signatures": "التواقيع",
-    "integrations": "التكاملات"
+    "integrations": "التكاملات",
+    "billing": "الفوترة"
   },
   "team": {
     "title": "الفريق والشركة",

@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -345,6 +345,13 @@ async def get_public_card(slug: str, lang: str = None):
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    # Commercial Core: if the owner's subscription is inactive (trial expired / cancelled),
+    # the public card is paused (data preserved; owner reactivates by subscribing).
+    wsid = card.get("workspace_id")
+    if wsid:
+        ent = await resolve_entitlements(wsid)
+        if not ent.get("active"):
+            raise HTTPException(status_code=410, detail="This card is currently inactive.")
     return _apply_lang(card, lang)
 
 
@@ -545,6 +552,14 @@ async def create_card(body: CardUpsert, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Slug already exists")
     ms = await db.memberships.find_one({"user_id": user["id"]}, {"_id": 0})
     wsid = ms["workspace_id"] if ms else None
+    # Commercial Core: enforce plan card limit + active subscription (SUPER_ADMIN exempt)
+    if user.get("role") != "SUPER_ADMIN" and wsid:
+        ent = await resolve_entitlements(wsid)
+        if not ent.get("active"):
+            raise HTTPException(status_code=402, detail="Your trial has ended. Subscribe to create cards.")
+        owned = await db.digital_cards.count_documents({"workspace_id": wsid, "owner_user_id": user["id"]})
+        if owned >= ent.get("max_cards", 1):
+            raise HTTPException(status_code=402, detail=f"Your {ent['plan']} plan allows up to {ent['max_cards']} card(s). Upgrade to add more.")
     card = CardData(**body.model_dump())
     doc = card.model_dump()
     doc["workspace_id"] = wsid

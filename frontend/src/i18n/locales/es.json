@@ -23,7 +23,8 @@
     "command": "Centro de mando",
     "industries": "Estudio de sectores",
     "signatures": "Firmas",
-    "integrations": "Integraciones"
+    "integrations": "Integraciones",
+    "billing": "Facturación"
   },
   "team": {
     "title": "Equipo y empresa",
