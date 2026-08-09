@@ -224,6 +224,15 @@ Actions are now state-aware AND time-aware. Enforced on BOTH server and client (
 - Backend: temporal check added in `PATCH /api/admin/meetings/{id}/status` using `datetime.now(timezone.utc)` vs stored `start_utc`+`duration`; constant `NO_SHOW_GRACE_MIN=15`. Frontend hides the buttons until eligible (Meetings.jsx ACTIVE branch).
 - Verified via targeted curl (direct DB-seeded past/future meetings): future→complete **409**, future→no-show **409**, ended→complete **200**, started-not-ended→complete **409**, started+grace→no-show **200**, within-grace(5m)→no-show **409**. Test data cleaned; feras-askar unchanged.
 
+## PHASE 2 — Owner dashboard + role-aware navigation (2026-08-09) — IMPLEMENTED
+Goal: a MEMBER feels like they have their own account, not the Super Admin system. Reused existing scoped endpoints/dialogs; no parallel dashboard architecture.
+- **Shared role-aware nav** `components/admin/OwnerNav.jsx`: Home / My Card(s) / Inbox / Meetings / Analytics / Settings pills (mobile horizontal-scroll), unread inbox badge, role badge. Self-contained: fetches `/admin/cards` (+primary) and `/admin/leads` (unread), owns the Inbox/Analytics/Scan dialogs. **Scan card gated to SUPER_ADMIN only** (removed from members). Analytics opens the owner's primary card.
+- **Home** `/dashboard` (`pages/Home.jsx`): primary card preview + published status, stats (profile views / NFC taps / QR scans / new leads — reuses existing analytics, no new infra), upcoming meetings list, quick actions (Edit Card, View Public, Share, View Leads, Meetings). Empty-state → create card.
+- **Settings** `/settings` (`pages/Settings.jsx`): account overview (name/email/role/workspace/timezone/language/card count) + manage-card + logout. Deeper profile/password editing flagged for later.
+- **Reused**: `Admin.jsx` (My Card list/editor) header replaced with OwnerNav (removed bespoke header/Inbox/Scan/logout — now in nav); `Meetings.jsx` header replaced with OwnerNav. Login/Register redirect → `/dashboard`. Routes added in `App.js` (`/dashboard`, `/settings`).
+- **Security**: unchanged Phase 1 backend isolation is the source of truth; nav hiding is cosmetic only. Set known passwords for Mona (`Mona@2026`) and Luis (`Luis@2026`) for testing/real login.
+- **Targeted tests (curl, no broad QA)**: Feras→only feras-askar+feras-mahmmoud; Mona→only mona-farah; admin→5 cards (global); Feras→mona/edrina analytics & leads = **403**; Mona→feras leads = **403**; Feras→edit mona card = **403**. Frontend compiles clean. NOTE: authed dashboard nav couldn't be screenshotted in-tool (tool only captures the page_url's initial/unauth state) — visual nav review left to user. Phase 3 NOT started.
+
 
 
 

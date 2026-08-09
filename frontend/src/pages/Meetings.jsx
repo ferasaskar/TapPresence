@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import { Loader2, ArrowLeft, Clock, User, Mail, Phone, CalendarDays, Sparkles, Copy, Check, X, RotateCw, CalendarClock, CheckCircle2, UserX, Eye } from "lucide-react";
+import { OwnerNav } from "@/components/admin/OwnerNav";
+import { Loader2, Clock, User, Mail, Phone, Sparkles, Copy, Check, X, RotateCw, CalendarClock, CheckCircle2, UserX, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 const TABS = ["today", "upcoming", "past", "cancelled"];
@@ -46,7 +46,6 @@ const Act = ({ children, onClick, testId, tone = "default", disabled }) => {
 };
 
 export default function Meetings() {
-  const navigate = useNavigate();
   const [tab, setTab] = useState("upcoming");
   const [items, setItems] = useState(null);
   const [draft, setDraft] = useState({});
@@ -142,15 +141,11 @@ export default function Meetings() {
   return (
     <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="meetings-page">
       <div className="grain-overlay" style={{ opacity: 0.04 }} />
-      <header className="sticky top-0 z-40 border-b border-white/8 bg-[#050607]/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-8">
-          <button onClick={() => navigate("/admin")} className="flex items-center gap-2 text-sm text-white/60 hover:text-white" data-testid="meetings-back"><ArrowLeft className="h-4 w-4" /> Card Manager</button>
-          <span className="flex items-center gap-2 text-[15px] font-medium"><CalendarDays className="h-5 w-5 text-[#D6A653]" /> Meetings</span>
-          <span className="w-24" />
-        </div>
-      </header>
+      <OwnerNav active="meetings" />
 
       <main className="relative mx-auto max-w-5xl px-4 py-8 sm:px-8">
+        <h2 className="mb-1 text-2xl font-light tracking-tight text-white">Meetings</h2>
+        <p className="mb-5 text-sm text-white/45">Your bookings, requests and follow-ups.</p>
         <div className="mb-6 flex flex-wrap gap-2">
           {TABS.map((t) => (
             <button key={t} onClick={() => setTab(t)} className={`rounded-full border px-4 py-2 text-sm capitalize transition-colors ${tab === t ? "border-[#D6A653] bg-[#D6A653]/12 text-white" : "border-white/12 text-white/50 hover:border-white/30"}`} data-testid={`meetings-tab-${t}`}>{t}</button>

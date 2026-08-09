@@ -27,7 +27,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate("/admin");
+      navigate("/dashboard");
     } catch (err) {
       setError(fmtErr(err.response?.data?.detail) || err.message);
     } finally {

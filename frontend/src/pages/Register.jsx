@@ -23,7 +23,7 @@ export default function Register() {
     setError(""); setLoading(true);
     try {
       await register(f);
-      navigate("/admin");
+      navigate("/dashboard");
     } catch (err) {
       setError(fmtErr(err.response?.data?.detail) || err.message);
     } finally { setLoading(false); }
