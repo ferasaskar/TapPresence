@@ -92,5 +92,7 @@ export function previewCardConfig(form) {
     portrait: id.profilePhoto || preset.portrait,
     image: form.custom_background || preset.image,
     opacity: form.background_opacity,
+    intensity: form.background_intensity,
+    position: form.background_position,
   };
 }

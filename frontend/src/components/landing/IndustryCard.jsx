@@ -29,7 +29,10 @@ const ACTIONS = [
 export function IndustryCard({ c, className = "" }) {
   const ac = c.accent;
   const base = c.base || "10,10,12";
-  const a0 = c.opacity != null ? Math.min(0.34, Math.max(0.04, 0.30 - c.opacity)) : 0.08;
+  const mult = { soft: 1.3, medium: 1, rich: 0.68 }[c.intensity] || 1;
+  const a0raw = c.opacity != null ? 0.30 - c.opacity : 0.08;
+  const a0 = Math.min(0.5, Math.max(0.02, a0raw * mult));
+  const posX = { left: "left", right: "right", center: "center", full: "center" }[c.position] || "center";
   const bg = c.image
     ? `linear-gradient(180deg, rgba(${base},${a0}) 0%, rgba(${base},0.46) 42%, rgba(${base},0.88) 72%, rgba(${base},0.97) 100%), url("${c.image}")`
     : `radial-gradient(120% 85% at 50% 0%, rgba(${base},0.72), rgba(${base},0.98))`;
@@ -45,7 +48,7 @@ export function IndustryCard({ c, className = "" }) {
           backgroundColor: `rgb(${base})`,
           backgroundImage: bg,
           backgroundSize: "cover, cover",
-          backgroundPosition: "center top, center top",
+          backgroundPosition: `center top, ${posX} top`,
           backgroundRepeat: "no-repeat, no-repeat",
         }}
         data-testid={`ind-card-${c.id}`}
