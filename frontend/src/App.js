@@ -23,7 +23,8 @@ import Referral from "@/pages/Referral";
 import Meetings from "@/pages/Meetings";
 import ManageMeeting from "@/pages/ManageMeeting";
 import Activate from "@/pages/Activate";
-import NfcCards from "@/pages/NfcCards";import Legal from "@/pages/Legal";
+import NfcCards from "@/pages/NfcCards";
+import { ForgotPassword, ResetPassword, VerifyEmail } from "@/pages/AuthExtra";import Legal from "@/pages/Legal";
 import LocaleToast from "@/components/LocaleToast";
 import ConsentBanner from "@/components/ConsentBanner";
 import PrivacyCenter from "@/pages/PrivacyCenter";
@@ -50,6 +51,9 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/forgot" element={<ForgotPassword />} />
+            <Route path="/reset" element={<ResetPassword />} />
+            <Route path="/verify" element={<VerifyEmail />} />
             <Route path="/register" element={<Register />} />
             <Route path="/activate" element={<Activate />} />
             <Route path="/legal/:doc" element={<Legal />} />

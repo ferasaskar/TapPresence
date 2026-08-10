@@ -119,7 +119,7 @@ PLAN_ENTITLEMENTS = {
 ACTIVE_STATES = {"trialing", "active", "cancel_at_period_end"}
 
 DEFAULT_PLANS = [
-    {"id": "free", "name": "Free", "price_month": 0, "price_year": 0, "public": True},
+    {"id": "free", "name": "Legacy", "price_month": 0, "price_year": 0, "public": False},
     {"id": "pro", "name": "Pro", "price_month": 999, "price_year": 7999, "public": True},
     {"id": "team", "name": "Team", "price_month": 699, "price_year": 6999, "public": True, "per_seat": True},
     {"id": "enterprise", "name": "Enterprise", "price_month": None, "price_year": None, "public": True, "custom": True},
@@ -883,6 +883,24 @@ async def verify_email(body: VerifyIn):
     return {"ok": True}
 
 
+@platform_router.post("/auth/resend-verification")
+async def resend_verification(request: Request, user: dict = Depends(current_user)):
+    rate_limit(request, "resend_verify", 5, 3600)
+    if user.get("email_verified"):
+        return {"ok": True, "already_verified": True}
+    token = secrets.token_urlsafe(32)
+    await db.email_verifications.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user["id"], "token": token,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), "used": False,
+    })
+    link = f"{PUBLIC_APP_URL}/verify?token={token}"
+    if _configured("EMAIL_API_KEY"):
+        logger.info(f"[email] would resend verification to {user['email']}")
+    else:
+        logger.info(f"[email:NOT_CONFIGURED] verification link for {user['email']}: {link}")
+    return {"ok": True}
+
+
 @platform_router.post("/auth/refresh")
 async def refresh(body: RefreshIn, request: Request):
     sess = await db.sessions.find_one({"refresh": body.refresh_token, "revoked": False})
@@ -1379,6 +1397,65 @@ async def platform_overview(user: dict = Depends(current_user)):
     }
 
 
+@platform_router.get("/admin/platform/users")
+async def platform_search_users(q: str = "", user: dict = Depends(current_user)):
+    """Super Admin: search users for support/ops. Returns safe fields + plan/status."""
+    _require_super(user)
+    query = {}
+    if q.strip():
+        rx = {"$regex": _re.escape(q.strip()), "$options": "i"}
+        query = {"$or": [{"email": rx}, {"name": rx}]}
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(50)
+    out = []
+    for u in users:
+        m = await db.memberships.find_one({"user_id": u["id"]}, {"_id": 0, "workspace_id": 1})
+        ws = await db.workspaces.find_one({"id": m["workspace_id"]}, {"_id": 0, "name": 1, "plan": 1, "subscription": 1}) if m else None
+        out.append({
+            "id": u["id"], "name": u.get("name"), "email": u.get("email"),
+            "role": u.get("role"), "email_verified": u.get("email_verified", False),
+            "suspended": u.get("suspended", False), "created_at": u.get("created_at"),
+            "workspace": ws.get("name") if ws else None,
+            "plan": (ws or {}).get("plan"),
+            "status": effective_status(ws) if ws else None,
+        })
+    return {"items": out}
+
+
+@platform_router.get("/admin/platform/workspaces")
+async def platform_search_workspaces(q: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    query = {}
+    if q.strip():
+        query = {"name": {"$regex": _re.escape(q.strip()), "$options": "i"}}
+    wss = await db.workspaces.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
+    out = []
+    for w in wss:
+        out.append({
+            "id": w["id"], "name": w.get("name"), "type": w.get("type"), "plan": w.get("plan"),
+            "status": effective_status(w),
+            "members": await db.memberships.count_documents({"workspace_id": w["id"]}),
+            "cards": await db.digital_cards.count_documents({"workspace_id": w["id"]}),
+            "leads": await db.leads.count_documents({"workspace_id": w["id"]}),
+        })
+    return {"items": out}
+
+
+@platform_router.post("/admin/platform/users/{user_id}/suspend")
+async def platform_suspend_user(user_id: str, body: dict, user: dict = Depends(current_user)):
+    """Super Admin: suspend/reinstate an account. Suspended users cannot log in."""
+    _require_super(user)
+    target = await db.users.find_one({"id": user_id}, {"_id": 0, "role": 1})
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.get("role") == "SUPER_ADMIN":
+        raise HTTPException(400, "Cannot suspend a platform admin")
+    suspended = bool(body.get("suspended", True))
+    await db.users.update_one({"id": user_id}, {"$set": {"suspended": suspended}})
+    if suspended:
+        await db.sessions.delete_many({"user_id": user_id})
+    return {"ok": True, "suspended": suspended}
+
+
 # ------------------------------------------------------------------ Super Admin: Commercial / Pricing configuration
 class CommercialConfigIn(BaseModel):
     trial: Optional[dict] = None
@@ -1729,6 +1806,35 @@ class ScanConfirmIn(BaseModel):
     notes: str = ""
     event: str = ""
     campaign: str = ""
+    force: bool = False
+
+
+import re as _re
+
+
+def _norm_email(e):
+    return (e or "").strip().lower()
+
+
+def _norm_phone(p):
+    d = _re.sub(r"\D", "", p or "")
+    return d[-9:] if len(d) >= 7 else ""
+
+
+async def find_duplicate_lead(card_slug, email, phone, exclude_id=None):
+    """Lightweight dedupe within the SAME card: match by normalized email or phone (last 9 digits)."""
+    ne, np = _norm_email(email), _norm_phone(phone)
+    if not ne and not np:
+        return None
+    cands = await db.leads.find({"cardSlug": card_slug}, {"_id": 0}).to_list(3000)
+    for l in cands:
+        if exclude_id and l.get("id") == exclude_id:
+            continue
+        if ne and _norm_email(l.get("email")) == ne:
+            return l
+        if np and _norm_phone(l.get("phone")) == np:
+            return l
+    return None
 
 
 @platform_router.post("/scan/confirm")
@@ -1746,6 +1852,11 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
     card = await db.digital_cards.find_one({"slug": body.cardSlug}, {"_id": 0})
     if not card:
         raise HTTPException(404, "Card not found")
+    # Duplicate guard — let the user decide (update existing vs. save anyway) instead of silent dupes.
+    if not body.force:
+        dup = await find_duplicate_lead(body.cardSlug, body.email, body.phone)
+        if dup:
+            return {"ok": False, "duplicate": dup}
     lang = body.language if body.language in SUPPORTED_LANGUAGES else "en"
     lead = {
         "id": str(uuid.uuid4()), "cardSlug": body.cardSlug, "workspace_id": card.get("workspace_id"),
@@ -2234,7 +2345,7 @@ async def run_migration():
         if not ws:
             ws_id = str(uuid.uuid4())
             await db.workspaces.insert_one({
-                "id": ws_id, "name": "ARIADNI HQ", "type": "company", "plan": "enterprise",
+                "id": ws_id, "name": "TapPresence HQ", "type": "company", "plan": "enterprise",
                 "owner_id": admin["id"], "branding": {}, "locked_fields": [], "created_at": now_iso(),
             })
             await db.memberships.insert_one({

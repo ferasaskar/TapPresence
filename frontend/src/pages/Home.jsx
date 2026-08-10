@@ -34,6 +34,11 @@ export default function Home() {
   const [meetings, setMeetings] = useState([]);
   const [overview, setOverview] = useState(null);
   const [dueLeads, setDueLeads] = useState([]);
+  const [range, setRange] = useState(30);
+
+  useEffect(() => {
+    api.get("/admin/analytics/overview", { params: { days: range } }).then(({ data }) => setOverview(data)).catch(() => {});
+  }, [range]);
 
   useEffect(() => {
     api.get("/admin/cards").then(({ data }) => {
@@ -49,7 +54,6 @@ export default function Home() {
       setDueLeads(due);
     }).catch(() => {});
     api.get("/admin/meetings", { params: { filter: "upcoming" } }).then(({ data }) => setMeetings(data)).catch(() => {});
-    api.get("/admin/analytics/overview", { params: { days: 30 } }).then(({ data }) => setOverview(data)).catch(() => {});
   }, []);
 
   const primary = cards?.[0];
@@ -123,7 +127,7 @@ export default function Home() {
                 <Stat icon={Inbox} label={t("home.newLeads")} value={newLeads} testId="home-newleads" />
               </div>
 
-              <AnalyticsOverview data={overview} />
+              <AnalyticsOverview data={overview} range={range} onRange={setRange} />
 
               {dueLeads.length > 0 ? (
                 <div className="rounded-2xl border border-[#D6A653]/25 bg-[#D6A653]/[0.04] p-5" data-testid="home-followup-today">

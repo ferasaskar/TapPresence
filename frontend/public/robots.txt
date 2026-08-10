@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /$
+Allow: /login
+Allow: /register
+Allow: /industries
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /leads
+Disallow: /meetings
+Disallow: /settings
+Disallow: /billing
+Disallow: /nfc
+Disallow: /referral
+
+Sitemap: https://tappresence.com/sitemap.xml

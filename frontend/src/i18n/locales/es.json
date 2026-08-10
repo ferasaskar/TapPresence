@@ -83,7 +83,12 @@
     "startEventMode": "Iniciar",
     "cancel": "Cancelar",
     "enableEventMode": "Activar modo captura de evento",
-    "willTag": "Se etiquetará como «{{event}}»"
+    "willTag": "Se etiquetará como «{{event}}»",
+    "dupTitle": "Posible duplicado encontrado",
+    "dupBody": "Ya existe un lead con el mismo correo o teléfono en esta tarjeta.",
+    "dupUpdate": "Actualizar existente",
+    "dupCreateAnyway": "Crear de todos modos",
+    "dupUpdated": "Lead existente actualizado"
   },
   "meetings": {
     "title": "Reuniones",
@@ -263,9 +268,12 @@
     "byCard": "Por tarjeta",
     "meetings": "Reuniones",
     "bySource": "Leads por origen",
-    "byEvent": "Leads por evento",
+    "byEvent": "Ranking de eventos (leads)",
     "byCampaign": "Leads por campaña",
-    "byMember": "Capturado por miembro del equipo"
+    "byMember": "Ranking del equipo (leads)",
+    "rangeDays": "{{days}}d",
+    "export": "Exportar CSV",
+    "exportShort": "Exportar"
   },
   "nav": {
     "home": "Inicio",
@@ -489,7 +497,26 @@
     "signInLink": "Iniciar sesión",
     "referralBanner": "🎁 Fuiste invitado — se aplicará un descuento por referido a tu plan.",
     "referralBannerPct": "🎁 Invitado con el código {{code}} — obtendrás {{pct}}% de descuento en tu plan.",
-    "genericError": "Algo salió mal."
+    "genericError": "Algo salió mal.",
+    "forgotLink": "¿Olvidaste tu contraseña?",
+    "forgotTitle": "Restablece tu contraseña",
+    "forgotSub": "Introduce tu correo y te enviaremos un enlace.",
+    "forgotSend": "Enviar enlace",
+    "forgotSent": "Si existe una cuenta con ese correo, recibirás un enlace.",
+    "backToLogin": "Volver a iniciar sesión",
+    "resetTitle": "Establece una nueva contraseña",
+    "newPassword": "Nueva contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "resetSubmit": "Actualizar contraseña",
+    "resetInvalid": "Este enlace no es válido o ha caducado.",
+    "pwTooShort": "La contraseña debe tener al menos 8 caracteres.",
+    "pwMismatch": "Las contraseñas no coinciden.",
+    "verifying": "Verificando tu correo…",
+    "verifyOk": "Correo verificado. ¡Todo listo!",
+    "verifyFail": "Este enlace de verificación no es válido o ha caducado.",
+    "verifyBanner": "Verifica tu dirección de correo.",
+    "verifyResend": "Reenviar enlace",
+    "verifyResent": "Enlace de verificación enviado — revisa tu bandeja."
   },
   "landing": {
     "nav": [
@@ -548,7 +575,7 @@
       "eyebrow": "Inteligente. Simple. Potente.",
       "title1": "Del toque a la",
       "title2": "conexión real.",
-      "desc": "ARIADNI ID convierte cada interacción en una oportunidad duradera.",
+      "desc": "TapPresence convierte cada interacción en una oportunidad duradera.",
       "cta": "Míralo en acción",
       "steps": [
         {
@@ -580,7 +607,7 @@
       "desc": "Elige una plantilla que refleje tu estilo y haga tu perfil inolvidable.",
       "cta": "Explorar plantillas",
       "appNew": "NUEVO",
-      "appTitle": "App ARIADNI ID",
+      "appTitle": "App TapPresence",
       "appDesc": "Gestiona tu perfil, contactos, analíticas y equipo — desde un solo lugar."
     },
     "teams": {
@@ -648,7 +675,7 @@
     },
     "finalCta": {
       "title": "¿Listo para elevar tu identidad profesional?",
-      "subtitle": "Únete a miles de profesionales que confían en ARIADNI ID.",
+      "subtitle": "Únete a miles de profesionales que confían en TapPresence.",
       "cta": "Crea tu ID ahora"
     },
     "footer": {

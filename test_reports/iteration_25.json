@@ -1,0 +1,41 @@
+{
+  "summary": "Launch-hardening full regression PASSED. Backend: 18/18 pytest cases pass in /app/backend/tests/test_iter25_launch.py covering (a) forgot-password + reset-password + login-with-new-password + restore, (b) resend-verification auth-required + rate-limited, (c) SUPER_ADMIN users/workspaces search + suspend, (d) non-super users get 403 on all /admin/platform/* endpoints, (e) SUPER_ADMIN cannot be suspended (400), (f) suspended user gets 403 'suspended' on login and can be reinstated, (g) public leads dedupe with case-insensitive email merge (merged:true), (h) /scan/confirm duplicate detection + force override, (i) analytics overview with days=7/30/90 (range_days honored), (j) /admin/analytics/export.csv returns text/csv with 'TapPresence' branding, (k) poster + /api/config free of user-visible ARIADNI, (l) tenant isolation for a freshly registered user. Frontend: /forgot (forgot-email/forgot-submit), /reset (reset-pw/reset-pw2/reset-submit), /verify (verify-error path), /legal/terms (legal-title + 4 cross-links) all render correctly. Dashboard shows analytics range toggle (range-7/30/90) that refires GET /api/admin/analytics/overview?days=7, ranked leaderboard markers (#1, #2) present, analytics-export button present. /admin/platform user-support tab shows 5 rows for query 'ariadni' with 4 suspend buttons (self-suspend correctly omitted for the super admin row). No user-visible 'ARIADNI' text on dashboard/legal pages. robots.txt and sitemap.xml both HTTP 200. Verify banner correctly absent for already-verified super admin.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_launch.py",
+    "/app/test_reports/pytest/iter25.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/server.py:274 suspend check runs after credential validation which is correct — no user-enumeration leak (403 only returned to authenticated correct-password users).",
+    "backend/platform_v1.py:1450 super_admin suspend guard is correct (400 Cannot suspend a platform admin). Ideally also guard the LAST remaining super_admin against DB-level deletion, but that is out of scope for this iteration.",
+    "backend/platform_v1.py forgot-password + reset-password: reset link is logged via logger.info at INFO — in production ensure log retention is <= 1h and INFO log is not shipped to third-party sinks (currently written to /var/log/supervisor/backend.*.log which is fine for the preview env). session revocation on reset (line 941) is a good practice.",
+    "backend/platform_v1.py resend_verification uses rate_limit(request, 'resend_verify', 5, 3600) — good; consider a stricter per-user (not per-IP) limit for account-owned mutations.",
+    "backend/server.py create_lead dedupe (find_duplicate_lead) merges on card+email (case-insensitive) as spec'd; touches counter increments properly and message is appended to notes with date prefix — non-destructive.",
+    "backend/platform_v1.py scan_confirm dedupe returns {ok:false, duplicate:{...}} with 200 status which lets the frontend show the panel — good UX contract. force:true bypass works.",
+    "Analytics /api/admin/analytics/overview + export.csv: range_days round-trips correctly for 7/30/90; CSV Content-Disposition properly includes days in filename. No ARIADNI branding in CSV output.",
+    "Test users registered against a public /api/auth/register endpoint cannot be deleted via any exposed API — cleanup had to be done via direct Mongo. Consider adding a SUPER_ADMIN DELETE /api/admin/platform/users/{id} for full lifecycle management (only 'suspend' exists today)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter25_launch.py (new, 18 tests, all pass)",
+    "/app/test_reports/pytest/iter25.xml (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18)",
+    "frontend": "100% (all targeted flows verified: /forgot, /reset, /verify, /legal/terms, dashboard analytics range+export+ranked leaderboard, /admin/platform user support search, robots+sitemap, no ARIADNI branding)"
+  },
+  "test_credentials": "SUPER_ADMIN admin@ariadni.id / Ariadni@2026 (password was rotated to Reset@Iter25! during test and successfully restored back to Ariadni@2026 as verified by a final _login() at end of test_password_reset_end_to_end_and_restore).",
+  "seed_data_creation": "During tests created: 3 disposable users (TEST_iter25_reg_*, TEST_iter25_suspend_*, TEST_iter25_iso_*) via public /api/auth/register, plus 3 leads via public POST /api/cards/feras-askar/leads and /api/scan/confirm. All 4 TEST_iter25_* users + their workspaces + sessions + TEST_ leads deleted via direct Mongo cleanup (verified: users_to_clean=4 removed; leads_deleted=0 since pytest teardown already deleted them via DELETE /api/admin/leads/{id}). Zero residual test data in DB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Launch-hardening regression is green end-to-end. Reusable test file: /app/backend/tests/test_iter25_launch.py — parametrized (analytics days=7/30/90) + full password-reset round-trip that restores the admin password, so it's safe to run repeatedly. If re-running, first check /var/log/supervisor/backend.out.log is readable and contains recent lines; the forgot-password test parses the reset link from that log. All 18 tests pass in ~7 seconds. Stripe/email delivery are intentionally NOT connected and were correctly not exercised. Prior iter24 gap (?book=1 auto-open on beige-luxury template /feras-askar) is orthogonal to this iteration's scope and still tracked separately.",
+  "rca of the issue": "N/A — no defects found in this iteration."
+}

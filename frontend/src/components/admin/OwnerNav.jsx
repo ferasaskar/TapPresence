@@ -23,6 +23,9 @@ export const OwnerNav = ({ active }) => {
   const [scanOpen, setScanOpen] = useState(false);
   const [analyticsCard, setAnalyticsCard] = useState(null);
   const canTeam = isAdmin || !!entitlements?.team;
+  const [resent, setResent] = useState(false);
+  const showVerify = user && user.email_verified === false;
+  const resend = async () => { try { await api.post("/auth/resend-verification"); setResent(true); } catch (_) {} };
 
   const refresh = () => {
     api.get("/admin/cards").then((r) => setCards(r.data)).catch(() => {});
@@ -69,6 +72,13 @@ export const OwnerNav = ({ active }) => {
             <button onClick={logout} className="rounded-full p-2 text-white/60 transition-colors hover:bg-white/5 hover:text-white" data-testid="nav-logout"><LogOut className="h-4 w-4" /></button>
           </div>
         </div>
+
+        {showVerify ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#D6A653]/30 bg-[#D6A653]/[0.07] px-4 py-2.5 text-xs" data-testid="verify-banner">
+            <span className="flex items-center gap-2 text-[#F2E0C9]"><Mail className="h-3.5 w-3.5 text-[#D6A653]" /> {resent ? t("auth.verifyResent") : t("auth.verifyBanner")}</span>
+            {!resent ? <button onClick={resend} className="rounded-lg border border-[#D6A653]/40 px-2.5 py-1 text-[#D6A653] hover:bg-[#D6A653]/15" data-testid="verify-resend">{t("auth.verifyResend")}</button> : null}
+          </div>
+        ) : null}
 
         {/* nav pills — horizontally scrollable on mobile */}
         <nav className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5" data-testid="nav-items">

@@ -147,18 +147,42 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
     } finally { setScanning(false); }
   };
 
-  const save = async () => {
-    if (!draft.name.trim()) { toast.error(t("scan.nameRequired")); return; }
-    if (!cardSlug) { toast.error(t("scan.pickCard")); return; }
+  const [dupLead, setDupLead] = useState(null);
+
+  const doSave = async (force) => {
     setSaving(true);
     try {
-      await api.post("/scan/confirm", { ...draft, cardSlug, source, event: eventMode?.event || "", campaign: eventMode?.campaign || "" });
+      const { data } = await api.post("/scan/confirm", { ...draft, cardSlug, source, event: eventMode?.event || "", campaign: eventMode?.campaign || "", force: !!force });
+      if (data.ok === false && data.duplicate) { setDupLead(data.duplicate); return; }
       toast.success(t("scan.leadSaved"));
       onSaved?.();
       onOpenChange(false);
     } catch (err) {
       toast.error(err?.response?.data?.detail || t("scan.couldNotSave"));
     } finally { setSaving(false); }
+  };
+
+  const save = async () => {
+    if (!draft.name.trim()) { toast.error(t("scan.nameRequired")); return; }
+    if (!cardSlug) { toast.error(t("scan.pickCard")); return; }
+    setDupLead(null);
+    await doSave(false);
+  };
+
+  const updateExisting = async () => {
+    if (!dupLead) return;
+    setSaving(true);
+    try {
+      const payload = {};
+      ["company", "title", "website", "notes"].forEach((k) => { if (draft[k]?.trim()) payload[k] = draft[k].trim(); });
+      if (eventMode?.event) { payload.event = eventMode.event; payload.campaign = eventMode.campaign || ""; }
+      await api.patch(`/admin/leads/${dupLead.id}/fields`, payload);
+      toast.success(t("scan.dupUpdated"));
+      onSaved?.();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || t("scan.couldNotSave"));
+    } finally { setSaving(false); setDupLead(null); }
   };
 
   const field = (key, label, opts = {}) => (
@@ -179,6 +203,27 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
           </DialogTitle>
           <DialogDescription className="text-white/50">{t("scan.desc")}</DialogDescription>
         </DialogHeader>
+
+        {dupLead ? (
+          <div className="space-y-4" data-testid="scan-duplicate">
+            <div className="rounded-xl border border-amber-400/30 bg-amber-400/[0.07] p-4">
+              <p className="text-sm font-medium text-amber-200">{t("scan.dupTitle")}</p>
+              <p className="mt-1 text-xs text-white/60">{t("scan.dupBody")}</p>
+              <div className="mt-3 rounded-lg border border-white/10 bg-[#0A0B0D] p-3 text-sm">
+                <p className="text-white">{dupLead.name}</p>
+                <p className="text-xs text-white/50">{[dupLead.title, dupLead.company].filter(Boolean).join(" · ")}</p>
+                <p className="text-xs text-white/50">{[dupLead.email, dupLead.phone].filter(Boolean).join(" · ")}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button className={`flex-1 ${goldBtn}`} onClick={updateExisting} disabled={saving} data-testid="scan-dup-update">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("scan.dupUpdate")}</Button>
+              <Button className={ghostBtn} onClick={() => doSave(true)} disabled={saving} data-testid="scan-dup-createanyway">{t("scan.dupCreateAnyway")}</Button>
+              <Button className={ghostBtn} onClick={() => setDupLead(null)} disabled={saving} data-testid="scan-dup-cancel">{t("scan.cancel")}</Button>
+            </div>
+          </div>
+        ) : null}
+
+        {!dupLead && (<>
 
         {sc ? (
           (!sc.active || sc.limit === 0) ? (
@@ -339,6 +384,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
             </div>
           </div>
         )}
+        </>)}
       </DialogContent>
     </Dialog>
   );

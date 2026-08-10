@@ -97,7 +97,7 @@ export default function Team() {
           <>
             <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-[#0A0B0D] p-4" data-testid="team-workspace">
               <span className="text-base font-medium text-white">{ws.name}</span>
-              <span className="rounded-full border border-[#D6A653]/30 bg-[#D6A653]/10 px-2.5 py-0.5 text-[11px] uppercase tracking-wide text-[#D6A653]">{t("team.plan")}: {ws.plan || "free"}</span>
+              <span className="rounded-full border border-[#D6A653]/30 bg-[#D6A653]/10 px-2.5 py-0.5 text-[11px] uppercase tracking-wide text-[#D6A653]">{t("team.plan")}: {ws.plan || "trial"}</span>
               <span className="text-xs text-white/45">{t("team.seats", { count: members.length })}</span>
             </div>
 

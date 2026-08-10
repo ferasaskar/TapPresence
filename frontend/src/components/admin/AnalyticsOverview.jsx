@@ -1,5 +1,6 @@
-import { TrendingUp, Eye, MousePointerClick, Inbox, CalendarDays, CheckCircle2, QrCode, Nfc, Link2, Tag, Megaphone, Users, CreditCard, ScanLine } from "lucide-react";
+import { TrendingUp, Eye, MousePointerClick, Inbox, CalendarDays, CheckCircle2, QrCode, Nfc, Link2, Tag, Megaphone, Users, CreditCard, ScanLine, Download, Trophy } from "lucide-react";
 import { useLocale } from "@/i18n/useLocale";
+import { api } from "@/lib/api";
 
 const STEP_KEYS = [
   { key: "views", tkey: "funnel.views", icon: Eye },
@@ -40,7 +41,7 @@ const Sparkline = ({ series }) => {
   );
 };
 
-export const AnalyticsOverview = ({ data }) => {
+export const AnalyticsOverview = ({ data, range = 30, onRange }) => {
   const { t, formatNumber } = useLocale();
   if (!data) return null;
   const f = data.funnel || {};
@@ -48,13 +49,39 @@ export const AnalyticsOverview = ({ data }) => {
   const pct = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
   const STEPS = STEP_KEYS.map((s) => ({ ...s, label: t(s.tkey) }));
 
+  const exportCsv = async () => {
+    try {
+      const res = await api.get("/admin/analytics/export.csv", { params: { days: range }, responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = `tappresence-analytics-${range}d.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (_) {}
+  };
+
   return (
     <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="analytics-overview">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-medium text-white">
           <TrendingUp className="h-4 w-4 text-[#D6A653]" /> {t("funnel.title")}
         </h3>
-        <span className="text-[11px] uppercase tracking-wide text-white/40">{t("funnel.range", { days: data.range_days })}</span>
+        <div className="flex items-center gap-2">
+          {onRange ? (
+            <div className="flex rounded-lg border border-white/10 p-0.5" data-testid="analytics-range">
+              {[7, 30, 90].map((d) => (
+                <button key={d} onClick={() => onRange(d)} data-testid={`range-${d}`}
+                  className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${range === d ? "bg-[#D6A653] text-[#050607] font-semibold" : "text-white/55 hover:text-white"}`}>
+                  {t("analytics.rangeDays", { days: d, defaultValue: `${d}d` })}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="text-[11px] uppercase tracking-wide text-white/40">{t("funnel.range", { days: data.range_days })}</span>
+          )}
+          <button onClick={exportCsv} title={t("analytics.export", { defaultValue: "Export CSV" })} className="flex items-center gap-1 rounded-lg border border-white/12 px-2.5 py-1 text-[11px] text-white/60 hover:border-[#D6A653]/50 hover:text-white" data-testid="analytics-export">
+            <Download className="h-3.5 w-3.5" /> {t("analytics.exportShort", { defaultValue: "Export" })}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2.5" data-testid="overview-funnel">
@@ -160,9 +187,9 @@ const AnalyticsBreakdowns = ({ data, t, formatNumber }) => {
       )}
 
       {b.by_event?.length > 0 && (
-        <Section icon={Megaphone} title={t("analytics.byEvent", { defaultValue: "Leads by event" })} testId="breakdown-event">
+        <Section icon={Trophy} title={t("analytics.byEvent", { defaultValue: "Leads by event" })} testId="breakdown-event">
           <div className="flex flex-wrap gap-2">
-            {b.by_event.map((s) => <Chip key={s.key} label={s.key} value={s.count} testId={`bd-event-${s.key}`} />)}
+            {b.by_event.map((s, i) => <Chip key={s.key} label={`#${i + 1} ${s.key}`} value={s.count} testId={`bd-event-${s.key}`} />)}
           </div>
         </Section>
       )}
@@ -176,9 +203,9 @@ const AnalyticsBreakdowns = ({ data, t, formatNumber }) => {
       )}
 
       {b.by_member?.length > 0 && (
-        <Section icon={Users} title={t("analytics.byMember", { defaultValue: "Captured by team member" })} testId="breakdown-member">
+        <Section icon={Trophy} title={t("analytics.byMember", { defaultValue: "Team leaderboard (leads captured)" })} testId="breakdown-member">
           <div className="flex flex-wrap gap-2">
-            {b.by_member.map((s) => <Chip key={s.key} label={s.name} value={s.count} testId={`bd-member-${s.key}`} />)}
+            {b.by_member.map((s, i) => <Chip key={s.key} label={`#${i + 1} ${s.name}`} value={s.count} testId={`bd-member-${s.key}`} />)}
           </div>
         </Section>
       )}

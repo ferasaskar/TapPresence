@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -271,6 +271,8 @@ async def login(body: LoginIn, request: Request):
         await record_login_fail(email, ip)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     await clear_login_fails(email, ip)
+    if user.get("suspended"):
+        raise HTTPException(status_code=403, detail="This account has been suspended. Please contact support.")
     return await _auth_payload(user, request)
 
 
@@ -438,6 +440,18 @@ async def create_lead(slug: str, body: LeadIn, idempotency_key: str | None = Hea
     if not body.name.strip() or not (body.email.strip() or body.phone.strip()):
         raise HTTPException(status_code=400, detail="Name and an email or phone are required")
     now = datetime.now(timezone.utc).isoformat()
+    # Inbound dedupe: same person re-submitting on the same card updates the existing lead, no dupes.
+    dup = await find_duplicate_lead(slug, body.email, body.phone)
+    if dup:
+        upd = {"last_activity": now, "updated_at": now, "read": False}
+        msg = body.message.strip()
+        if msg:
+            prev = dup.get("notes", "")
+            upd["notes"] = f"{prev}\n[{now[:10]}] {msg}".strip() if prev else f"[{now[:10]}] {msg}"
+        await db.leads.update_one({"id": dup["id"]}, {"$set": upd, "$inc": {"touches": 1}})
+        result = {"ok": True, "merged": True}
+        await idempotency_store(idempotency_key, f"lead:{slug}", result)
+        return result
     lead = {
         "id": str(uuid.uuid4()), "cardSlug": slug, "workspace_id": card.get("workspace_id"),
         "name": body.name.strip(), "email": body.email.strip(), "phone": body.phone.strip(),
@@ -538,7 +552,7 @@ async def get_poster(slug: str):
     d = ImageDraw.Draw(poster)
     # top overline
     d.rectangle([0, 0, W, 14], fill="#B89973")
-    _center(d, "ARIADNI ID", _font(30, serif=False), 70, W, "#B89973")
+    _center(d, "TapPresence", _font(30, serif=False), 70, W, "#B89973")
     _center(d, idn.get("fullName", slug), _font(96, bold=True), 150, W, "#2D2B2A")
     _center(d, idn.get("jobTitle", ""), _font(40, serif=False), 280, W, "#66615E")
     d.line([(W / 2 - 90, 360), (W / 2 + 90, 360)], fill="#B89973", width=3)
@@ -567,6 +581,7 @@ async def get_poster(slug: str):
 async def list_cards(user: dict = Depends(get_current_user)):
     q = await _card_query(user)
     cards = await db.digital_cards.find(q, {"_id": 0}).to_list(1000)
+    cards.sort(key=lambda c: c.get("created_at", ""))
     return cards
 
 
@@ -829,6 +844,43 @@ async def card_analytics(card_id: str, user: dict = Depends(get_current_user)):
 
 @api_router.get("/admin/analytics/overview")
 async def analytics_overview(days: int = 30, user: dict = Depends(get_current_user)):
+    return await _compute_overview(user, days)
+
+
+@api_router.get("/admin/analytics/export.csv")
+async def analytics_export(days: int = 30, user: dict = Depends(get_current_user)):
+    import csv
+    ov = await _compute_overview(user, days)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["TapPresence Analytics Export", f"last {ov['range_days']} days"])
+    w.writerow([])
+    f = ov["funnel"]
+    w.writerow(["Funnel"]); w.writerow(["Stage", "Count"])
+    for k in ["views", "engaged", "leads", "meetings_booked", "meetings_completed"]:
+        w.writerow([k, f.get(k, 0)])
+    ch = ov["channels"]
+    w.writerow([]); w.writerow(["Channel", "Count"])
+    for k in ["direct", "qr", "nfc"]:
+        w.writerow([k, ch.get(k, 0)])
+    w.writerow(["scanner_leads", ov["breakdowns"].get("scanner_leads", 0)])
+    for title, key, cols in [
+        ("By card", "by_card", ["name", "slug", "views", "leads", "meetings"]),
+        ("Leads by source", "by_source", ["key", "count"]),
+        ("Leads by event", "by_event", ["key", "count"]),
+        ("Leads by campaign", "by_campaign", ["key", "count"]),
+        ("By team member", "by_member", ["name", "count"]),
+    ]:
+        rows = ov["breakdowns"].get(key, [])
+        w.writerow([]); w.writerow([title]); w.writerow(cols)
+        for r in rows:
+            w.writerow([r.get(c, "") for c in cols])
+    data = buf.getvalue()
+    return StreamingResponse(iter([data]), media_type="text/csv",
+                             headers={"Content-Disposition": f"attachment; filename=tappresence-analytics-{days}d.csv"})
+
+
+async def _compute_overview(user: dict, days: int = 30):
     """Read-only conversion funnel + trend aggregated across all cards the caller can access.
     Reuses existing analytics_events / leads / meetings — no writes, no new event semantics."""
     from collections import Counter

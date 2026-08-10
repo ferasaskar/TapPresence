@@ -83,7 +83,12 @@
     "startEventMode": "Start",
     "cancel": "Cancel",
     "enableEventMode": "Enable event capture mode",
-    "willTag": "Will be tagged to “{{event}}”"
+    "willTag": "Will be tagged to “{{event}}”",
+    "dupTitle": "Possible duplicate found",
+    "dupBody": "A lead with the same email or phone already exists on this card.",
+    "dupUpdate": "Update existing",
+    "dupCreateAnyway": "Create anyway",
+    "dupUpdated": "Existing lead updated"
   },
   "meetings": {
     "title": "Meetings",
@@ -263,9 +268,12 @@
     "byCard": "By card",
     "meetings": "Meetings",
     "bySource": "Leads by source",
-    "byEvent": "Leads by event",
+    "byEvent": "Event leaderboard (leads)",
     "byCampaign": "Leads by campaign",
-    "byMember": "Captured by team member"
+    "byMember": "Team leaderboard (leads captured)",
+    "rangeDays": "{{days}}d",
+    "export": "Export CSV",
+    "exportShort": "Export"
   },
   "nav": {
     "home": "Home",
@@ -489,7 +497,26 @@
     "signInLink": "Sign in",
     "referralBanner": "🎁 You were invited — a referral discount will be applied to your plan.",
     "referralBannerPct": "🎁 Invited with code {{code}} — you'll get {{pct}}% off your plan.",
-    "genericError": "Something went wrong."
+    "genericError": "Something went wrong.",
+    "forgotLink": "Forgot password?",
+    "forgotTitle": "Reset your password",
+    "forgotSub": "Enter your email and we will send a reset link.",
+    "forgotSend": "Send reset link",
+    "forgotSent": "If an account exists for that email, a reset link is on its way.",
+    "backToLogin": "Back to sign in",
+    "resetTitle": "Set a new password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "resetSubmit": "Update password",
+    "resetInvalid": "This reset link is invalid or has expired.",
+    "pwTooShort": "Password must be at least 8 characters.",
+    "pwMismatch": "Passwords do not match.",
+    "verifying": "Verifying your email…",
+    "verifyOk": "Email verified. You are all set!",
+    "verifyFail": "This verification link is invalid or has expired.",
+    "verifyBanner": "Please verify your email address.",
+    "verifyResend": "Resend link",
+    "verifyResent": "Verification link sent — check your inbox."
   },
   "landing": {
     "nav": [
@@ -548,7 +575,7 @@
       "eyebrow": "Smart. Simple. Powerful.",
       "title1": "From Tap to",
       "title2": "True Connection.",
-      "desc": "ARIADNI ID turns every interaction into a lasting opportunity.",
+      "desc": "TapPresence turns every interaction into a lasting opportunity.",
       "cta": "See it in Action",
       "steps": [
         {
@@ -580,7 +607,7 @@
       "desc": "Choose a template that reflects your style and makes your profile unforgettable.",
       "cta": "Explore Templates",
       "appNew": "NEW",
-      "appTitle": "ARIADNI ID App",
+      "appTitle": "TapPresence App",
       "appDesc": "Manage your profile, leads, analytics and team — all from one place."
     },
     "teams": {
@@ -648,7 +675,7 @@
     },
     "finalCta": {
       "title": "Ready to Elevate Your Professional Identity?",
-      "subtitle": "Join thousands of professionals who trust ARIADNI ID.",
+      "subtitle": "Join thousands of professionals who trust TapPresence.",
       "cta": "Create Your ID Now"
     },
     "footer": {

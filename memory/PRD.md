@@ -1,5 +1,26 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## LAUNCH HARDENING (2026-06, iteration 25) — DONE & FULL-REGRESSION PASSED (100%, backend 18/18)
+Credential-free launch work, all extending existing systems:
+- **Branding**: removed all user-visible ARIADNI (3 locale strings, QR poster → "TapPresence", seed ws "TapPresence HQ"). Internal keys (ariadni_lang/token, AriadniMark) intentionally kept.
+- **Plan cleanup**: DEFAULT_PLANS free `public:false`, Team.jsx badge fallback → "trial" (no public Free plan). remove_branding/white_label flags left dormant (no UI surfaces them; not touched to avoid entitlement-resolution regressions).
+- **Auth flows (NEW frontend)**: `/forgot`, `/reset`, `/verify` pages (AuthExtra.jsx) + `POST /auth/resend-verification` (rate-limited) + unverified banner in OwnerNav. Forgot→reset→login verified end-to-end (email link only LOGGED until provider connected). Verification is soft (not enforced at login) — no lockout of paying users.
+- **Leads dedupe**: `find_duplicate_lead` (same-card, normalized email/phone). Public capture merges inbound dupes; scanner returns `{ok:false,duplicate}` unless `force:true` (UI panel: update existing / create anyway).
+- **Card list**: deterministic sort by created_at.
+- **Analytics**: date-range 7/30/90 (`?days=`), CSV export `/admin/analytics/export.csv`, ranked event/team leaderboard (reuses existing breakdowns).
+- **Super Admin ops**: `/admin/platform/users?q=`, `/workspaces?q=`, `POST /users/{id}/suspend` (blocks login, revokes sessions, can't suspend SUPER_ADMIN) + Command Center "Users & Support" UI.
+- **Security**: suspend/login-block; CORS already env-driven (`CORS_ORIGINS` — set to prod domains at deploy); rate-limit/lockout preserved.
+- **Legal**: production-structured Terms/Privacy/Cookies/Data-deletion (Legal.jsx) with `[[COMPANY FACT]]` placeholders.
+- **SEO**: OG/Twitter/canonical meta, robots.txt, sitemap.xml (tappresence.com).
+
+### REMAINING EXTERNAL BLOCKERS (need user input — see chat checklist)
+1. **Stripe** — CAN start WITHOUT user keys (Emergent claimable sandbox, Flow A); user only claims via onboarding link + completes KYC before deploy. Next build.
+2. **Email (Resend)** — needs user `RESEND_API_KEY` + verified sending domain + from-address.
+3. **Legal facts** — company legal name, address, jurisdiction, effective date, DPO/EU-UK rep.
+4. **Confirm production domain** = tappresence.com; set CORS_ORIGINS to it at deploy.
+
+
+
 ## P2 VALUE BATCH (2026-06, iteration 24) — IMPLEMENTED & QA VERIFIED
 Three more high-value items, all EXTENDING existing systems (credit-controlled; no duplicate reminder/scanner/signature systems). Testing agent iteration_24: Follow Up Today + Event Capture Mode passed; Signature deep-link initially only worked on the executive template — FIXED and re-verified.
 

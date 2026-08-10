@@ -61,6 +61,7 @@ export default function Login() {
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("auth.signIn")}
           </Button>
         </form>
+        <p className="mt-4 text-center text-sm"><Link to="/forgot" className="text-white/50 hover:text-[#D6A653]" data-testid="login-forgot">{t("auth.forgotLink")}</Link></p>
         <p className="mt-5 text-sm text-white/50">{t("auth.newHere")} <Link to="/register" className="text-[#D6A653] hover:underline">{t("auth.createYourId")}</Link></p>
       </div>
     </div>
