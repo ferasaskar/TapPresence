@@ -7,7 +7,7 @@ import { AnalyticsOverview } from "@/components/admin/AnalyticsOverview";
 import { OnboardingChecklist } from "@/components/admin/OnboardingChecklist";
 import { ReferralNudge } from "@/components/admin/ReferralNudge";
 import { useLocale } from "@/i18n/useLocale";
-import { Loader2, Eye, QrCode, MousePointerClick, Inbox, Pencil, ExternalLink, Share2, CalendarDays, Plus, Clock, User, CheckCircle2, CircleDot } from "lucide-react";
+import { Loader2, Eye, QrCode, MousePointerClick, Inbox, Pencil, ExternalLink, Share2, CalendarDays, Plus, Clock, User, CheckCircle2, CircleDot, Bell, Phone, MessageCircle, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const Stat = ({ icon: Icon, label, value, testId }) => (
@@ -33,6 +33,7 @@ export default function Home() {
   const [newLeads, setNewLeads] = useState(0);
   const [meetings, setMeetings] = useState([]);
   const [overview, setOverview] = useState(null);
+  const [dueLeads, setDueLeads] = useState([]);
 
   useEffect(() => {
     api.get("/admin/cards").then(({ data }) => {
@@ -40,7 +41,13 @@ export default function Home() {
       if (data[0]) api.get(`/admin/cards/${data[0].id}/analytics`).then((r) => setStats(r.data)).catch(() => setStats({}));
       else setStats({});
     }).catch(() => { setCards([]); setStats({}); });
-    api.get("/admin/leads").then(({ data }) => setNewLeads(data.filter((l) => !l.read).length)).catch(() => {});
+    api.get("/admin/leads").then(({ data }) => {
+      setNewLeads(data.filter((l) => !l.read).length);
+      const end = new Date(); end.setHours(23, 59, 59, 999);
+      const due = data.filter((l) => l.next_follow_up && new Date(l.next_follow_up) <= end)
+        .sort((a, b) => new Date(a.next_follow_up) - new Date(b.next_follow_up));
+      setDueLeads(due);
+    }).catch(() => {});
     api.get("/admin/meetings", { params: { filter: "upcoming" } }).then(({ data }) => setMeetings(data)).catch(() => {});
     api.get("/admin/analytics/overview", { params: { days: 30 } }).then(({ data }) => setOverview(data)).catch(() => {});
   }, []);
@@ -117,6 +124,34 @@ export default function Home() {
               </div>
 
               <AnalyticsOverview data={overview} />
+
+              {dueLeads.length > 0 ? (
+                <div className="rounded-2xl border border-[#D6A653]/25 bg-[#D6A653]/[0.04] p-5" data-testid="home-followup-today">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="flex items-center gap-2 text-sm font-medium text-white"><Bell className="h-4 w-4 text-[#D6A653]" /> {t("home.followUpToday")}</h3>
+                    <span className="rounded-full bg-[#D6A653]/15 px-2 py-0.5 text-[11px] font-semibold text-[#D6A653]" data-testid="followup-count">{dueLeads.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {dueLeads.slice(0, 6).map((l) => {
+                      const overdue = new Date(l.next_follow_up) < new Date(new Date().setHours(0, 0, 0, 0));
+                      const wa = (l.phone || "").replace(/[^\d+]/g, "").replace(/^\+/, "");
+                      return (
+                        <div key={l.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-[#0A0B0D] px-4 py-3" data-testid={`followup-${l.id}`}>
+                          <button onClick={() => navigate(`/leads?lead=${l.id}`)} className="min-w-0 text-left" data-testid={`followup-open-${l.id}`}>
+                            <p className="truncate text-sm text-white">{l.name} {l.company ? <span className="text-white/40">· {l.company}</span> : null}</p>
+                            <p className={`mt-0.5 flex items-center gap-1 text-xs ${overdue ? "text-red-300/80" : "text-white/50"}`}><Clock className="h-3 w-3" /> {overdue ? t("home.overdue") : t("home.dueToday")} · {new Date(l.next_follow_up).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
+                          </button>
+                          <div className="flex shrink-0 gap-1.5">
+                            {l.phone ? <a href={`tel:${l.phone}`} onClick={(e) => e.stopPropagation()} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/12 text-white/70 hover:border-[#D6A653]/50 hover:text-white" title={t("leads.call")} data-testid={`followup-call-${l.id}`}><Phone className="h-3.5 w-3.5" /></a> : null}
+                            {l.phone ? <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/12 text-white/70 hover:border-[#D6A653]/50 hover:text-white" title={t("leads.whatsapp")} data-testid={`followup-wa-${l.id}`}><MessageCircle className="h-3.5 w-3.5" /></a> : null}
+                            {l.email ? <a href={`mailto:${l.email}`} onClick={(e) => e.stopPropagation()} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/12 text-white/70 hover:border-[#D6A653]/50 hover:text-white" title={t("leads.email")} data-testid={`followup-email-${l.id}`}><Mail className="h-3.5 w-3.5" /></a> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="home-upcoming">
                 <div className="mb-3 flex items-center justify-between">

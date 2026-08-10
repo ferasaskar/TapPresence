@@ -1,5 +1,16 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## P2 VALUE BATCH (2026-06, iteration 24) — IMPLEMENTED & QA VERIFIED
+Three more high-value items, all EXTENDING existing systems (credit-controlled; no duplicate reminder/scanner/signature systems). Testing agent iteration_24: Follow Up Today + Event Capture Mode passed; Signature deep-link initially only worked on the executive template — FIXED and re-verified.
+
+1. **Follow Up Today** (`Home.jsx`, testid `home-followup-today`): dashboard section listing leads whose `next_follow_up` is due today or overdue (computed from the existing `/admin/leads` — no new endpoint), sorted soonest-first, with count badge, Overdue/Due-today labels, Call/WhatsApp/Email quick actions, and row click → `/leads?lead={id}`. Hidden when nothing is due. Reuses P0 reminder architecture.
+2. **Event Capture Mode** (`ScanCardDialog.jsx` + `ScanConfirmIn` gained `event`+`campaign`): user enables a capture mode once (event name + optional existing campaign from `GET /campaigns`), persisted in `localStorage tp_event_mode`; while active a green banner shows and EVERY scanned lead auto-inherits that event/campaign (+`event` tag). Easy Switch/Turn-off. Verified: scanned lead carries event/campaign and analytics `by_event`/`by_campaign` reflect it. Reuses existing campaigns/scanner/leads/analytics — no separate event scanner.
+3. **Signature Booking Link** (`lib/signature.js` `opts.book` + `Signatures.jsx` `book` toggle + `PublicProfile.jsx`): optional "Book a meeting" button in the email signature linking to `{origin}/{slug}?book=1`. **Deep link handled at the PublicProfile page level (template-agnostic)**: `?book=1` opens the native `BookMeetingDialog` for ANY template when native booking is on, else redirects to the external booking URL. (Removed the earlier per-template ExecutiveBlackGold handler to avoid double dialogs; legacy templates untouched.) Verified on the beige demo card feras-askar.
+
+i18n: added `home.*` (followUpToday/overdue/dueToday), `scan.*` (event-mode strings), `signatures.book` — EN/AR/ES in sync.
+
+
+
 ## P0 + P1 VALUE ROADMAP (2026-06, iteration 22) — IMPLEMENTED & QA VERIFIED
 Extended existing systems only (no new DB, no duplicate scanner/CRM/analytics, no Free plan, no quota changes, no "Presences" abstraction). Backend 20/20 pytest (iteration_22.json), frontend 100% E2E. Uses existing collections/endpoints throughout.
 

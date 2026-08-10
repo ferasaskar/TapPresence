@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { ProfileContext } from "@/context/ProfileContext";
 import { getConsent } from "@/components/ConsentBanner";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
+import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
 import { useLocale } from "@/i18n/useLocale";
 import { toast } from "sonner";
 import { Loader2, Globe, Share2 } from "lucide-react";
@@ -18,6 +19,7 @@ export default function PublicProfile() {
   const [card, setCard] = useState(null);
   const [state, setState] = useState("loading");
   const [lang, setLang] = useState(searchParams.get("lang") || localStorage.getItem(`lang_${slug}`) || "");
+  const [bookOpen, setBookOpen] = useState(false);
 
   const track = useCallback(
     (type, key = "") => {
@@ -51,6 +53,14 @@ export default function PublicProfile() {
     const a = card._activeLang || (card._availableLangs || ["en"])[0];
     document.documentElement.dir = RTL.includes(a) ? "rtl" : "ltr";
   }, [card]);
+
+  // Signature/email deep link (?book=1): open native booking for any template, else send to external URL.
+  useEffect(() => {
+    if (!card || searchParams.get("book") !== "1") return;
+    const b = card.booking || {};
+    if (b.nativeEnabled) { track("tap", "cta_book"); setBookOpen(true); }
+    else if (b.bookingUrl) { window.location.href = b.bookingUrl; }
+  }, [card]); // eslint-disable-line
 
   const changeLang = (l) => {
     setLang(l);
@@ -115,6 +125,7 @@ export default function PublicProfile() {
           </div>
         )}
         <TemplateRenderer data={card} />
+        <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} ownerName={card?.identity?.fullName || ""} />
       </div>
     </ProfileContext.Provider>
   );

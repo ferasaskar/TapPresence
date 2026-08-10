@@ -16,6 +16,7 @@ const FIELDS = [
   { key: "phone", tkey: "signatures.phone" },
   { key: "email", tkey: "signatures.email" },
   { key: "link", tkey: "signatures.link" },
+  { key: "book", tkey: "signatures.book" },
 ];
 
 export default function Signatures() {
@@ -23,7 +24,7 @@ export default function Signatures() {
   const [cards, setCards] = useState(undefined);
   const [locked, setLocked] = useState([]);
   const [sel, setSel] = useState("");
-  const [opts, setOpts] = useState({ photo: true, qr: true, title: true, company: true, phone: true, email: true, link: true, template: "classic" });
+  const [opts, setOpts] = useState({ photo: true, qr: true, title: true, company: true, phone: true, email: true, link: true, book: false, template: "classic" });
 
   useEffect(() => {
     api.get("/admin/cards").then(({ data }) => { setCards(data); if (data[0]) setSel(data[0].id); }).catch(() => setCards([]));
@@ -33,6 +34,7 @@ export default function Signatures() {
   const card = useMemo(() => (cards || []).find((c) => c.id === sel), [cards, sel]);
   const urls = useMemo(() => card ? {
     profile: `${window.location.origin}/${card.slug}`,
+    book: `${window.location.origin}/${card.slug}?book=1`,
     qr: `${BACKEND}/api/cards/${card.slug}/qr`,
     photo: card.identity?.profilePhoto || "",
   } : {}, [card]);

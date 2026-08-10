@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 23 (P1): Verified extended analytics breakdowns and branded QR. 9/9 backend pytest cases pass. Frontend renders all funnel + breakdown testids on the dashboard Home page; regression flows (Leads page, public /feras-askar with QRBlock) unaffected. Branded QR (PNG) decodes correctly via pyzbar to a URL containing the slug and src=qr tracking; poster PNG endpoint unchanged.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_p1.py",
+    "/app/test_reports/pytest/iter23.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GET /api/admin/analytics/overview correctly extended with channels{direct,qr,nfc} and breakdowns{by_card,by_source,scanner_leads,by_event,by_campaign,by_member} without breaking funnel/series/top_actions shape (Home dashboard still renders exactly as before + new sections).",
+    "_brand_qr overlay: error_correction bumped M->H preserves scannability with ~20% logo center — verified: pyzbar decodes cleanly to 'https://.../feras-askar?src=qr'.",
+    "Poster endpoint returns PNG unchanged (separate QR generation path — verified independently).",
+    "Public profile still exposes qr-block; Save Contact / Book / Exchange buttons are present but rendered as text-labelled buttons without generic data-testids like save-contact/book-meeting — testids may be more specific ('Book a Call' visible). Non-blocking, but consider stable data-testids on public profile primary CTAs for future automation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_p1.py (new — 9 pytest cases)",
+    "/app/test_reports/pytest/iter23.xml (new)"
+  ],
+  "success_rate": { "backend": "100% (9/9)", "frontend": "100% — all P1 testids visible, no regressions" },
+  "test_credentials": "SUPER_ADMIN admin@ariadni.id / Ariadni@2026",
+  "seed_data_creation": "None — read-only verification against existing analytics/QR endpoints.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P1 verified. Analytics overview channels observed: direct=201, qr=17, nfc=4, scanner_leads=2. Breakdowns rendered: bd-card-* (3 rows: feras-askar/edrina-cepele/dr-leo), bd-source-* (3: inquiry/business card/profile exchange), bd-member-* (1: Admin). No by_event/by_campaign rows because no such data exists (conditional render is correct). Branded QR decodes to 'https://template-hub-184.preview.emergentagent.com/feras-askar?src=qr'. Pytest file /app/backend/tests/test_iter23_p1.py can be reused as regression."
+}

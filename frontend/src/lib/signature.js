@@ -33,7 +33,8 @@ export const buildSignatureHtml = (card, opts, urls) => {
   if (opts.phone && phone) contact.push(`<a href="tel:${phone}" style="color:${gray};text-decoration:none;">${phone}</a>`);
   if (opts.email && email) contact.push(`<a href="mailto:${email}" style="color:${gray};text-decoration:none;">${email}</a>`);
   if (contact.length) lines.push(`<div style="${font}font-size:12px;color:${gray};margin-top:6px;">${contact.join(' &nbsp;•&nbsp; ')}</div>`);
-  if (opts.link) lines.push(`<div style="margin-top:8px;"><a href="${esc(urls.profile)}" style="${font}font-size:12px;font-weight:bold;color:#fff;background:${accent};padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;">View my card</a></div>`);
+  if (opts.link) lines.push(`<div style="margin-top:8px;"><a href="${esc(urls.profile)}" style="${font}font-size:12px;font-weight:bold;color:#fff;background:${accent};padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;">View my card</a>${opts.book && urls.book ? `&nbsp;<a href="${esc(urls.book)}" style="${font}font-size:12px;font-weight:bold;color:${accent};background:transparent;border:1px solid ${accent};padding:5px 12px;border-radius:6px;text-decoration:none;display:inline-block;">Book a meeting</a>` : ""}</div>`);
+  else if (opts.book && urls.book) lines.push(`<div style="margin-top:8px;"><a href="${esc(urls.book)}" style="${font}font-size:12px;font-weight:bold;color:#fff;background:${accent};padding:6px 12px;border-radius:6px;text-decoration:none;display:inline-block;">Book a meeting</a></div>`);
 
   const info = lines.join("");
 

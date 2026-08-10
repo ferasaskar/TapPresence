@@ -71,7 +71,19 @@
     "couldNotSave": "Could not save lead",
     "universalHint": "Scan a business card, event badge, or contact QR code — QR codes are read instantly on your device.",
     "qrRead": "QR contact read",
-    "qrReviewIntro": "We read this contact from the QR code. Review and edit before saving."
+    "qrReviewIntro": "We read this contact from the QR code. Review and edit before saving.",
+    "eventRequired": "Enter an event name or pick a campaign",
+    "eventModeOn": "Event mode: {{event}} — every scan is tagged",
+    "switch": "Switch",
+    "turnOff": "Turn off",
+    "eventModeTitle": "Event capture mode",
+    "eventNamePlaceholder": "Event name, e.g. GITEX 2026",
+    "linkCampaign": "Link a campaign (optional)",
+    "noCampaign": "No campaign",
+    "startEventMode": "Start",
+    "cancel": "Cancel",
+    "enableEventMode": "Enable event capture mode",
+    "willTag": "Will be tagged to “{{event}}”"
   },
   "meetings": {
     "title": "Meetings",
@@ -329,7 +341,10 @@
     "noMeetings": "No upcoming meetings.",
     "pending": "Pending",
     "confirmed": "Confirmed",
-    "linkCopied": "Link copied"
+    "linkCopied": "Link copied",
+    "followUpToday": "Follow up today",
+    "overdue": "Overdue",
+    "dueToday": "Due today"
   },
   "funnel": {
     "title": "Conversion funnel",
@@ -396,7 +411,8 @@
     "modern": "Modern",
     "locked": "Locked by company",
     "preview": "Preview",
-    "noCards": "Create a card first to build a signature."
+    "noCards": "Create a card first to build a signature.",
+    "book": "Book meeting"
   },
   "billing": {
     "title": "Billing & Plan",

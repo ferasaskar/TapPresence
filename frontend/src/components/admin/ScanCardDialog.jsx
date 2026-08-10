@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Camera, Upload, ScanLine, Loader2, RefreshCw, Check, QrCode } from "lucide-react";
+import { Camera, Upload, ScanLine, Loader2, RefreshCw, Check, QrCode, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { decodeQrFromDataUrl, parseContact } from "@/lib/qrContact";
 
@@ -54,6 +54,20 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const fileRef = useRef(null);
+  const [campaigns, setCampaigns] = useState([]);
+  const [eventMode, setEventMode] = useState(() => { try { return JSON.parse(localStorage.getItem("tp_event_mode") || "null"); } catch { return null; } });
+  const [eventDraft, setEventDraft] = useState({ event: "", campaign: "" });
+  const [eventEditing, setEventEditing] = useState(false);
+  useEffect(() => { if (open) api.get("/campaigns").then(({ data }) => setCampaigns(data || [])).catch(() => {}); }, [open]);
+  const applyEventMode = (m) => { setEventMode(m); try { m ? localStorage.setItem("tp_event_mode", JSON.stringify(m)) : localStorage.removeItem("tp_event_mode"); } catch (_) {} };
+  const startEventMode = () => {
+    const ev = eventDraft.event.trim();
+    const camp = eventDraft.campaign && eventDraft.campaign !== "__none" ? eventDraft.campaign : "";
+    if (!ev && !camp) { toast.error(t("scan.eventRequired")); return; }
+    const label = ev || (campaigns.find((c) => c.code === camp)?.name) || camp;
+    applyEventMode({ event: label, campaign: camp });
+    setEventEditing(false);
+  };
 
   const reset = () => {
     setStep("capture"); setImage(""); setDraft(EMPTY); setScanning(false); setSaving(false);
@@ -138,7 +152,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
     if (!cardSlug) { toast.error(t("scan.pickCard")); return; }
     setSaving(true);
     try {
-      await api.post("/scan/confirm", { ...draft, cardSlug, source });
+      await api.post("/scan/confirm", { ...draft, cardSlug, source, event: eventMode?.event || "", campaign: eventMode?.campaign || "" });
       toast.success(t("scan.leadSaved"));
       onSaved?.();
       onOpenChange(false);
@@ -196,6 +210,42 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
               <QrCode className="h-3.5 w-3.5 text-[#D6A653]" /> {t("scan.universalHint")}
             </p>
 
+            {/* Event Capture Mode — every scan inherits the active event/campaign */}
+            {eventMode ? (
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/[0.07] px-3 py-2.5" data-testid="event-mode-active">
+                <span className="flex min-w-0 items-center gap-2 text-xs text-emerald-200/90">
+                  <Tag className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{t("scan.eventModeOn", { event: eventMode.event })}</span>
+                </span>
+                <div className="flex shrink-0 gap-1.5">
+                  <button onClick={() => { setEventDraft({ event: eventMode.event, campaign: eventMode.campaign || "__none" }); setEventEditing(true); }} className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 hover:text-white" data-testid="event-mode-switch">{t("scan.switch")}</button>
+                  <button onClick={() => applyEventMode(null)} className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/60 hover:text-white" data-testid="event-mode-off">{t("scan.turnOff")}</button>
+                </div>
+              </div>
+            ) : eventEditing ? (
+              <div className="space-y-2 rounded-xl border border-[#D6A653]/25 bg-[#D6A653]/[0.05] p-3" data-testid="event-mode-editor">
+                <p className="flex items-center gap-1.5 text-xs text-white/70"><Tag className="h-3.5 w-3.5 text-[#D6A653]" /> {t("scan.eventModeTitle")}</p>
+                <Input value={eventDraft.event} onChange={(e) => setEventDraft((d) => ({ ...d, event: e.target.value }))} placeholder={t("scan.eventNamePlaceholder")} className="h-9 text-sm" data-testid="event-name-input" />
+                {campaigns.length ? (
+                  <Select value={eventDraft.campaign || "__none"} onValueChange={(v) => setEventDraft((d) => ({ ...d, campaign: v }))}>
+                    <SelectTrigger className="h-9 text-sm" data-testid="event-campaign-select"><SelectValue placeholder={t("scan.linkCampaign")} /></SelectTrigger>
+                    <SelectContent className="aria-pop">
+                      <SelectItem value="__none">{t("scan.noCampaign")}</SelectItem>
+                      {campaigns.map((c) => <SelectItem key={c.id} value={c.code}>{c.name} ({c.code})</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+                <div className="flex gap-2">
+                  <Button className={`flex-1 ${goldBtn}`} onClick={startEventMode} data-testid="event-mode-start">{t("scan.startEventMode")}</Button>
+                  <Button className={ghostBtn} onClick={() => setEventEditing(false)} data-testid="event-mode-cancel">{t("scan.cancel")}</Button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => { setEventDraft({ event: "", campaign: "__none" }); setEventEditing(true); }} className="flex items-center gap-1.5 text-xs text-[#D6A653] hover:underline" data-testid="event-mode-enable">
+                <Tag className="h-3.5 w-3.5" /> {t("scan.enableEventMode")}
+              </button>
+            )}
+
             <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black">
               {image ? (
                 <img src={image} alt="captured card" className="h-full w-full object-contain" data-testid="scan-preview" />
@@ -235,6 +285,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
         {step === "review" && (
           <div className="space-y-3">
             <p className="text-xs text-white/50">{source === "qr_scan" ? t("scan.qrReviewIntro") : t("scan.reviewIntro")}</p>
+            {eventMode ? <p className="flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/[0.06] px-2.5 py-1.5 text-[11px] text-emerald-200/90" data-testid="review-event-tag"><Tag className="h-3 w-3" /> {t("scan.willTag", { event: eventMode.event })}</p> : null}
             {field("name", t("scan.fFullName"))}
             <div className="grid grid-cols-2 gap-3">
               {field("title", t("scan.fJobTitle"))}

@@ -71,7 +71,19 @@
     "couldNotSave": "تعذّر حفظ العميل",
     "universalHint": "امسح بطاقة عمل أو شارة فعالية أو رمز QR لجهة اتصال — تُقرأ رموز QR فوراً على جهازك.",
     "qrRead": "تم قراءة جهة اتصال QR",
-    "qrReviewIntro": "قرأنا جهة الاتصال هذه من رمز QR. راجع وعدّل قبل الحفظ."
+    "qrReviewIntro": "قرأنا جهة الاتصال هذه من رمز QR. راجع وعدّل قبل الحفظ.",
+    "eventRequired": "أدخل اسم فعالية أو اختر حملة",
+    "eventModeOn": "وضع الفعالية: {{event}} — كل مسح يُوسم",
+    "switch": "تبديل",
+    "turnOff": "إيقاف",
+    "eventModeTitle": "وضع التقاط الفعالية",
+    "eventNamePlaceholder": "اسم الفعالية، مثل جيتكس 2026",
+    "linkCampaign": "ربط حملة (اختياري)",
+    "noCampaign": "بدون حملة",
+    "startEventMode": "بدء",
+    "cancel": "إلغاء",
+    "enableEventMode": "تفعيل وضع التقاط الفعالية",
+    "willTag": "سيتم وسمه بـ «{{event}}»"
   },
   "meetings": {
     "title": "الاجتماعات",
@@ -329,7 +341,10 @@
     "noMeetings": "لا توجد اجتماعات قادمة.",
     "pending": "قيد الانتظار",
     "confirmed": "مؤكد",
-    "linkCopied": "تم نسخ الرابط"
+    "linkCopied": "تم نسخ الرابط",
+    "followUpToday": "متابعة اليوم",
+    "overdue": "متأخر",
+    "dueToday": "مستحق اليوم"
   },
   "funnel": {
     "title": "مسار التحويل",
@@ -396,7 +411,8 @@
     "modern": "حديث",
     "locked": "مقفل من الشركة",
     "preview": "معاينة",
-    "noCards": "أنشئ بطاقة أولاً لإنشاء توقيع."
+    "noCards": "أنشئ بطاقة أولاً لإنشاء توقيع.",
+    "book": "زر حجز اجتماع"
   },
   "billing": {
     "title": "الفوترة والخطة",

@@ -1727,6 +1727,8 @@ class ScanConfirmIn(BaseModel):
     language: str = "en"
     interest: str = ""
     notes: str = ""
+    event: str = ""
+    campaign: str = ""
 
 
 @platform_router.post("/scan/confirm")
@@ -1751,8 +1753,8 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
         "company": body.company.strip(), "title": body.title.strip(),
         "website": body.website.strip(), "message": body.notes.strip(), "interest": body.interest.strip(),
         "address": body.address.strip(), "city": body.city.strip(), "country": body.country.strip(),
-        "language": lang, "source": source, "campaign": "", "event": "", "consent": True,
-        "status": "new", "tags": ["scanned"], "notes": body.notes.strip(),
+        "language": lang, "source": source, "campaign": body.campaign.strip(), "event": body.event.strip(), "consent": True,
+        "status": "new", "tags": ["scanned"] + (["event"] if body.event.strip() else []), "notes": body.notes.strip(),
         "met_at": now_iso(), "next_follow_up": "",
         "scanned": True, "captured_by": user["id"],
         "read": False, "created_at": now_iso(), "updated_at": now_iso(), "last_activity": now_iso(),

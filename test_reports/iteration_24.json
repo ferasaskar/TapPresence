@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 24 (P2): Verified 3 new roadmap items — Follow Up Today, Event Capture Mode, Signature Booking Link. 3/3 backend pytest cases pass (1 skipped meeting-types endpoint probe). Frontend: Follow Up Today section + Event Capture Mode UI + Signature 'Book meeting' toggle all work as specified. HOWEVER the ?book=1 deep-link auto-open does NOT work on /feras-askar because feras-askar uses the 'beige-luxury' template and the auto-open useEffect + BookMeetingDialog were only added to ExecutiveBlackGold.jsx. This is a real implementation gap against the review spec.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Signature Booking deep link (?book=1) auto-open on public card",
+        "issue": "The useEffect that reads ?book=1 and calls setBookOpen(true) lives ONLY in src/components/templates/ExecutiveBlackGold.jsx. The demo card /feras-askar is templateId='beige-luxury' (BeigeLuxuryExecutive.jsx) which has NO BookMeetingDialog and NO ?book=1 handler — it opens external cal.com URL via action buttons. Loading /feras-askar?book=1 produced 0 [data-testid=book-dialog] elements and no role=dialog opened (waited 6s, then also tried manual 'Book a Call' click — still 0). Verified via GET /api/cards/feras-askar => templateId=beige-luxury, booking.nativeEnabled=true, booking.bookingUrl=https://cal.com/ferasaskar/consultation. Also confirmed no other published card in this env satisfies ExecutiveBlackGold + bookingActive (edrina-cepele: nativeEnabled=None, bookingUrl=''; dr-leo: nativeEnabled=false).",
+        "affected_selectors": ["book-dialog"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter24_p2.py",
+    "/app/test_reports/pytest/iter24.xml"
+  ],
+  "action_items": [
+    "Port the ?book=1 auto-open useEffect + BookMeetingDialog wiring from ExecutiveBlackGold.jsx into BeigeLuxuryExecutive.jsx (and FutureProfessional.jsx for consistency) so the signature deep link works on the demo card /feras-askar (currently uses beige-luxury). OR change feras-askar's templateId to executive-black-gold. Without one of these fixes the marketing promise of the Signature 'Book a meeting' CTA leading to the native booking dialog is broken for the primary demo card.",
+    "Note: Signature preview HTML correctly generates href='https://template-hub-184.preview.emergentagent.com/<slug>?book=1' when the 'Book meeting' field is toggled on — link generation is correct; only the receiving side (beige-luxury template) doesn't consume it."
+  ],
+  "critical_code_review_comments": [
+    "Home.jsx dueLeads: filter correctly uses end-of-day boundary (setHours(23,59,59,999)) — verified '2020' overdue lead + 'today+2h' lead both appeared. Sort by next_follow_up ascending — verified. Section hidden when list empty (conditional {dueLeads.length > 0 && ...}). followup-count badge matches list length (observed 2 for our seeds).",
+    "ScanCardDialog Event Capture Mode: localStorage 'tp_event_mode' correctly persisted as {event, campaign}; 'Turn off' clears both state + localStorage; banner 'Event mode: GITEX 2026 — every scan is tagged' renders with switch/off controls. Editor gates start until eventDraft.event non-empty (verified). Campaign select loads /campaigns and stores code. No new endpoint introduced — leverages existing scan/confirm event+campaign fields.",
+    "signature.js: 'Book a meeting' button only rendered when opts.book && urls.book — verified. HTML preview contains both '?book=1' and 'Book a meeting' text after toggle-on. However, colour styling for the book CTA (transparent bg + border) may not render consistently in dark-mode email clients (Outlook forces black text on dark bg) — consider adding an explicit background fallback.",
+    "ExecutiveBlackGold.jsx useEffect dep list is [publicView] only; if 'bookingActive' resolves after mount (async data fetch), the effect won't re-run when it becomes true. Consider adding 'bookingActive' to deps so the deep link still fires after late data hydration.",
+    "GAP: Only ExecutiveBlackGold implements ?book=1 auto-open. BeigeLuxuryExecutive + FutureProfessional templates do NOT — this is the root cause of the observed regression for /feras-askar."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter24_p2.py (new — 4 pytest cases, 3 pass, 1 conditionally skip)",
+    "/app/test_reports/pytest/iter24.xml (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (3/3 executed, 1 skipped non-blocking)",
+    "frontend": "75% — 3 of 4 P2 flows pass; ?book=1 deep-link auto-open does not fire on /feras-askar (template mismatch)"
+  },
+  "test_credentials": "SUPER_ADMIN admin@ariadni.id / Ariadni@2026",
+  "seed_data_creation": "Created 3 TEST_iter24_* leads via public POST /api/cards/feras-askar/leads (2) + /api/scan/confirm (1). All cleaned up via DELETE /api/admin/leads/{id} at end of pytest + playwright runs. Zero residual test data.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Follow Up Today, Event Capture Mode, and Signature 'Book meeting' toggle work end-to-end. The only failing sub-item is the ?book=1 auto-open on /feras-askar — feras-askar's templateId is 'beige-luxury' but the auto-open handler + BookMeetingDialog were only added to ExecutiveBlackGold.jsx. To retest after main-agent fix: hit https://template-hub-184.preview.emergentagent.com/feras-askar?book=1 and verify [data-testid=book-dialog] becomes visible within ~3s. Pytest file /app/backend/tests/test_iter24_p2.py is stable for regression. Regression P0/P1: Home dashboard renders funnel + all breakdowns (by_card/by_source/by_member/etc), Leads navigation works (row click -> /leads?lead={id}), no significant console errors.",
+  "rca of the issue": "Root cause of ?book=1 deep-link failure: feature was implemented in only ONE of three template components (ExecutiveBlackGold.jsx). The demo card the review calls out (feras-askar) uses templateId='beige-luxury' (verified via GET /api/cards/feras-askar), which renders BeigeLuxuryExecutive.jsx — a component that has neither BookMeetingDialog nor a URLSearchParams('book') hook. Additionally, feras-askar's booking is configured with an EXTERNAL bookingUrl (cal.com/ferasaskar/consultation) rather than native booking with meeting types, so even if the auto-open effect were ported over, the current data would open the external URL not the native dialog. Mitigation: either (a) port the useEffect + BookMeetingDialog into BeigeLuxuryExecutive + FutureProfessional templates so ?book=1 works everywhere, or (b) migrate feras-askar to executive-black-gold and seed native meeting types (previous iteration_22 also flagged 'No meeting types available' for feras-askar's BookMeetingDialog)."
+}

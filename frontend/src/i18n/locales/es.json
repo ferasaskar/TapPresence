@@ -71,7 +71,19 @@
     "couldNotSave": "No se pudo guardar el contacto",
     "universalHint": "Escanea una tarjeta, credencial de evento o QR de contacto — los QR se leen al instante en tu dispositivo.",
     "qrRead": "Contacto QR leído",
-    "qrReviewIntro": "Leímos este contacto del código QR. Revisa y edita antes de guardar."
+    "qrReviewIntro": "Leímos este contacto del código QR. Revisa y edita antes de guardar.",
+    "eventRequired": "Escribe un evento o elige una campaña",
+    "eventModeOn": "Modo evento: {{event}} — cada escaneo se etiqueta",
+    "switch": "Cambiar",
+    "turnOff": "Desactivar",
+    "eventModeTitle": "Modo captura de evento",
+    "eventNamePlaceholder": "Nombre del evento, p. ej. GITEX 2026",
+    "linkCampaign": "Vincular campaña (opcional)",
+    "noCampaign": "Sin campaña",
+    "startEventMode": "Iniciar",
+    "cancel": "Cancelar",
+    "enableEventMode": "Activar modo captura de evento",
+    "willTag": "Se etiquetará como «{{event}}»"
   },
   "meetings": {
     "title": "Reuniones",
@@ -329,7 +341,10 @@
     "noMeetings": "No hay reuniones próximas.",
     "pending": "Pendiente",
     "confirmed": "Confirmada",
-    "linkCopied": "Enlace copiado"
+    "linkCopied": "Enlace copiado",
+    "followUpToday": "Seguimiento de hoy",
+    "overdue": "Atrasado",
+    "dueToday": "Para hoy"
   },
   "funnel": {
     "title": "Embudo de conversión",
@@ -396,7 +411,8 @@
     "modern": "Moderna",
     "locked": "Bloqueado por la empresa",
     "preview": "Vista previa",
-    "noCards": "Crea una tarjeta primero para crear una firma."
+    "noCards": "Crea una tarjeta primero para crear una firma.",
+    "book": "Reservar reunión"
   },
   "billing": {
     "title": "Facturación y plan",
