@@ -1,5 +1,20 @@
 # ARIADNI ID — Product Requirements & Build Log
 
+## LOCALIZATION COMPLETION + CONSENT/REFERRAL WIRING (2026-06, iteration 17) — IMPLEMENTED & QA 100%
+Completes remaining EN/AR/ES coverage and product wiring requested by user. All agent/testing-agent verified (iteration_17.json 100% backend + frontend, retest_needed=false); pending manual user confirmation.
+- **Full-body localization** added (locales now 540 keys each, EN/AR/ES in sync):
+  - `ScanCardDialog.jsx` — entire capture + review flow (title/desc, source select, camera prompt, retake/capture/camera/upload/scan buttons, all review field labels, save-to-card, language, rescan/save, all toasts) via `scan.*`.
+  - `CreateCard.jsx` (route `/templates`) — header, stepper, all 3 step headings/subs, slug field, publish success screen (QR/copy/view/dashboard) via `createCard.*`.
+  - `CardInfoTabs.jsx` — all tab triggers + Identity/Contact/Services/Projects field labels, add-service/add-project via `createCard.*`.
+  - `CardEditor.jsx` — back/view-live/save, slug/accent labels, published/draft, live-preview, toasts via `createCard.ed_*`.
+  - `Leads.jsx` + `AnalyticsDialog.jsx` — completed earlier this turn (`leads.*`, `analytics.*`).
+- **Analytics consent gating**: `PublicProfile.jsx` `track()` now blocks POST `/api/cards/{slug}/track` ONLY when `getConsent()?.analytics === false` (explicit reject). Default (null/unset) and accepted → tracking fires. Verified via network: reject=0 calls, accept=4, default=2.
+- **Referral discount at registration**: `Register.jsx` fetches `/api/commercial/pricing` when `?ref=` present and shows `auth.referralBannerPct` with code + `referred_discount_month_pct` (e.g. "20% off"); still submits `referral_code` for attribution; no false discount without ref.
+- **Localized "Privacy choices"** footer link on Landing → `/privacy-center` (`landing.footer.privacyChoices`), where analytics consent can be re-toggled and saved.
+- QA (iteration_17): login, EN/AR/ES bodies on Leads/Scan/CreateCard/Analytics, Arabic `dir=rtl` + 0px horizontal overflow, consent gate 3 states, referral banner with/without ref, privacy-choices link, Privacy Center persist, public QR + Exchange Contact, lang/market independence + persistence, backend 200s (pricing, card, track, referral QR). No regressions.
+- **Known minor debt (not fixed, not a regression)**: shadcn Dialog/Sheet primitives contain an `sr-only` English "Close" accessibility label (global default, screen-reader-only, not visually shown). Left untouched to avoid injecting i18n into shared UI primitives used outside Router/i18n context. Industry preview sample cards on `/templates` step 1 are hard-coded EN demo data (acceptable as sample content).
+
+
 ## Original Problem Statement
 Data-driven digital business-card template engine. React + FastAPI + MongoDB. Three premium,
 mobile-first public profile templates rendering from ONE shared `CardData` contract — no
