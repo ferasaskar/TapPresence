@@ -87,6 +87,33 @@
     "status_declined": "Rechazada",
     "status_noshow": "No asistió"
   },
+  "leads": {
+    "title": "Leads y bandeja",
+    "subtitle": "Tus consultas y contactos de reservas.",
+    "all": "Todos",
+    "stage_new": "Nuevo", "stage_contacted": "Contactado", "stage_meeting_booked": "Reunión reservada", "stage_qualified": "Calificado", "stage_converted": "Convertido", "stage_archived": "Archivado",
+    "search": "Buscar nombre, correo, teléfono",
+    "source": "Origen", "allSources": "Todos los orígenes", "inquiry": "Consulta", "meetingBooking": "Reserva de reunión",
+    "card": "Tarjeta", "allCards": "Todas las tarjetas",
+    "date": "Fecha", "anyTime": "Cualquier momento", "last24h": "Últimas 24h", "last7d": "Últimos 7 días", "last30d": "Últimos 30 días",
+    "empty": "No hay leads aquí.", "new": "NUEVO",
+    "call": "Llamar", "whatsapp": "WhatsApp", "email": "Correo", "aiFollowup": "Seguimiento con IA", "ai": "IA",
+    "emailLabel": "Correo", "phone": "Teléfono",
+    "pipelineStage": "Etapa del embudo", "meeting": "Reunión", "openInMeetings": "Abrir en Reuniones", "activity": "Actividad",
+    "channel_email": "Correo", "channel_whatsapp": "WhatsApp", "channel_sms": "SMS",
+    "tone_professional": "Profesional", "tone_warm": "Cercano", "tone_short": "Breve",
+    "generate": "Seguimiento con IA", "copyReview": "Copiar · revisa antes de enviar", "copied": "Copiado",
+    "deleteLead": "Eliminar lead", "deleteConfirm": "¿Eliminar este lead?", "deleted": "Eliminado", "deleteFailed": "Error al eliminar",
+    "moved": "Movido a {{stage}}", "couldNotUpdate": "No se pudo actualizar", "draftReady": "Borrador listo ({{provider}})", "couldNotDraft": "No se pudo redactar",
+    "mstatus_requested": "Pendiente", "mstatus_time_proposed": "Nueva hora propuesta", "mstatus_confirmed": "Confirmada", "mstatus_completed": "Completada", "mstatus_cancelled": "Cancelada", "mstatus_declined": "Rechazada", "mstatus_noshow": "No asistió",
+    "ev_created": "Lead creado", "ev_meeting_requested": "Reunión solicitada", "ev_meeting_booked": "Reunión reservada", "ev_meeting_confirmed": "Reunión confirmada", "ev_meeting_completed": "Reunión completada", "ev_meeting_cancelled": "Reunión cancelada", "ev_contact_exchanged": "Contacto intercambiado", "ev_profile_viewed": "Perfil visto"
+  },
+  "analytics": {
+    "title": "Analíticas", "desc": "Vistas, escaneos, toques de acción y consultas de este perfil.",
+    "views": "Vistas del perfil", "scans": "Escaneos QR", "taps": "Toques de acción", "leads": "Consultas",
+    "tapsByAction": "Toques por acción", "noActivity": "Aún sin actividad. Comparte el perfil para empezar a recopilar datos.",
+    "k_call": "Llamar", "k_whatsapp": "WhatsApp", "k_email": "Correo", "k_meet": "Reunión", "k_message": "Mensaje", "k_book": "Reservar", "k_save": "Guardar contacto", "k_other": "Otro"
+  },
   "nav": {
     "home": "Inicio",
     "myCard": "Mi tarjeta",
@@ -304,6 +331,7 @@
     "haveAccount": "¿Ya tienes una cuenta?",
     "signInLink": "Iniciar sesión",
     "referralBanner": "🎁 Fuiste invitado — se aplicará un descuento por referido a tu plan.",
+    "referralBannerPct": "🎁 Invitado con el código {{code}} — obtendrás {{pct}}% de descuento en tu plan.",
     "genericError": "Algo salió mal."
   },
   "landing": {
@@ -401,7 +429,8 @@
       "rights": "Todos los derechos reservados.",
       "stayConnected": "Mantente conectado",
       "newsletter": "Recibe novedades y consejos sobre networking digital.",
-      "emailPlaceholder": "Introduce tu correo"
+      "emailPlaceholder": "Introduce tu correo",
+      "privacyChoices": "Opciones de privacidad"
     }
   }
 }

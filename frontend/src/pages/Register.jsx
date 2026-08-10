@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,12 @@ export default function Register() {
   const [params] = useSearchParams();
   const intent = params.get("intent");
   const refCode = params.get("ref") || "";
+  const [refInfo, setRefInfo] = useState(null);
+  useEffect(() => {
+    if (refCode) api.get("/commercial/pricing").then(({ data }) => {
+      if (data?.referral?.enabled) setRefInfo({ pct: data.referral.referred_discount_month_pct });
+    }).catch(() => {});
+  }, [refCode]);
   const [f, setF] = useState({ name: "", email: "", password: "", workspace_name: "", referral_code: refCode });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,7 +60,7 @@ export default function Register() {
           <div className="space-y-1.5"><Label>{t("auth.workspaceOptional")}</Label><Input value={f.workspace_name} onChange={set("workspace_name")} data-testid="register-workspace" /></div>
           {refCode ? (
             <div className="rounded-xl border border-[#D6A653]/30 bg-[#D6A653]/[0.07] px-3 py-2 text-xs text-[#D6A653]" data-testid="register-referral-banner">
-              {t("auth.referralBanner")}
+              {refInfo?.pct ? t("auth.referralBannerPct", { code: refCode, pct: refInfo.pct }) : t("auth.referralBanner")}
             </div>
           ) : null}
           {error ? <p className="text-sm text-red-400" data-testid="register-error">{error}</p> : null}

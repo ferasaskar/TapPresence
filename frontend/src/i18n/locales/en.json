@@ -87,6 +87,33 @@
     "status_declined": "Declined",
     "status_noshow": "No-show"
   },
+  "leads": {
+    "title": "Leads & Inbox",
+    "subtitle": "Your inquiries and booking contacts.",
+    "all": "All",
+    "stage_new": "New", "stage_contacted": "Contacted", "stage_meeting_booked": "Meeting Booked", "stage_qualified": "Qualified", "stage_converted": "Converted", "stage_archived": "Archived",
+    "search": "Search name, email, phone",
+    "source": "Source", "allSources": "All sources", "inquiry": "Inquiry", "meetingBooking": "Meeting booking",
+    "card": "Card", "allCards": "All cards",
+    "date": "Date", "anyTime": "Any time", "last24h": "Last 24h", "last7d": "Last 7 days", "last30d": "Last 30 days",
+    "empty": "No leads here.", "new": "NEW",
+    "call": "Call", "whatsapp": "WhatsApp", "email": "Email", "aiFollowup": "AI Follow-up", "ai": "AI",
+    "emailLabel": "Email", "phone": "Phone",
+    "pipelineStage": "Pipeline stage", "meeting": "Meeting", "openInMeetings": "Open in Meetings", "activity": "Activity",
+    "channel_email": "Email", "channel_whatsapp": "WhatsApp", "channel_sms": "SMS",
+    "tone_professional": "Professional", "tone_warm": "Warm", "tone_short": "Short",
+    "generate": "AI Follow-up", "copyReview": "Copy · review before sending", "copied": "Copied",
+    "deleteLead": "Delete lead", "deleteConfirm": "Delete this lead?", "deleted": "Deleted", "deleteFailed": "Delete failed",
+    "moved": "Moved to {{stage}}", "couldNotUpdate": "Could not update", "draftReady": "Draft ready ({{provider}})", "couldNotDraft": "Could not draft",
+    "mstatus_requested": "Pending", "mstatus_time_proposed": "New Time Proposed", "mstatus_confirmed": "Confirmed", "mstatus_completed": "Completed", "mstatus_cancelled": "Cancelled", "mstatus_declined": "Declined", "mstatus_noshow": "No-show",
+    "ev_created": "Lead created", "ev_meeting_requested": "Meeting Requested", "ev_meeting_booked": "Meeting Booked", "ev_meeting_confirmed": "Meeting Confirmed", "ev_meeting_completed": "Meeting Completed", "ev_meeting_cancelled": "Meeting Cancelled", "ev_contact_exchanged": "Contact Exchanged", "ev_profile_viewed": "Profile Viewed"
+  },
+  "analytics": {
+    "title": "Analytics", "desc": "Views, scans, action taps and inquiries for this profile.",
+    "views": "Profile views", "scans": "QR scans", "taps": "Action taps", "leads": "Inquiries",
+    "tapsByAction": "Taps by action", "noActivity": "No activity recorded yet. Share the profile to start collecting data.",
+    "k_call": "Call", "k_whatsapp": "WhatsApp", "k_email": "Email", "k_meet": "Meet", "k_message": "Message", "k_book": "Book", "k_save": "Save Contact", "k_other": "Other"
+  },
   "nav": {
     "home": "Home",
     "myCard": "My Card",
@@ -304,6 +331,7 @@
     "haveAccount": "Already have an account?",
     "signInLink": "Sign in",
     "referralBanner": "🎁 You were invited — a referral discount will be applied to your plan.",
+    "referralBannerPct": "🎁 Invited with code {{code}} — you'll get {{pct}}% off your plan.",
     "genericError": "Something went wrong."
   },
   "landing": {
@@ -401,7 +429,8 @@
       "rights": "All rights reserved.",
       "stayConnected": "Stay Connected",
       "newsletter": "Get updates and tips on digital networking.",
-      "emailPlaceholder": "Enter your email"
+      "emailPlaceholder": "Enter your email",
+      "privacyChoices": "Privacy choices"
     }
   }
 }

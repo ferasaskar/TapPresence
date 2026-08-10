@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { ProfileContext } from "@/context/ProfileContext";
+import { getConsent } from "@/components/ConsentBanner";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { Loader2, Globe } from "lucide-react";
 
@@ -16,7 +17,11 @@ export default function PublicProfile() {
   const [lang, setLang] = useState(searchParams.get("lang") || localStorage.getItem(`lang_${slug}`) || "");
 
   const track = useCallback(
-    (type, key = "") => { api.post(`/cards/${slug}/track`, { type, key }).catch(() => {}); },
+    (type, key = "") => {
+      // Respect the visitor's analytics consent: skip only when explicitly rejected.
+      if (getConsent()?.analytics === false) return;
+      api.post(`/cards/${slug}/track`, { type, key }).catch(() => {});
+    },
     [slug]
   );
 

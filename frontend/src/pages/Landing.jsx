@@ -432,6 +432,7 @@ function Footer() {
             {t("landing.footer.tagline")}
           </p>
           <p className="mt-6 text-[12px] text-[#5b6068]">© {new Date().getFullYear()} ARIADNI ID. {t("landing.footer.rights")}</p>
+          <Link to="/privacy-center" data-testid="footer-privacy-choices" className="mt-2 inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">{t("landing.footer.privacyChoices")}</Link>
         </div>
         {FOOTER_GROUPS.map((g) => (
           <div key={g.title}>

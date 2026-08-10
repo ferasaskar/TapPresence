@@ -87,6 +87,33 @@
     "status_declined": "مرفوض",
     "status_noshow": "لم يحضر"
   },
+  "leads": {
+    "title": "العملاء والوارد",
+    "subtitle": "استفساراتك وجهات اتصال الحجز.",
+    "all": "الكل",
+    "stage_new": "جديد", "stage_contacted": "تم التواصل", "stage_meeting_booked": "تم حجز اجتماع", "stage_qualified": "مؤهّل", "stage_converted": "تم التحويل", "stage_archived": "مؤرشف",
+    "search": "ابحث بالاسم أو البريد أو الهاتف",
+    "source": "المصدر", "allSources": "كل المصادر", "inquiry": "استفسار", "meetingBooking": "حجز اجتماع",
+    "card": "البطاقة", "allCards": "كل البطاقات",
+    "date": "التاريخ", "anyTime": "أي وقت", "last24h": "آخر 24 ساعة", "last7d": "آخر 7 أيام", "last30d": "آخر 30 يومًا",
+    "empty": "لا عملاء هنا.", "new": "جديد",
+    "call": "اتصال", "whatsapp": "واتساب", "email": "بريد", "aiFollowup": "متابعة بالذكاء الاصطناعي", "ai": "ذكاء",
+    "emailLabel": "البريد", "phone": "الهاتف",
+    "pipelineStage": "مرحلة المسار", "meeting": "اجتماع", "openInMeetings": "فتح في الاجتماعات", "activity": "النشاط",
+    "channel_email": "بريد", "channel_whatsapp": "واتساب", "channel_sms": "رسالة نصية",
+    "tone_professional": "احترافي", "tone_warm": "ودّي", "tone_short": "قصير",
+    "generate": "متابعة بالذكاء الاصطناعي", "copyReview": "نسخ · راجع قبل الإرسال", "copied": "تم النسخ",
+    "deleteLead": "حذف العميل", "deleteConfirm": "حذف هذا العميل؟", "deleted": "تم الحذف", "deleteFailed": "فشل الحذف",
+    "moved": "نُقل إلى {{stage}}", "couldNotUpdate": "تعذّر التحديث", "draftReady": "المسودة جاهزة ({{provider}})", "couldNotDraft": "تعذّرت الصياغة",
+    "mstatus_requested": "بانتظار", "mstatus_time_proposed": "وقت جديد مقترح", "mstatus_confirmed": "مؤكد", "mstatus_completed": "مكتمل", "mstatus_cancelled": "ملغى", "mstatus_declined": "مرفوض", "mstatus_noshow": "لم يحضر",
+    "ev_created": "تم إنشاء العميل", "ev_meeting_requested": "طُلب اجتماع", "ev_meeting_booked": "تم حجز اجتماع", "ev_meeting_confirmed": "تم تأكيد الاجتماع", "ev_meeting_completed": "اكتمل الاجتماع", "ev_meeting_cancelled": "أُلغي الاجتماع", "ev_contact_exchanged": "تم تبادل جهة الاتصال", "ev_profile_viewed": "تمت مشاهدة الملف"
+  },
+  "analytics": {
+    "title": "التحليلات", "desc": "المشاهدات والمسح ونقرات الإجراءات والاستفسارات لهذا الملف.",
+    "views": "مشاهدات الملف", "scans": "مسح QR", "taps": "نقرات الإجراءات", "leads": "الاستفسارات",
+    "tapsByAction": "النقرات حسب الإجراء", "noActivity": "لا نشاط بعد. شارك الملف لبدء جمع البيانات.",
+    "k_call": "اتصال", "k_whatsapp": "واتساب", "k_email": "بريد", "k_meet": "اجتماع", "k_message": "رسالة", "k_book": "حجز", "k_save": "حفظ جهة الاتصال", "k_other": "أخرى"
+  },
   "nav": {
     "home": "الرئيسية",
     "myCard": "بطاقتي",
@@ -304,6 +331,7 @@
     "haveAccount": "لديك حساب بالفعل؟",
     "signInLink": "تسجيل الدخول",
     "referralBanner": "🎁 لقد تمت دعوتك — سيُطبَّق خصم إحالة على خطتك.",
+    "referralBannerPct": "🎁 دُعيت بالرمز {{code}} — ستحصل على خصم {{pct}}% على خطتك.",
     "genericError": "حدث خطأ ما."
   },
   "landing": {
@@ -401,7 +429,8 @@
       "rights": "جميع الحقوق محفوظة.",
       "stayConnected": "ابقَ على تواصل",
       "newsletter": "احصل على تحديثات ونصائح حول التواصل الرقمي.",
-      "emailPlaceholder": "أدخل بريدك الإلكتروني"
+      "emailPlaceholder": "أدخل بريدك الإلكتروني",
+      "privacyChoices": "خيارات الخصوصية"
     }
   }
 }
