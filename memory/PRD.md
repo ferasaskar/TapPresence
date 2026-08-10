@@ -1,5 +1,20 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## REFERRAL REWARD MODEL REPLACED (2026-06, iteration 19) — IMPLEMENTED & QA VERIFIED
+**Official model now: "Invite 5 Friends. Get 1 Month Free."** This SUPERSEDES the old percentage-based referrer reward (referrer_reward_pct / max_reward_discount_pct / per-cycle cap / overflow queue) — that model is NO LONGER the current rule and its config keys were removed from defaults + code and unset from the stored commercial_config.
+
+- **Qualification**: a referral counts ONLY when the referred user becomes a **qualified paid referral** (subscribes to a paid plan pro/team). Clicks, registration, and trials do NOT count. Attribution still uses the EXISTING referral code (`workspaces.referral_code`) and `referrals` collection — no second system.
+- **Referral lifecycle**: `_apply_referral()` at signup now creates a referral in status **`signed_up`** (no reward) and preserves the referred NEW-CUSTOMER discount. `_qualify_referral(referred_ws_id)` (called from `/billing/subscribe` for plan in pro/team) transitions it to **`qualified`** exactly once (idempotent status guard) and recomputes rewards.
+- **Reward ledger** (`_recompute_referral_rewards`): `free_months_earned = floor(qualified_count / referrals_per_reward) * reward_months`. Progress continues after each reward (7 qualified = 1 month + 2/5). Durable idempotent grant records in **`referral_reward_grants`** (unique index `referrer_ws_id+index`) — each earned free month is one grant with `redeemed:false`; ready for live-billing redemption WITHOUT rebuilding referral logic. Same referral never counted twice.
+- **PRESERVED**: the referred new-customer signup discount (`referred_discount_month_pct`/`year_pct`, default 20%). Anti-self-referral and once-per-workspace guards preserved.
+- **Super Admin configurable**: `referral.referrals_per_reward` (default 5), `referral.reward_months` (default 1), `reward_type: free_month`, via existing `/admin/commercial` + CommercialSettings.jsx (fields cfg-ref-per-reward, cfg-ref-reward-months). Note: lowering the threshold recomputes/creates new grants; raising it does not void already-earned grants (safety).
+- **`GET /api/referral` new shape**: `{enabled, code, share_url, config{referrals_per_reward, reward_months, reward_type, referred_discount_month_pct}, counts{total, signed_up, qualified}, reward{qualified_count, signed_up_count, per_reward, free_months_earned, free_months_available, progress}, referred_as}`. `get_referral` now guards against orphaned/missing workspace (404 instead of 500).
+- **Frontend Referral page**: premium progress section (5 dots, "N of 5 friends subscribed", "X more to unlock", unlocked 🎉 state, stats: total/paid/free-months/next-progress, how-it-works, signup-discount note). Existing sharing preserved (copy/native/WhatsApp/email/QR). Billing referral card shows the new model. Fully localized EN/AR/ES (`referralProgram.*`) with Arabic RTL; `taglineShort` count is config-driven in all three locales.
+- **Billing dependency (deferred)**: reward grants are recorded now; **actual monetary application of free months requires live billing activation** (still deferred, provider-neutral). No payment provider activated.
+- **QA**: backend 17/17 pytest (`/app/backend/tests/test_iter19_referral.py`) + main-agent lifecycle script (`/app/scripts/test_referral_lifecycle.py`) — signups don't count, 4/5 no reward, idempotent no double-count, 5→1 month, 6→1 month+1/5, 10→2 months, self-referral blocked, admin config change+revert, discount preserved. Frontend 100% (EN/AR/ES + RTL, sharing, QR, Billing). iteration_19.json, retest_needed=false. Pending manual user confirmation.
+
+
+
 ## P0 PRODUCTION-READINESS + REBRAND PHASE (2026-06, iteration 18) — IMPLEMENTED & QA VERIFIED
 Extended existing systems only (no rebuilds). Backend 14/14 pytest pass (iteration_18.json); frontend all P0 flows pass; the one HIGH flagged item (3 residual "ARIADNI ID" strings on Landing) was fixed + self-verified (source + live DOM clean). Pending manual user confirmation.
 

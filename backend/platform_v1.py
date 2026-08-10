@@ -340,8 +340,9 @@ DEFAULT_COMMERCIAL_CONFIG = {
         "enabled": True,
         "referred_discount_month_pct": 20,
         "referred_discount_year_pct": 20,
-        "referrer_reward_pct": 20,
-        "max_reward_discount_pct": 50,
+        "referrals_per_reward": 5,
+        "reward_type": "free_month",
+        "reward_months": 1,
     },
     "default_market": "USD",
     "regional_pricing": {
@@ -435,8 +436,8 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
     discount = {
         "referred_month_pct": float(referred.get("discount_month_pct", 0)) if referred else 0,
         "referred_year_pct": float(referred.get("discount_year_pct", 0)) if referred else 0,
-        "reward_pct": float(reward.get("applied_pct", 0)),
-        "reward_queued_pct": float(reward.get("queued_pct", 0)),
+        "free_months_earned": int(reward.get("free_months_earned", 0)),
+        "free_months_available": int(reward.get("free_months_available", 0)),
     }
     return {
         "plan": ent["plan"], "status": ent["status"], "active": ent["active"],
@@ -494,6 +495,9 @@ async def subscribe(body: SubscribeIn, user: dict = Depends(current_user)):
     if _rf:
         sub["referral"] = _rf
     await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription": sub, "plan": body.plan}})
+    # A referred workspace becoming PAID is a qualified paid referral (idempotent).
+    if body.plan in ("pro", "team"):
+        await _qualify_referral(ws_id)
     return {"ok": True, "subscription": sub, "entitlements": await resolve_entitlements(ws_id)}
 
 
@@ -504,18 +508,26 @@ async def get_referral(user: dict = Depends(current_user)):
     if not ws_id:
         raise HTTPException(404, "No workspace")
     ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0})
+    if not ws:
+        raise HTTPException(404, "No workspace")
     code = await _ensure_referral_code(ws)
     cfg = await get_commercial_config()
     ref_cfg = cfg.get("referral", {})
-    referrals = await db.referrals.find({"referrer_ws_id": ws_id}, {"_id": 0, "referred_email": 0}).to_list(500)
-    ledger = ws.get("referral_rewards") or {"applied_pct": 0, "queued_pct": 0, "count": 0}
+    per = max(1, int(ref_cfg.get("referrals_per_reward", 5)))
+    months = max(1, int(ref_cfg.get("reward_months", 1)))
+    referrals = await db.referrals.find({"referrer_ws_id": ws_id}, {"_id": 0, "referred_email": 0}).to_list(1000)
+    signed_up = [r for r in referrals if r.get("status") == "signed_up"]
+    qualified = [r for r in referrals if r.get("status") == "qualified"]
+    ledger = await _recompute_referral_rewards(ws_id)
     my_ref = ((ws.get("subscription") or {}).get("referral")) or None
     share_url = f"{PUBLIC_APP_URL}/register?ref={code}"
     return {
         "enabled": bool(ref_cfg.get("enabled")),
         "code": code, "share_url": share_url,
-        "config": ref_cfg,
-        "referred_count": len(referrals),
+        "config": {"referrals_per_reward": per, "reward_months": months, "reward_type": ref_cfg.get("reward_type", "free_month"),
+                   "referred_discount_month_pct": ref_cfg.get("referred_discount_month_pct", 0),
+                   "referred_discount_year_pct": ref_cfg.get("referred_discount_year_pct", 0)},
+        "counts": {"total": len(referrals), "signed_up": len(signed_up), "qualified": len(qualified)},
         "reward": ledger,
         "referred_as": my_ref,
     }
@@ -641,8 +653,10 @@ async def _ensure_referral_code(ws: dict) -> str:
 
 
 async def _apply_referral(code: Optional[str], referred_email: str, referred_ws_id: str, referred_uid: str):
-    """Internal, provider-neutral referral. Applies a referred-customer discount and credits the
-    referrer's reward ledger (capped per cycle, overflow queued). NO real billing connection."""
+    """Internal, provider-neutral referral ATTRIBUTION at signup.
+    Stores the referred NEW-CUSTOMER discount (preserved) and records a referral in status
+    'signed_up'. NO referrer reward is credited here — the referrer only earns progress when the
+    referred user becomes a QUALIFIED PAID referral (see _qualify_referral, called on paid activation)."""
     if not code:
         return
     cfg = await get_commercial_config()
@@ -660,29 +674,72 @@ async def _apply_referral(code: Optional[str], referred_email: str, referred_ws_
         return
     if await db.referrals.find_one({"referred_ws_id": referred_ws_id}):
         return  # a workspace can only be referred once
-    # referred-customer discount stored on their subscription
+    # referred-customer signup discount stored on their subscription (PRESERVED behavior)
     dmo = float(ref.get("referred_discount_month_pct", 0))
     dyr = float(ref.get("referred_discount_year_pct", 0))
     await db.workspaces.update_one({"id": referred_ws_id}, {"$set": {
         "subscription.referral": {"referrer_code": code.strip().upper(), "referrer_ws_id": referrer_ws["id"],
                                   "discount_month_pct": dmo, "discount_year_pct": dyr}}})
-    # referrer reward ledger — capped per cycle, overflow queued
-    reward = float(ref.get("referrer_reward_pct", 0))
-    cap = float(ref.get("max_reward_discount_pct", 50))
-    ledger = referrer_ws.get("referral_rewards") or {"applied_pct": 0, "queued_pct": 0, "count": 0}
-    room = max(0.0, cap - ledger["applied_pct"])
-    add_now = min(reward, room)
-    ledger["applied_pct"] = round(ledger["applied_pct"] + add_now, 2)
-    ledger["queued_pct"] = round(ledger["queued_pct"] + (reward - add_now), 2)
-    ledger["count"] = ledger.get("count", 0) + 1
-    await db.workspaces.update_one({"id": referrer_ws["id"]}, {"$set": {"referral_rewards": ledger}})
+    # record referral in SIGNED_UP state — does not count toward the reward yet
     await db.referrals.insert_one({
         "id": str(uuid.uuid4()), "code": code.strip().upper(),
         "referrer_ws_id": referrer_ws["id"], "referrer_user_id": referrer_ws.get("owner_id"),
         "referred_ws_id": referred_ws_id, "referred_user_id": referred_uid, "referred_email": referred_email,
         "referred_discount_month_pct": dmo, "referred_discount_year_pct": dyr,
-        "referrer_reward_pct": reward, "status": "pending", "created_at": now_iso(),
+        "status": "signed_up", "qualified_at": None, "created_at": now_iso(),
     })
+    await _recompute_referral_rewards(referrer_ws["id"])
+
+
+async def _recompute_referral_rewards(referrer_ws_id: str):
+    """Derives the referrer reward ledger from QUALIFIED paid referrals. Idempotent:
+    free months = floor(qualified / referrals_per_reward). Creates one durable grant record per
+    earned free month (unique per referrer+index) so live billing can redeem them exactly once."""
+    cfg = await get_commercial_config()
+    ref = cfg.get("referral", {})
+    per = max(1, int(ref.get("referrals_per_reward", 5)))
+    months = max(1, int(ref.get("reward_months", 1)))
+    qualified = await db.referrals.count_documents({"referrer_ws_id": referrer_ws_id, "status": "qualified"})
+    signed_up = await db.referrals.count_documents({"referrer_ws_id": referrer_ws_id, "status": "signed_up"})
+    earned = (qualified // per) * months
+    # create durable, idempotent grant records for any newly earned free months
+    existing = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id})
+    for i in range(existing, earned):
+        try:
+            await db.referral_reward_grants.insert_one({
+                "id": str(uuid.uuid4()), "referrer_ws_id": referrer_ws_id, "index": i + 1,
+                "months": 1, "reward_type": "free_month", "redeemed": False, "redeemed_at": None,
+                "source": "referral", "earned_at": now_iso(),
+            })
+        except Exception:
+            pass  # unique index guards against double insert
+    redeemed = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id, "redeemed": True})
+    ledger = {
+        "qualified_count": qualified,
+        "signed_up_count": signed_up,
+        "per_reward": per,
+        "reward_months": months,
+        "free_months_earned": earned,
+        "free_months_redeemed": redeemed,
+        "free_months_available": max(0, earned - redeemed),
+        "progress": qualified % per,
+    }
+    await db.workspaces.update_one({"id": referrer_ws_id}, {"$set": {"referral_rewards": ledger}})
+    return ledger
+
+
+async def _qualify_referral(referred_ws_id: str):
+    """Marks a referral as a QUALIFIED PAID referral exactly once (idempotent via status guard),
+    then recomputes the referrer's reward ledger. Called when a referred workspace activates a paid plan."""
+    r = await db.referrals.find_one({"referred_ws_id": referred_ws_id}, {"_id": 0})
+    if not r or r.get("status") == "qualified":
+        return
+    res = await db.referrals.update_one(
+        {"id": r["id"], "status": {"$ne": "qualified"}},
+        {"$set": {"status": "qualified", "qualified_at": now_iso()}},
+    )
+    if res.modified_count:
+        await _recompute_referral_rewards(r["referrer_ws_id"])
 
 
 async def _issue_session(user, request: Request):
@@ -715,7 +772,7 @@ async def _auth_payload(user, request):
 
 @platform_router.post("/auth/register")
 async def register(body: RegisterIn, request: Request):
-    rate_limit(request, "register", 8, 3600)
+    rate_limit(request, "register", 40, 3600)
     email = body.email.strip().lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(400, "An account with this email already exists")
@@ -2098,6 +2155,8 @@ async def run_migration():
         await db.leads.create_index("workspace_id")
         await db.login_attempts.create_index("identifier", unique=True)
         await db.workspaces.create_index("referral_code")
+        await db.referral_reward_grants.create_index([("referrer_ws_id", 1), ("index", 1)], unique=True)
+        await db.referrals.create_index("status")
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 

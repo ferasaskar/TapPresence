@@ -61,8 +61,8 @@ export default function CommercialSettings() {
           enabled: !!cfg.referral.enabled,
           referred_discount_month_pct: num(cfg.referral.referred_discount_month_pct),
           referred_discount_year_pct: num(cfg.referral.referred_discount_year_pct),
-          referrer_reward_pct: num(cfg.referral.referrer_reward_pct),
-          max_reward_discount_pct: num(cfg.referral.max_reward_discount_pct),
+          referrals_per_reward: parseInt(cfg.referral.referrals_per_reward) || 5,
+          reward_months: parseInt(cfg.referral.reward_months) || 1,
         },
         default_market: cfg.default_market,
         regional_pricing: cfg.regional_pricing,
@@ -131,8 +131,8 @@ export default function CommercialSettings() {
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Referred discount (monthly)" step="1" value={cfg.referral.referred_discount_month_pct} onChange={(v) => setPath((n) => { n.referral.referred_discount_month_pct = v; })} suffix="%" testid="cfg-ref-referred-month" />
                     <Field label="Referred discount (annual)" step="1" value={cfg.referral.referred_discount_year_pct} onChange={(v) => setPath((n) => { n.referral.referred_discount_year_pct = v; })} suffix="%" testid="cfg-ref-referred-year" />
-                    <Field label="Referrer reward" step="1" value={cfg.referral.referrer_reward_pct} onChange={(v) => setPath((n) => { n.referral.referrer_reward_pct = v; })} suffix="%" testid="cfg-ref-reward" />
-                    <Field label="Max reward / cycle" step="1" value={cfg.referral.max_reward_discount_pct} onChange={(v) => setPath((n) => { n.referral.max_reward_discount_pct = v; })} suffix="%" testid="cfg-ref-max" />
+                    <Field label="Qualified paid referrals per reward" step="1" value={cfg.referral.referrals_per_reward} onChange={(v) => setPath((n) => { n.referral.referrals_per_reward = v; })} testid="cfg-ref-per-reward" />
+                    <Field label="Free months per reward" step="1" value={cfg.referral.reward_months} onChange={(v) => setPath((n) => { n.referral.reward_months = v; })} testid="cfg-ref-reward-months" />
                   </div>
                 </div>
               </Card>

@@ -741,5 +741,34 @@
   "profileNotFound": {
     "title": "الملف غير موجود",
     "body": "هذه البطاقة غير موجودة أو لم يتم نشرها بعد."
+  },
+  "referralProgram": {
+    "tagline": "ادعُ {{count}} واحصل على {{months}} شهر مجانًا.",
+    "taglineShort": "ادعُ {{count}} أصدقاء واحصل على شهر مجانًا",
+    "subscribedOf": "{{qualified}} من {{per}} أصدقاء اشتركوا",
+    "moreToUnlock": "تبقّى {{remaining}} إحالة مدفوعة لفتح شهرك المجاني.",
+    "moreToUnlock_plural": "تبقّى {{remaining}} إحالات مدفوعة لفتح شهرك المجاني.",
+    "unlocked": "لقد حصلت على {{count}} شهر مجانًا 🎉",
+    "unlocked_plural": "لقد حصلت على {{count}} أشهر مجانًا 🎉",
+    "nextReward": "التقدّم نحو شهرك المجاني التالي",
+    "statTotal": "إجمالي الإحالات",
+    "statPaid": "الإحالات المدفوعة",
+    "statMonths": "الأشهر المجانية المكتسبة",
+    "statProgress": "نحو المكافأة التالية",
+    "progressShort": "{{qualified}}/{{per}} نحو شهر مجاني",
+    "monthsEarned": "{{count}} شهر مجاني مكتسب",
+    "monthsEarned_plural": "{{count}} أشهر مجانية مكتسبة",
+    "viewProgress": "عرض التقدّم",
+    "legendInvited": "مدعو",
+    "legendSignedUp": "سجّل",
+    "legendPaid": "مدفوع ومؤهّل",
+    "legendReward": "مكافأة مكتسبة",
+    "howTitle": "كيف يعمل",
+    "how1": "شارك رابط الإحالة أو رمز QR.",
+    "how2": "يسجّل صديقك ويشترك في خطة مدفوعة.",
+    "how3": "كل {{count}} أصدقاء مدفوعين يمنحك {{months}} شهر مجانًا.",
+    "qualifiedNote": "تُحتسب فقط إحالات الأصدقاء الذين يشتركون في خطة مدفوعة. النقرات والتسجيلات والتجارب لا تُحتسب.",
+    "pendingNote": "{{count}} سجّلوا — لم يشتركوا بعد",
+    "signupDiscount": "يحصل الأصدقاء الجدد أيضًا على خصم {{pct}}٪ على شهرهم الأول."
   }
 }

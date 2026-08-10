@@ -241,19 +241,18 @@ export default function Billing() {
                   <Zap className="mt-0.5 h-5 w-5 shrink-0 text-[#D6A653]" />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-white">{t("billing.referralTitle")}</p>
-                    <p className="mt-1 text-xs text-white/50">{t("billing.referralDesc", { referred: ref.config.referred_discount_month_pct, reward: ref.config.referrer_reward_pct, max: ref.config.max_reward_discount_pct })}</p>
+                    <p className="mt-1 text-xs text-white/50">{t("referralProgram.tagline", { count: ref.config.referrals_per_reward, months: ref.config.reward_months })}</p>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <code className="rounded-lg border border-[#D6A653]/30 bg-[#D6A653]/[0.08] px-3 py-1.5 text-sm font-medium tracking-wider text-[#D6A653]" data-testid="referral-code">{ref.code}</code>
                       <button data-testid="referral-copy" onClick={() => { navigator.clipboard.writeText(ref.share_url); toast.success(t("home.linkCopied")); }}
                         className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-white/80 transition-colors hover:border-[#D6A653]/50">{t("billing.copyLink")}</button>
-                      <span className="text-xs text-white/40" data-testid="referral-count">{t("billing.referredCount", { count: ref.referred_count })}</span>
+                      <button data-testid="referral-open" onClick={() => navigate("/referral")}
+                        className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-white/80 transition-colors hover:border-[#D6A653]/50">{t("referralProgram.viewProgress")}</button>
                     </div>
-                    {ref.reward && (ref.reward.applied_pct > 0 || ref.reward.queued_pct > 0) ? (
-                      <p className="mt-3 text-xs text-[#D6A653]" data-testid="referral-reward">
-                        {t("billing.rewardApplied", { pct: ref.reward.applied_pct })}
-                        {ref.reward.queued_pct > 0 ? ` · ${t("billing.rewardQueued", { pct: ref.reward.queued_pct })}` : ""}
-                      </p>
-                    ) : null}
+                    <p className="mt-3 text-xs text-[#D6A653]" data-testid="referral-reward">
+                      {t("referralProgram.progressShort", { qualified: ref.reward?.progress || 0, per: ref.config.referrals_per_reward })}
+                      {ref.reward?.free_months_earned > 0 ? ` · ${t("referralProgram.monthsEarned", { count: ref.reward.free_months_earned })}` : ""}
+                    </p>
                     {data.discount && (data.discount.referred_month_pct > 0) ? (
                       <p className="mt-2 text-xs text-white/55" data-testid="referral-referred-discount">{t("billing.referredYou", { pct: data.discount.referred_month_pct })}</p>
                     ) : null}

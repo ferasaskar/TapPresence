@@ -741,5 +741,34 @@
   "profileNotFound": {
     "title": "Perfil no encontrado",
     "body": "Esta tarjeta no existe o aún no se ha publicado."
+  },
+  "referralProgram": {
+    "tagline": "Invita a {{count}}. Consigue {{months}} mes gratis.",
+    "taglineShort": "Invita a {{count}} amigos y obtén 1 mes gratis.",
+    "subscribedOf": "{{qualified}} de {{per}} amigos suscritos",
+    "moreToUnlock": "{{remaining}} referido de pago más para desbloquear tu mes gratis.",
+    "moreToUnlock_plural": "{{remaining}} referidos de pago más para desbloquear tu mes gratis.",
+    "unlocked": "Has desbloqueado {{count}} mes gratis 🎉",
+    "unlocked_plural": "Has desbloqueado {{count}} meses gratis 🎉",
+    "nextReward": "Progreso hacia tu próximo mes gratis",
+    "statTotal": "Referidos totales",
+    "statPaid": "Referidos de pago",
+    "statMonths": "Meses gratis ganados",
+    "statProgress": "Hacia la próxima recompensa",
+    "progressShort": "{{qualified}}/{{per}} para un mes gratis",
+    "monthsEarned": "{{count}} mes gratis ganado",
+    "monthsEarned_plural": "{{count}} meses gratis ganados",
+    "viewProgress": "Ver progreso",
+    "legendInvited": "Invitado",
+    "legendSignedUp": "Registrado",
+    "legendPaid": "De pago y cualificado",
+    "legendReward": "Recompensa ganada",
+    "howTitle": "Cómo funciona",
+    "how1": "Comparte tu enlace de referido o QR.",
+    "how2": "Tu amigo se registra y se suscribe a un plan de pago.",
+    "how3": "Cada {{count}} amigos de pago te dan {{months}} mes gratis.",
+    "qualifiedNote": "Solo cuentan los amigos que se suscriben a un plan de pago. Los clics, registros y pruebas no cuentan.",
+    "pendingNote": "{{count}} registrados — aún no suscritos",
+    "signupDiscount": "Los nuevos amigos también obtienen un {{pct}}% de descuento en su primer mes."
   }
 }

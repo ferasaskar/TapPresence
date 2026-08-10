@@ -741,5 +741,34 @@
   "profileNotFound": {
     "title": "Profile not found",
     "body": "This card doesn't exist or hasn't been published yet."
+  },
+  "referralProgram": {
+    "tagline": "Invite {{count}}. Get {{months}} Month Free.",
+    "taglineShort": "Invite {{count}}. Get 1 Month Free.",
+    "subscribedOf": "{{qualified}} of {{per}} friends subscribed",
+    "moreToUnlock": "{{remaining}} more paid referral to unlock your free month.",
+    "moreToUnlock_plural": "{{remaining}} more paid referrals to unlock your free month.",
+    "unlocked": "You unlocked {{count}} month free 🎉",
+    "unlocked_plural": "You unlocked {{count}} months free 🎉",
+    "nextReward": "Progress toward your next free month",
+    "statTotal": "Total referrals",
+    "statPaid": "Paid referrals",
+    "statMonths": "Free months earned",
+    "statProgress": "To next reward",
+    "progressShort": "{{qualified}}/{{per}} to next free month",
+    "monthsEarned": "{{count}} free month earned",
+    "monthsEarned_plural": "{{count}} free months earned",
+    "viewProgress": "View progress",
+    "legendInvited": "Invited",
+    "legendSignedUp": "Signed up",
+    "legendPaid": "Paid & qualified",
+    "legendReward": "Reward earned",
+    "howTitle": "How it works",
+    "how1": "Share your referral link or QR.",
+    "how2": "Your friend signs up and subscribes to a paid plan.",
+    "how3": "Every {{count}} paid friends earns you {{months}} month free.",
+    "qualifiedNote": "Only friends who subscribe to a paid plan count toward your reward. Clicks, sign-ups and trials don't count.",
+    "pendingNote": "{{count}} signed up — not subscribed yet",
+    "signupDiscount": "New friends also get {{pct}}% off their first month."
   }
 }
