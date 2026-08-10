@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
+import { useLocale } from "@/i18n/useLocale";
 
 // Shared blank card. New cards default to the premium dark base (hidden from
 // customers); existing cards keep their own templateId when edited.
@@ -40,6 +41,7 @@ const panelCls = "rounded-xl border border-white/10 bg-white/[0.02] p-4";
 const tabTrigger = "rounded-lg px-3.5 py-2 text-sm text-white/55 transition-all data-[state=active]:bg-[#D6A653] data-[state=active]:text-[#050607] data-[state=active]:font-medium hover:text-white";
 
 export default function CardInfoTabs({ form, setForm, showIndustry = true, cardId }) {
+  const { t } = useLocale();
   const set = (path, value) => {
     setForm((f) => {
       const next = { ...f };
@@ -58,26 +60,26 @@ export default function CardInfoTabs({ form, setForm, showIndustry = true, cardI
   return (
     <Tabs defaultValue="identity">
       <TabsList className="flex h-auto flex-wrap gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1.5">
-        <TabsTrigger value="identity" className={tabTrigger}>Identity</TabsTrigger>
-        {showIndustry && <TabsTrigger value="industry" className={tabTrigger} data-testid="tab-industry">Industry</TabsTrigger>}
-        <TabsTrigger value="contact" className={tabTrigger}>Contact</TabsTrigger>
-        <TabsTrigger value="social" className={tabTrigger}>Social</TabsTrigger>
-        <TabsTrigger value="services" className={tabTrigger}>Services</TabsTrigger>
-        <TabsTrigger value="projects" className={tabTrigger}>Projects</TabsTrigger>
-        <TabsTrigger value="booking" className={tabTrigger}>Booking</TabsTrigger>
+        <TabsTrigger value="identity" className={tabTrigger}>{t("createCard.tab_identity")}</TabsTrigger>
+        {showIndustry && <TabsTrigger value="industry" className={tabTrigger} data-testid="tab-industry">{t("createCard.tab_industry")}</TabsTrigger>}
+        <TabsTrigger value="contact" className={tabTrigger}>{t("createCard.tab_contact")}</TabsTrigger>
+        <TabsTrigger value="social" className={tabTrigger}>{t("createCard.tab_social")}</TabsTrigger>
+        <TabsTrigger value="services" className={tabTrigger}>{t("createCard.tab_services")}</TabsTrigger>
+        <TabsTrigger value="projects" className={tabTrigger}>{t("createCard.tab_projects")}</TabsTrigger>
+        <TabsTrigger value="booking" className={tabTrigger}>{t("createCard.tab_booking")}</TabsTrigger>
       </TabsList>
 
       <TabsContent value="identity" className="space-y-4 pt-5">
         <ProfilePhotoField id={form.identity} set={set} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Full name"><Input value={form.identity.fullName} onChange={(e) => set("identity.fullName", e.target.value)} data-testid="editor-fullname" /></Field>
-          <Field label="Job title"><Input value={form.identity.jobTitle} onChange={(e) => set("identity.jobTitle", e.target.value)} /></Field>
-          <Field label="Company"><Input value={form.identity.company} onChange={(e) => set("identity.company", e.target.value)} /></Field>
-          <Field label="Availability badge"><Input value={form.identity.availabilityBadge} onChange={(e) => set("identity.availabilityBadge", e.target.value)} placeholder="Available for Work" /></Field>
-          <Field label="City"><Input value={form.identity.city} onChange={(e) => set("identity.city", e.target.value)} /></Field>
-          <Field label="Country"><Input value={form.identity.country} onChange={(e) => set("identity.country", e.target.value)} /></Field>
+          <Field label={t("createCard.f_fullName")}><Input value={form.identity.fullName} onChange={(e) => set("identity.fullName", e.target.value)} data-testid="editor-fullname" /></Field>
+          <Field label={t("createCard.f_jobTitle")}><Input value={form.identity.jobTitle} onChange={(e) => set("identity.jobTitle", e.target.value)} /></Field>
+          <Field label={t("createCard.f_company")}><Input value={form.identity.company} onChange={(e) => set("identity.company", e.target.value)} /></Field>
+          <Field label={t("createCard.f_availabilityBadge")}><Input value={form.identity.availabilityBadge} onChange={(e) => set("identity.availabilityBadge", e.target.value)} placeholder={t("createCard.f_availabilityPlaceholder")} /></Field>
+          <Field label={t("createCard.f_city")}><Input value={form.identity.city} onChange={(e) => set("identity.city", e.target.value)} /></Field>
+          <Field label={t("createCard.f_country")}><Input value={form.identity.country} onChange={(e) => set("identity.country", e.target.value)} /></Field>
         </div>
-        <Field label="Bio"><Textarea value={form.identity.bio} onChange={(e) => set("identity.bio", e.target.value)} rows={3} /></Field>
+        <Field label={t("createCard.f_bio")}><Textarea value={form.identity.bio} onChange={(e) => set("identity.bio", e.target.value)} rows={3} /></Field>
       </TabsContent>
 
       {showIndustry && (
@@ -88,7 +90,7 @@ export default function CardInfoTabs({ form, setForm, showIndustry = true, cardI
 
       <TabsContent value="contact" className="space-y-3 pt-5">
         {["phone", "whatsapp", "email", "website", "address", "mapsUrl"].map((k) => (
-          <Field key={k} label={k}><Input value={form.contact[k]} onChange={(e) => set(`contact.${k}`, e.target.value)} data-testid={`editor-contact-${k}`} /></Field>
+          <Field key={k} label={t(`createCard.c_${k}`)}><Input value={form.contact[k]} onChange={(e) => set(`contact.${k}`, e.target.value)} data-testid={`editor-contact-${k}`} /></Field>
         ))}
       </TabsContent>
 
@@ -102,36 +104,36 @@ export default function CardInfoTabs({ form, setForm, showIndustry = true, cardI
         {form.services.map((s, i) => (
           <div key={i} className={`${panelCls} space-y-3`} data-testid={`editor-service-${i}`}>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-white/50">Service {i + 1}</span>
+              <span className="text-xs font-medium text-white/50">{t("createCard.serviceN", { n: i + 1 })}</span>
               <button onClick={() => delService(i)} className="text-red-400/80 hover:text-red-400" data-testid={`del-service-${i}`}><Trash2 className="h-4 w-4" /></button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Icon (lucide name)"><Input value={s.icon} onChange={(e) => setService(i, "icon", e.target.value)} placeholder="Building2" /></Field>
-              <Field label="Title"><Input value={s.title} onChange={(e) => setService(i, "title", e.target.value)} /></Field>
+              <Field label={t("createCard.iconLabel")}><Input value={s.icon} onChange={(e) => setService(i, "icon", e.target.value)} placeholder="Building2" /></Field>
+              <Field label={t("createCard.s_title")}><Input value={s.title} onChange={(e) => setService(i, "title", e.target.value)} /></Field>
             </div>
-            <Field label="Description"><Textarea value={s.description} onChange={(e) => setService(i, "description", e.target.value)} rows={2} /></Field>
+            <Field label={t("createCard.s_description")}><Textarea value={s.description} onChange={(e) => setService(i, "description", e.target.value)} rows={2} /></Field>
           </div>
         ))}
-        <Button onClick={addService} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="add-service"><Plus className="mr-1 h-4 w-4" /> Add service</Button>
+        <Button onClick={addService} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="add-service"><Plus className="mr-1 h-4 w-4" /> {t("createCard.addService")}</Button>
       </TabsContent>
 
       <TabsContent value="projects" className="space-y-4 pt-5">
         {form.projects.map((p, i) => (
           <div key={i} className={`${panelCls} space-y-3`} data-testid={`editor-project-${i}`}>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-white/50">Project {i + 1}</span>
+              <span className="text-xs font-medium text-white/50">{t("createCard.projectN", { n: i + 1 })}</span>
               <button onClick={() => delProject(i)} className="text-red-400/80 hover:text-red-400" data-testid={`del-project-${i}`}><Trash2 className="h-4 w-4" /></button>
             </div>
-            <ImageUploadField label="Cover image" value={p.coverImage} onChange={(v) => setProject(i, "coverImage", v)} testId={`upload-project-${i}`} />
+            <ImageUploadField label={t("createCard.p_coverImage")} value={p.coverImage} onChange={(v) => setProject(i, "coverImage", v)} testId={`upload-project-${i}`} />
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Name"><Input value={p.name} onChange={(e) => setProject(i, "name", e.target.value)} /></Field>
-              <Field label="Category"><Input value={p.category} onChange={(e) => setProject(i, "category", e.target.value)} /></Field>
+              <Field label={t("createCard.p_name")}><Input value={p.name} onChange={(e) => setProject(i, "name", e.target.value)} /></Field>
+              <Field label={t("createCard.p_category")}><Input value={p.category} onChange={(e) => setProject(i, "category", e.target.value)} /></Field>
             </div>
-            <Field label="Description"><Input value={p.description} onChange={(e) => setProject(i, "description", e.target.value)} /></Field>
-            <Field label="Link URL"><Input value={p.url} onChange={(e) => setProject(i, "url", e.target.value)} /></Field>
+            <Field label={t("createCard.p_description")}><Input value={p.description} onChange={(e) => setProject(i, "description", e.target.value)} /></Field>
+            <Field label={t("createCard.p_linkUrl")}><Input value={p.url} onChange={(e) => setProject(i, "url", e.target.value)} /></Field>
           </div>
         ))}
-        <Button onClick={addProject} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="add-project"><Plus className="mr-1 h-4 w-4" /> Add project</Button>
+        <Button onClick={addProject} className="rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5" data-testid="add-project"><Plus className="mr-1 h-4 w-4" /> {t("createCard.addProject")}</Button>
       </TabsContent>
 
       <TabsContent value="booking" className="space-y-3 pt-5">

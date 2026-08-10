@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, qrUrl } from "@/lib/api";
+import { useLocale } from "@/i18n/useLocale";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { IndustryCard } from "@/components/landing/IndustryCard";
 import { INDUSTRY_CARDS } from "@/lib/industryCards";
@@ -20,13 +21,14 @@ const AriadniMark = ({ className = "" }) => (
 );
 
 const STEPS = [
-  { n: 1, label: "Choose Your Industry" },
-  { n: 2, label: "Customize Your Style" },
-  { n: 3, label: "Your Information" },
+  { n: 1, key: "step_industry" },
+  { n: 2, key: "step_style" },
+  { n: 3, key: "step_info" },
 ];
 
 export default function CreateCard() {
   const navigate = useNavigate();
+  const { t } = useLocale();
   const [form, setForm] = useState(() => ({ ...emptyCard }));
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -57,7 +59,7 @@ export default function CreateCard() {
 
   const save = async (publish) => {
     const name = form.identity.fullName?.trim();
-    if (!name) { toast.error("Add your full name first"); setStep(3); return; }
+    if (!name) { toast.error(t("createCard.addNameFirst")); setStep(3); return; }
     const slug = (form.slug.trim() || name).toLowerCase().replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-");
     setSaving(true);
     try {
@@ -65,11 +67,11 @@ export default function CreateCard() {
       if (publish) {
         setPublished({ slug, name });
       } else {
-        toast.success("Draft saved");
+        toast.success(t("createCard.draftSaved"));
         navigate("/admin");
       }
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Could not save card");
+      toast.error(err.response?.data?.detail || t("createCard.couldNotSaveCard"));
     } finally { setSaving(false); }
   };
 
@@ -85,21 +87,21 @@ export default function CreateCard() {
           <span className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full" style={{ background: "rgba(214,166,83,0.14)", boxShadow: "0 0 30px rgba(214,166,83,0.3)" }}>
             <PartyPopper className="h-7 w-7 text-[#D6A653]" />
           </span>
-          <h1 className="text-3xl font-light tracking-tight">You're live</h1>
-          <p className="mt-2 text-sm text-white/55">{published.name ? `${published.name}'s ` : "Your "}card is published and ready to share.</p>
+          <h1 className="text-3xl font-light tracking-tight">{t("createCard.youreLive")}</h1>
+          <p className="mt-2 text-sm text-white/55">{published.name ? t("createCard.liveSubNamed", { name: published.name }) : t("createCard.liveSubYours")}</p>
           <div className="mx-auto mt-6 w-fit rounded-2xl border border-white/10 bg-white p-3">
             <img src={qrUrl(published.slug)} alt="QR code" className="h-40 w-40 rounded" data-testid="publish-qr" />
           </div>
           <div className="mt-5 flex items-center gap-2 rounded-full border border-white/12 bg-black/30 px-4 py-2.5 text-sm">
             <span className="truncate text-white/70" data-testid="publish-link">{link}</span>
-            <button onClick={() => { navigator.clipboard.writeText(link); toast.success("Link copied"); }} className="ml-auto shrink-0 text-[#D6A653] hover:text-[#E8B764]" data-testid="publish-copy"><Copy className="h-4 w-4" /></button>
+            <button onClick={() => { navigator.clipboard.writeText(link); toast.success(t("createCard.linkCopied")); }} className="ml-auto shrink-0 text-[#D6A653] hover:text-[#E8B764]" data-testid="publish-copy"><Copy className="h-4 w-4" /></button>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3">
             <a href={`/${published.slug}`} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 rounded-full border border-white/15 py-3 text-sm text-white transition-colors hover:bg-white/5" data-testid="publish-view">
-              View card <ExternalLink className="h-3.5 w-3.5" />
+              {t("createCard.viewCard")} <ExternalLink className="h-3.5 w-3.5" />
             </a>
             <button onClick={() => navigate("/admin")} className="rounded-full bg-[#D6A653] py-3 text-sm font-medium text-[#050607] transition-all hover:bg-[#E8B764]" data-testid="publish-dashboard">
-              Go to dashboard
+              {t("createCard.goDashboard")}
             </button>
           </div>
         </div>
@@ -115,18 +117,18 @@ export default function CreateCard() {
       <header className="sticky top-0 z-40 border-b border-white/8 bg-[#050607]/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-4 sm:px-8">
           <button onClick={() => navigate("/admin")} className="flex items-center gap-2 text-sm text-white/60 transition-colors hover:text-white" data-testid="create-back">
-            <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Card Manager</span>
+            <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">{t("createCard.back")}</span>
           </button>
           <div className="hidden items-center gap-2.5 md:flex">
             <AriadniMark className="h-5 w-5 text-[#D6A653]" />
-            <span className="text-[15px] font-medium">Create Your Card</span>
+            <span className="text-[15px] font-medium">{t("createCard.headerTitle")}</span>
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={() => save(false)} disabled={saving || !industryChosen} className="rounded-full border border-white/15 bg-transparent px-3 text-white hover:bg-white/5 sm:px-4" data-testid="save-draft-button">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Draft"}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("createCard.saveDraft")}
             </Button>
             <Button onClick={() => save(true)} disabled={saving || !industryChosen} className="rounded-full bg-[#D6A653] px-3 font-medium text-[#050607] transition-all hover:bg-[#E8B764] hover:shadow-[0_0_18px_rgba(214,166,83,0.35)] active:scale-95 sm:px-4" data-testid="publish-button">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publish Card"}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("createCard.publish")}
             </Button>
           </div>
         </div>
@@ -144,7 +146,7 @@ export default function CreateCard() {
                 className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-all ${active ? "border-[#D6A653] bg-[#D6A653]/12 text-white" : done ? "border-[#D6A653]/30 text-[#D6A653]" : "border-white/12 text-white/45"} ${disabled ? "cursor-not-allowed opacity-40" : "hover:border-white/30"}`}
                 data-testid={`step-${s.n}`}>
                 <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${active || done ? "bg-[#D6A653] text-[#050607]" : "bg-white/10 text-white/60"}`}>{done ? <Check className="h-3 w-3" /> : s.n}</span>
-                {s.label}
+                {t(`createCard.${s.key}`)}
                 {i < STEPS.length - 1 && <ArrowRight className="ml-1 hidden h-3.5 w-3.5 text-white/25 sm:block" />}
               </button>
             );
@@ -156,9 +158,9 @@ export default function CreateCard() {
           <div>
             {step === 1 && (
               <div>
-                <h1 className="text-3xl font-light tracking-tight text-white">Create Your Card</h1>
-                <p className="mt-2 text-white/55">Choose your industry and personalize your professional identity.</p>
-                <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">Choose Your Industry</p>
+                <h1 className="text-3xl font-light tracking-tight text-white">{t("createCard.step1Title")}</h1>
+                <p className="mt-2 text-white/55">{t("createCard.step1Sub")}</p>
+                <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">{t("createCard.chooseIndustry")}</p>
                 <div className="mt-5 grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 xl:grid-cols-3">
                   {INDUSTRY_CARDS.map((c) => (
                     <button key={c.id} onClick={() => pickIndustry(c.id)} className="group text-left focus:outline-none" data-testid={`choose-industry-${c.id}`}>
@@ -173,32 +175,32 @@ export default function CreateCard() {
 
             {step === 2 && (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">Customize Your Style</p>
-                <h2 className="mt-2 text-2xl font-light tracking-tight text-white">Make it yours</h2>
-                <p className="mt-1 text-sm text-white/50">Adjust the accent, background and atmosphere — the preview updates instantly.</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">{t("createCard.step2Eyebrow")}</p>
+                <h2 className="mt-2 text-2xl font-light tracking-tight text-white">{t("createCard.step2Title")}</h2>
+                <p className="mt-1 text-sm text-white/50">{t("createCard.step2Sub")}</p>
                 <div className="mt-6">
                   <IndustryCustomizer form={form} set={set} />
                 </div>
                 <div className="mt-6 flex items-center justify-between">
-                  <Button onClick={() => setStep(1)} className="rounded-full border border-white/15 bg-transparent text-white hover:bg-white/5"><ArrowLeft className="mr-1 h-4 w-4" /> Industry</Button>
-                  <Button onClick={() => setStep(3)} className="rounded-full bg-[#D6A653] font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="to-information">Continue <ArrowRight className="ml-1 h-4 w-4" /></Button>
+                  <Button onClick={() => setStep(1)} className="rounded-full border border-white/15 bg-transparent text-white hover:bg-white/5"><ArrowLeft className="mr-1 h-4 w-4" /> {t("createCard.industryBtn")}</Button>
+                  <Button onClick={() => setStep(3)} className="rounded-full bg-[#D6A653] font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="to-information">{t("createCard.continue")} <ArrowRight className="ml-1 h-4 w-4" /></Button>
                 </div>
               </div>
             )}
 
             {step === 3 && (
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">Your Information</p>
-                <h2 className="mt-2 text-2xl font-light tracking-tight text-white">Fill in your details</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">{t("createCard.step3Eyebrow")}</p>
+                <h2 className="mt-2 text-2xl font-light tracking-tight text-white">{t("createCard.step3Title")}</h2>
                 <div className="mt-5 mb-4 max-w-xs">
-                  <Label className="text-xs text-white/55">Card link (slug)</Label>
-                  <Input value={form.slug} onChange={(e) => set("slug", e.target.value)} placeholder="auto from your name" data-testid="editor-slug" />
+                  <Label className="text-xs text-white/55">{t("createCard.cardLink")}</Label>
+                  <Input value={form.slug} onChange={(e) => set("slug", e.target.value)} placeholder={t("createCard.slugPlaceholder")} data-testid="editor-slug" />
                 </div>
                 <CardInfoTabs form={form} setForm={setForm} showIndustry={false} />
                 <div className="mt-6 flex items-center justify-between">
-                  <Button onClick={() => setStep(2)} className="rounded-full border border-white/15 bg-transparent text-white hover:bg-white/5"><ArrowLeft className="mr-1 h-4 w-4" /> Style</Button>
+                  <Button onClick={() => setStep(2)} className="rounded-full border border-white/15 bg-transparent text-white hover:bg-white/5"><ArrowLeft className="mr-1 h-4 w-4" /> {t("createCard.styleBtn")}</Button>
                   <Button onClick={() => save(true)} disabled={saving} className="rounded-full bg-[#D6A653] font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="publish-button-bottom">
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Preview & Publish"}
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t("createCard.previewPublish")}
                   </Button>
                 </div>
               </div>
@@ -207,7 +209,7 @@ export default function CreateCard() {
 
           {/* persistent live preview */}
           <div className="h-fit lg:sticky lg:top-24">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">Live Preview</p>
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D6A653]">{t("createCard.livePreview")}</p>
             <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-[2.2rem] border-[6px] border-[#141518] bg-[#050607] shadow-[0_30px_80px_rgba(0,0,0,0.6)] ring-1 ring-white/10">
               <div className="overflow-y-auto" style={{ height: "72vh" }} data-testid="create-preview">
                 <TemplateRenderer data={form} />

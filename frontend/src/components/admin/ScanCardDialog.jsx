@@ -73,7 +73,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
       setCamActive(true);
       setTimeout(() => { if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play?.(); } }, 50);
     } catch (e) {
-      setCamError("Camera unavailable — upload a photo instead.");
+      setCamError(t("scan.cameraUnavailable"));
     }
   };
 
@@ -107,27 +107,27 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
     setScanning(true);
     try {
       const { data } = await api.post("/scan/card", { image_base64: image, source });
-      if (data.configured === false) { toast.error(data.message || "Scanning not configured"); return; }
+      if (data.configured === false) { toast.error(data.message || t("scan.notConfigured")); return; }
       setDraft({ ...EMPTY, ...data.draft });
       setStep("review");
-      toast.success("Card read — review the details below");
+      toast.success(t("scan.cardRead"));
     } catch (err) {
-      const msg = err?.response?.data?.detail || "Could not read the card. Try a clearer photo.";
+      const msg = err?.response?.data?.detail || t("scan.couldNotRead");
       toast.error(msg);
     } finally { setScanning(false); }
   };
 
   const save = async () => {
-    if (!draft.name.trim()) { toast.error("A name is required"); return; }
-    if (!cardSlug) { toast.error("Pick which card this lead belongs to"); return; }
+    if (!draft.name.trim()) { toast.error(t("scan.nameRequired")); return; }
+    if (!cardSlug) { toast.error(t("scan.pickCard")); return; }
     setSaving(true);
     try {
       await api.post("/scan/confirm", { ...draft, cardSlug, source });
-      toast.success("Lead saved to your inbox");
+      toast.success(t("scan.leadSaved"));
       onSaved?.();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Could not save lead");
+      toast.error(err?.response?.data?.detail || t("scan.couldNotSave"));
     } finally { setSaving(false); }
   };
 
@@ -145,9 +145,9 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
       <DialogContent className="aria-dark max-h-[90vh] max-w-lg overflow-y-auto border-white/10 bg-[#0A0B0D] text-white" data-testid="scan-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-white">
-            <ScanLine className="h-5 w-5 text-[#D6A653]" /> Scan a card
+            <ScanLine className="h-5 w-5 text-[#D6A653]" /> {t("scan.title")}
           </DialogTitle>
-          <DialogDescription className="text-white/50">Capture or upload a business card or event badge, review the details, then save it as a lead.</DialogDescription>
+          <DialogDescription className="text-white/50">{t("scan.desc")}</DialogDescription>
         </DialogHeader>
 
         {sc ? (
@@ -171,8 +171,8 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
               <Select value={source} onValueChange={setSource}>
                 <SelectTrigger className="h-9 text-sm" data-testid="scan-source"><SelectValue /></SelectTrigger>
                 <SelectContent className="aria-pop">
-                  <SelectItem value="business_card_scan">Business card</SelectItem>
-                  <SelectItem value="badge_scan">Event badge</SelectItem>
+                  <SelectItem value="business_card_scan">{t("scan.sourceBusiness")}</SelectItem>
+                  <SelectItem value="badge_scan">{t("scan.sourceBadge")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -183,63 +183,63 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
               ) : camActive ? (
                 <video ref={videoRef} playsInline muted className="h-full w-full object-cover" data-testid="scan-camera" />
               ) : (
-                <div className="p-6 text-center text-sm text-white/50">{camError || "Point your camera at the card"}</div>
+                <div className="p-6 text-center text-sm text-white/50">{camError || t("scan.cameraPrompt")}</div>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               {image ? (
                 <Button onClick={() => { setImage(""); startCam(); }} className={ghostBtn} data-testid="scan-retake">
-                  <RefreshCw className="mr-1 h-4 w-4" /> Retake
+                  <RefreshCw className="mr-1 h-4 w-4" /> {t("scan.retake")}
                 </Button>
               ) : camActive ? (
                 <Button onClick={capturePhoto} className={goldBtn} data-testid="scan-capture">
-                  <Camera className="mr-1 h-4 w-4" /> Capture
+                  <Camera className="mr-1 h-4 w-4" /> {t("scan.capture")}
                 </Button>
               ) : (
                 <Button onClick={startCam} className={ghostBtn} data-testid="scan-start-camera">
-                  <Camera className="mr-1 h-4 w-4" /> Camera
+                  <Camera className="mr-1 h-4 w-4" /> {t("scan.camera")}
                 </Button>
               )}
               <Button onClick={() => fileRef.current?.click()} className={ghostBtn} data-testid="scan-upload">
-                <Upload className="mr-1 h-4 w-4" /> Upload
+                <Upload className="mr-1 h-4 w-4" /> {t("scan.upload")}
               </Button>
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFile} data-testid="scan-file-input" />
             </div>
 
             <Button className={`w-full ${goldBtn}`} disabled={!image || scanning} onClick={runScan} data-testid="scan-run">
-              {scanning ? <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Reading…</> : <><ScanLine className="mr-1 h-4 w-4" /> Scan card</>}
+              {scanning ? <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> {t("scan.reading")}</> : <><ScanLine className="mr-1 h-4 w-4" /> {t("scan.scanCard")}</>}
             </Button>
           </div>
         )}
 
         {step === "review" && (
           <div className="space-y-3">
-            <p className="text-xs text-white/50">Review &amp; edit the extracted details, then save. Nothing is saved until you confirm.</p>
-            {field("name", "Full name")}
+            <p className="text-xs text-white/50">{t("scan.reviewIntro")}</p>
+            {field("name", t("scan.fFullName"))}
             <div className="grid grid-cols-2 gap-3">
-              {field("title", "Job title")}
-              {field("company", "Company")}
+              {field("title", t("scan.fJobTitle"))}
+              {field("company", t("scan.fCompany"))}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {field("email", "Email")}
-              {field("phone", "Phone")}
+              {field("email", t("scan.fEmail"))}
+              {field("phone", t("scan.fPhone"))}
             </div>
-            {field("website", "Website")}
-            {field("address", "Address")}
+            {field("website", t("scan.fWebsite"))}
+            {field("address", t("scan.fAddress"))}
             <div className="grid grid-cols-2 gap-3">
-              {field("city", "City")}
-              {field("country", "Country")}
+              {field("city", t("scan.fCity"))}
+              {field("country", t("scan.fCountry"))}
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-white/55">Notes</Label>
+              <Label className="text-xs text-white/55">{t("scan.fNotes")}</Label>
               <Textarea rows={2} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} data-testid="scan-field-notes" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs text-white/55">Save to card</Label>
+                <Label className="text-xs text-white/55">{t("scan.saveToCard")}</Label>
                 <Select value={cardSlug} onValueChange={setCardSlug}>
-                  <SelectTrigger className="h-9 text-sm" data-testid="scan-target-card"><SelectValue placeholder="Select a card" /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm" data-testid="scan-target-card"><SelectValue placeholder={t("scan.selectCard")} /></SelectTrigger>
                   <SelectContent className="aria-pop">
                     {scannableCards.map((c) => (
                       <SelectItem key={c.slug} value={c.slug}>{c.identity?.fullName || c.slug} (/{c.slug})</SelectItem>
@@ -248,7 +248,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-white/55">Language</Label>
+                <Label className="text-xs text-white/55">{t("scan.language")}</Label>
                 <Select value={draft.language} onValueChange={(v) => setDraft((d) => ({ ...d, language: v }))}>
                   <SelectTrigger className="h-9 text-sm" data-testid="scan-language"><SelectValue /></SelectTrigger>
                   <SelectContent className="aria-pop">
@@ -261,10 +261,10 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
             </div>
             <div className="flex gap-2 pt-1">
               <Button className={`flex-1 ${ghostBtn}`} onClick={() => { setStep("capture"); setImage(""); startCam(); }} data-testid="scan-back">
-                <RefreshCw className="mr-1 h-4 w-4" /> Rescan
+                <RefreshCw className="mr-1 h-4 w-4" /> {t("scan.rescan")}
               </Button>
               <Button className={`flex-1 ${goldBtn}`} disabled={saving} onClick={save} data-testid="scan-save">
-                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />} Save lead
+                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />} {t("scan.saveLead")}
               </Button>
             </div>
           </div>

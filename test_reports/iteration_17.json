@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 17 — Full regression for i18n (EN/AR/ES + RTL), analytics consent gating, referral registration banner, and localized 'Privacy choices' footer link. ALL CRITICAL CHECKS PASS. (1) Login admin@ariadni.id/Ariadni@2026 -> /dashboard OK. (2) Localization verified for Leads, CreateCard /templates, ScanCardDialog body, AnalyticsDialog: EN body, AR body with document dir=rtl and Arabic characters and 0px horizontal overflow, ES body — all bodies switch. Sample: Scan EN 'Scan a card ... Unlimited scans on your plan / Business card / Capture / Upload / Scan card', Scan AR 'مسح بطاقة ... مسح غير محدود في خطتك / بطاقة عمل / التقاط / رفع / مسح البطاقة', Scan ES 'Escanear una tarjeta ... Escaneos ilimitados en tu plan / Tarjeta de visita / Capturar / Subir / Escanear tarjeta'. Analytics AR shows 'التحليلات · Feras Askar / مشاهدات الملف / مسح QR / نقرات الإجراءات / الاستفسارات / النقرات حسب الإجراء'. CreateCard AR shows 'مدير البطاقات / أنشئ بطاقتك / حفظ كمسودة / نشر البطاقة / اختر مجالك / خصّص أسلوبك / معلوماتك'. (3) Analytics consent gate on /feras-askar public card via observed network: tp_consent analytics=false -> 0 POST /api/cards/feras-askar/track calls fired; analytics=true -> 4 POSTs fired (view + scan on ?src=qr); no tp_consent (default) -> 2 POSTs fired. Semantics correct: block only when EXPLICITLY rejected. (4) Referral banner on /register?ref=A9EB29F9 fetches /api/commercial/pricing and shows '🎁 Invited with code A9EB29F9 — you'll get 20% off your plan.' with data-testid=register-referral-banner; hides on /register with no ref param. (5) Localized 'Privacy choices' footer link data-testid=footer-privacy-choices renders EN='Privacy choices', navigates to /privacy-center; page renders with LanguageSwitcher and consent-toggle-analytics + consent-save. (6) Privacy Center saves choice into localStorage tp_consent (verified {analytics:true} and {analytics:false} both persist). (7) Public /feras-askar card renders QR + Exchange Contact CTA. (8) Language/currency independence: setting tp_market=EUR then changing ariadni_lang from en to ar preserves tp_market=EUR after reload. (9) Backend endpoints verified 200: /api/commercial/pricing (referral.enabled=true, referred_discount_month_pct=20), /api/cards/feras-askar, POST /api/cards/feras-askar/track, /api/referral/qr?code=A9EB29F9 image/png. No regressions found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ScanCardDialog (AR/ES)", "issues": ["Footer 'Close' word (Radix DialogClose sr-only text or explicit Close button) remains in English inside Arabic and Spanish scan dialog bodies. Cosmetic — everything else in the dialog fully localized."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_commercial_core.py"],
+  "action_items": [
+    "OPTIONAL/COSMETIC: Localize the trailing 'Close' text visible at the bottom of ScanCardDialog (and confirm same for other dialogs) — replace with t('common.close') or equivalent so AR/ES do not leak the English word."
+  ],
+  "critical_code_review_comments": [
+    "PublicProfile.track() correctly uses getConsent()?.analytics === false as the ONLY block condition — default ON semantics preserved. Good.",
+    "Register.jsx fetches /api/commercial/pricing on every mount when refCode present; consider caching in sessionStorage to avoid re-fetch on lang switch reloads (minor perf).",
+    "ConsentBanner + PrivacyCenter both call detectMarket() on every render — memoize at module scope (carried over from iter16).",
+    "platform_v1.py still >700 lines — split recommendation carried over.",
+    "createCard.* namespace is well factored; industry template preview cards (Alex Morgan / Michael Anderson / Jessica Taylor 'Real Estate Consultant', 'Call/Email/WhatsApp/Save/Exchange Contact/Tap your card') are hard-coded EN sample data inside the industry preview grid, NOT localized. Acceptable as demo/sample content, but if intended to be user-visible in AR/ES it should be moved to locales."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (pricing, public card, track, referral QR)", "frontend": "100% (localization EN/AR/ES on Leads, CreateCard, Scan, Analytics; RTL dir + 0px overflow; consent gate 3 states; referral banner with & without ref; footer privacy link; lang/market independence)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026",
+  "seed_data_creation": "None. No qa_ users created (read-only + consent localStorage toggles).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login redirects to /dashboard (NOT /admin). Leads route is /leads (not /admin/leads). CreateCard studio is /templates. Scan dialog opens via [data-testid=nav-scan] on /dashboard. Analytics dialog trigger has data-testid containing 'analytics' on /dashboard (2 present) and /admin. Language key = 'ariadni_lang' (legacy), manual override flag = 'tp_lang_manual', market key = 'tp_market', consent key = 'tp_consent' with shape {necessary,analytics,ts,v}. Consent gate for public tracking checks getConsent()?.analytics === false STRICTLY — default (null/absent) still fires tracking. Track endpoint POST /api/cards/{slug}/track. Referral pricing: /api/commercial/pricing returns referral.referred_discount_month_pct=20. Public slug feras-askar published.",
+  "rca of the issue": "N/A — no bugs found."
+}
