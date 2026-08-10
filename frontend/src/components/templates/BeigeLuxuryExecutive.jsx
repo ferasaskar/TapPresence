@@ -197,7 +197,7 @@ export const BeigeLuxuryExecutive = ({ data }) => {
             itemClassName="flex items-center justify-center w-10 h-10 rounded-full border border-ivory-border text-ink-soft transition-colors duration-300 hover:border-[color:var(--ac)] hover:text-[color:var(--ac)]"
           />
           <p className="mt-8 text-[11px] tracking-[0.2em] uppercase text-ink-soft/60">
-            © {new Date().getFullYear()} {id.fullName} · ARIADNI ID
+            © {new Date().getFullYear()} {id.fullName} · TapPresence
           </p>
         </footer>
       </div>

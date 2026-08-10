@@ -673,5 +673,73 @@
     "ed_slugRequired": "El slug es obligatorio",
     "ed_cardSaved": "Tarjeta guardada",
     "ed_saveFailed": "Error al guardar"
+  },
+  "legal": {
+    "privacyTitle": "Política de privacidad",
+    "termsTitle": "Términos del servicio",
+    "notFound": "No encontrado",
+    "placeholderBadge": "Contenido provisional — pendiente de revisión legal",
+    "backHome": "Volver a TapPresence",
+    "privacyBody": "Este es contenido provisional de la Política de privacidad de TapPresence. El texto legal final aprobado se insertará aquí antes del lanzamiento comercial. Describirá qué datos recopilamos (información de perfil, contactos que recibes, eventos de analítica), cómo se usan, los plazos de retención y tus derechos a exportar o eliminar tus datos.",
+    "termsBody": "Este es contenido provisional de los Términos del servicio de TapPresence. El texto legal final aprobado se insertará aquí antes del lanzamiento comercial. Cubrirá el uso aceptable, las suscripciones y facturación, el hardware NFC y la cancelación de la cuenta.",
+    "sections": "Secciones",
+    "dataRights": "Tus derechos sobre los datos",
+    "dataRightsBody": "Puedes exportar o eliminar los datos de tu cuenta en cualquier momento desde Ajustes → Datos y privacidad."
+  },
+  "exchange": {
+    "title": "Intercambiar contacto",
+    "detailsShared": "Datos compartidos",
+    "willBeInTouch": "se pondrá en contacto. Guarda su contacto abajo.",
+    "willBeInTouchGeneric": "Se pondrán en contacto. Guarda su contacto abajo.",
+    "saveContact": "Guardar contacto de {{name}}",
+    "saveContactGeneric": "Guardar contacto",
+    "shareToConnect": "Comparte tus datos para conectar.",
+    "shareToConnectWith": "Comparte tus datos para conectar con {{name}}.",
+    "fullName": "Tu nombre completo",
+    "email": "Correo",
+    "phoneOptional": "Teléfono (opcional)",
+    "messageOptional": "Mensaje (opcional)",
+    "cta": "Intercambiar contacto",
+    "required": "Se requiere nombre y correo o teléfono",
+    "failed": "No se pudo intercambiar"
+  },
+  "qr": {
+    "scanToView": "Escanear para ver"
+  },
+  "share": {
+    "whatsapp": "WhatsApp",
+    "email": "Correo",
+    "shareCard": "Compartir",
+    "native": "Compartir",
+    "emailSubject": "Únete a mí en TapPresence",
+    "emailBody": "Crea tu identidad profesional digital con TapPresence: {{url}}",
+    "cardEmailSubject": "Mi tarjeta digital",
+    "cardEmailBody": "Aquí está mi tarjeta digital de TapPresence: {{url}}",
+    "copied": "Enlace copiado",
+    "cardShareText": "Mira mi tarjeta de TapPresence"
+  },
+  "dataRights": {
+    "section": "Datos y privacidad",
+    "exportTitle": "Exportar mis datos",
+    "exportDesc": "Descarga una copia de tu cuenta, tarjetas y contactos como archivo JSON.",
+    "exportBtn": "Exportar datos",
+    "exporting": "Preparando…",
+    "exported": "Tus datos se han descargado",
+    "deleteTitle": "Eliminar mi cuenta",
+    "deleteDesc": "Elimina permanentemente tu cuenta y los espacios de trabajo que posees, incluidas sus tarjetas, contactos, analítica y notificaciones. Los datos de equipo de otros se conservan. Esto no se puede deshacer.",
+    "deleteBtn": "Eliminar cuenta",
+    "confirmTitle": "¿Eliminar tu cuenta?",
+    "confirmBody": "Esto elimina permanentemente tu cuenta y todo lo que hay en los espacios que posees: tarjetas, contactos, analítica, reuniones y notificaciones. Se conservan los datos de equipo de otros miembros. Esta acción no se puede deshacer.",
+    "confirmPrompt": "Escribe DELETE para confirmar",
+    "confirmWord": "DELETE",
+    "cancel": "Cancelar",
+    "confirmBtn": "Eliminar permanentemente",
+    "deleting": "Eliminando…",
+    "deleted": "Tu cuenta ha sido eliminada",
+    "deleteFailed": "No se pudo eliminar la cuenta"
+  },
+  "profileNotFound": {
+    "title": "Perfil no encontrado",
+    "body": "Esta tarjeta no existe o aún no se ha publicado."
   }
 }

@@ -50,7 +50,7 @@ export default function Register() {
       <div className="aria-gold-radial pointer-events-none absolute inset-0" />
       <div className="absolute right-4 top-4 z-10"><LanguageSwitcher /></div>
       <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
-        <Link to="/" className="text-lg font-semibold tracking-tight text-white">ARIADNI <span className="text-[#D6A653]">ID</span></Link>
+        <Link to="/" className="text-lg font-semibold tracking-tight text-white">TapPresence</Link>
         <h1 className="mt-6 text-2xl font-medium tracking-tight text-white">{t("auth.createTitle")}</h1>
         <p className="mt-1 text-sm text-white/50">{sub}</p>
         <form onSubmit={submit} className="mt-7 space-y-4">

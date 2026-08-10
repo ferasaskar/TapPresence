@@ -63,7 +63,7 @@ export default function PricingSection() {
       { name: "Pro Monthly", price: pricing.pro_month }, { name: "Pro Annual", price: pricing.pro_year },
       { name: "Team Seat Monthly", price: pricing.team_seat_month }, { name: "Team Seat Annual", price: pricing.team_seat_year },
     ].map((o) => ({ "@type": "Offer", name: o.name, price: o.price, priceCurrency: pricing.market }));
-    return { "@context": "https://schema.org", "@type": "Product", name: "TapPresence (ARIADNI ID)", description: "Digital business cards, NFC, AI follow-up and analytics.", offers };
+    return { "@context": "https://schema.org", "@type": "Product", name: "TapPresence", description: "Digital business cards, NFC, AI follow-up and analytics.", offers };
   }, [data, pricing]);
 
   if (!data) return null;

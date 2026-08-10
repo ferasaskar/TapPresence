@@ -15,9 +15,7 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Copy, ExternalLink, PartyPopper 
 import { toast } from "sonner";
 
 const AriadniMark = ({ className = "" }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
-    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
-  </svg>
+  <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} />
 );
 
 const STEPS = [

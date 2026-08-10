@@ -1,4 +1,4 @@
-// ARIADNI ID — ONE master industry-card system.
+// TapPresence — ONE master industry-card system.
 // Every industry renders in the SAME card structure (frame, logo, portrait,
 // text hierarchy, 4 circular actions, Exchange Contact, "Tap your card", label).
 // Only the background mood, accent color, industry icon and content change.

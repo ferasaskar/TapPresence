@@ -115,3 +115,6 @@ code {
 .aria-pop { background:#0A0B0D; border:1px solid rgba(255,255,255,0.1); color:#fff; }
 .aria-pop [role="option"] { color: rgba(255,255,255,0.82); }
 .aria-pop [role="option"][data-highlighted], .aria-pop [role="option"]:hover { background: rgba(214,166,83,0.14); color:#fff; }
+
+/* TapPresence brand: Arabic (RTL) uses Tajawal per brand identity */
+html[dir="rtl"], html[dir="rtl"] body { font-family: 'Tajawal', 'Outfit', sans-serif; }

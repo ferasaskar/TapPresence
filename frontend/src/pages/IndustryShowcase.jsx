@@ -8,9 +8,7 @@ import { ASSETS } from "@/components/landing/data";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
 const AriadniMark = ({ className = "" }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
-    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
-  </svg>
+  <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} />
 );
 
 const DEMO = {
@@ -59,7 +57,7 @@ export default function IndustryShowcase() {
       <header className="sticky top-0 z-40 border-b border-white/8 bg-[#050607]/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4 sm:px-8">
           <Link to="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight" data-testid="showcase-home">
-            <AriadniMark className="h-5 w-5 text-[#D6A653]" /> ARIADNI <span className="text-[#D6A653]">ID</span>
+            <AriadniMark className="h-5 w-5 text-[#D6A653]" /> TapPresence
           </Link>
           <div className="flex items-center gap-3">
             <Link to="/admin" className="hidden text-sm text-neutral-300 hover:text-white sm:inline">Dashboard</Link>

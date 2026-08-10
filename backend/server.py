@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -260,10 +260,17 @@ class TrackIn(BaseModel):
 
 @api_router.post("/auth/login")
 async def login(body: LoginIn, request: Request):
+    rate_limit(request, "login", 30, 300)
     email = body.email.strip().lower()
+    ip = client_ip(request)
+    locked_until = await login_locked(email, ip)
+    if locked_until:
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Please try again in a few minutes.")
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(body.password, user["password_hash"]):
+        await record_login_fail(email, ip)
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    await clear_login_fails(email, ip)
     return await _auth_payload(user, request)
 
 
@@ -357,9 +364,14 @@ async def get_public_card(slug: str, lang: str = None):
 
 @api_router.get("/cards/{slug}/vcard")
 async def get_vcard(slug: str):
-    card = await db.digital_cards.find_one({"slug": slug}, {"_id": 0})
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
+    wsid = card.get("workspace_id")
+    if wsid:
+        ent = await resolve_entitlements(wsid)
+        if not ent.get("active"):
+            raise HTTPException(status_code=410, detail="This card is currently inactive.")
     idn = card.get("identity", {})
     ct = card.get("contact", {})
     name = idn.get("fullName", "")
@@ -1357,12 +1369,15 @@ async def startup():
 app.include_router(api_router)
 app.include_router(platform_router)
 
+_cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o.strip()]
+_cors_wildcard = _cors_origins == ['*']
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=not _cors_wildcard,
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Retry-After"],
 )
 
 

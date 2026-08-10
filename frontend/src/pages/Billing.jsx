@@ -84,7 +84,7 @@ export default function Billing() {
         id: "pro", name: "Pro", icon: Crown, popular: true, tagline: "For professionals",
         price: fmtMoney(sym, proPrice), unit: yr ? "/year" : "/month",
         save: yr ? `Save ${pricing.pro_annual_savings_pct}%` : null,
-        features: ["Up to 3 cards", "Full analytics (12 months)", "100 AI follow-ups / month", "50 card scans / month", "Remove ARIADNI branding", "Digital wallet passes"],
+        features: ["Up to 3 cards", "Full analytics (12 months)", "100 AI follow-ups / month", "50 card scans / month", "Remove TapPresence branding", "Digital wallet passes"],
       },
       {
         id: "team", name: "Team", icon: Users, tagline: `Min ${team.min_seats} seats`,

@@ -239,6 +239,80 @@ async def enforce_quota(user: dict, ws_id: str, metric: str):
     return ent, period
 
 
+# ------------------------------------------------------------------ abuse protection (rate limiting + login lockout)
+_RL_BUCKETS: dict = {}
+
+
+def client_ip(request) -> str:
+    xff = request.headers.get("x-forwarded-for", "") if request else ""
+    if xff:
+        return xff.split(",")[0].strip()
+    return (request.client.host if (request and request.client) else "unknown")
+
+
+def rate_limit(request, bucket: str, limit: int, window_sec: int):
+    """Lightweight in-memory sliding-window per-IP limiter. Raises 429 with Retry-After.
+    Additive abuse protection; does not touch auth/session architecture."""
+    import time
+    ip = client_ip(request)
+    key = f"{bucket}:{ip}"
+    now = time.time()
+    hits = [t for t in _RL_BUCKETS.get(key, []) if now - t < window_sec]
+    if len(hits) >= limit:
+        retry = int(window_sec - (now - hits[0])) + 1
+        raise HTTPException(429, "Too many requests. Please slow down and try again shortly.",
+                            headers={"Retry-After": str(max(1, retry))})
+    hits.append(now)
+    _RL_BUCKETS[key] = hits
+
+
+LOGIN_MAX_FAILS = 5
+LOGIN_LOCK_MIN = 15
+
+
+async def login_locked(email: str, ip: str):
+    rec = await db.login_attempts.find_one({"identifier": f"{ip}:{email}"}, {"_id": 0})
+    if rec and rec.get("fails", 0) >= LOGIN_MAX_FAILS and (rec.get("locked_until") or "") > now_iso():
+        return rec.get("locked_until")
+    return None
+
+
+async def record_login_fail(email: str, ip: str):
+    ident = f"{ip}:{email}"
+    rec = await db.login_attempts.find_one({"identifier": ident}, {"_id": 0}) or {"fails": 0}
+    fails = rec.get("fails", 0) + 1
+    upd = {"identifier": ident, "fails": fails, "updated_at": now_iso()}
+    if fails >= LOGIN_MAX_FAILS:
+        upd["locked_until"] = (datetime.now(timezone.utc) + timedelta(minutes=LOGIN_LOCK_MIN)).isoformat()
+    await db.login_attempts.update_one({"identifier": ident}, {"$set": upd}, upsert=True)
+    logger.warning(f"[security] failed login #{fails} for {email} from {ip}")
+
+
+async def clear_login_fails(email: str, ip: str):
+    await db.login_attempts.delete_one({"identifier": f"{ip}:{email}"})
+
+
+# ------------------------------------------------------------------ Team-tier plan gating (uses existing entitlement engine)
+async def require_team(user: dict, wid: str):
+    if user.get("role") == "SUPER_ADMIN":
+        return
+    ent = await resolve_entitlements(wid)
+    if not ent.get("team"):
+        raise HTTPException(402, "Team features require a Team plan. Upgrade to add members, import, or lock company branding.")
+
+
+async def enforce_seat_limit(user: dict, wid: str):
+    if user.get("role") == "SUPER_ADMIN":
+        return
+    ent = await resolve_entitlements(wid)
+    seats = ent.get("seats") or 0
+    if seats:
+        active = await db.memberships.count_documents({"workspace_id": wid, "status": {"$ne": "deactivated"}})
+        if active >= seats:
+            raise HTTPException(402, f"You've used all {seats} seat(s) on your plan. Add seats to invite more members.")
+
+
+
 # ------------------------------------------------------------------ Commercial Core: billing (provider-neutral — NO real payment)
 # Legacy static fallback (kept for safety); the authoritative source is the DB-backed commercial_config.
 PRICES = {
@@ -508,6 +582,18 @@ async def get_config():
         "languages": ["en", "ar", "es"],
     }
 
+
+@platform_router.get("/health")
+async def health():
+    """Lightweight production health probe. Never exposes secrets or connection strings."""
+    db_ok = True
+    try:
+        await db.command("ping")
+    except Exception:
+        db_ok = False
+    status = "ok" if db_ok else "degraded"
+    return {"status": status, "db": db_ok, "time": now_iso()}
+
 # ------------------------------------------------------------------ auth models
 class RegisterIn(BaseModel):
     email: EmailStr
@@ -629,6 +715,7 @@ async def _auth_payload(user, request):
 
 @platform_router.post("/auth/register")
 async def register(body: RegisterIn, request: Request):
+    rate_limit(request, "register", 8, 3600)
     email = body.email.strip().lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(400, "An account with this email already exists")
@@ -712,7 +799,8 @@ async def refresh(body: RefreshIn, request: Request):
 
 
 @platform_router.post("/auth/forgot-password")
-async def forgot(body: ForgotIn):
+async def forgot(body: ForgotIn, request: Request):
+    rate_limit(request, "forgot", 6, 3600)
     email = body.email.strip().lower()
     user = await db.users.find_one({"email": email})
     if user:
@@ -727,7 +815,8 @@ async def forgot(body: ForgotIn):
 
 
 @platform_router.post("/auth/reset-password")
-async def reset(body: ResetIn):
+async def reset(body: ResetIn, request: Request):
+    rate_limit(request, "reset", 10, 3600)
     rec = await db.password_resets.find_one({"token": body.token, "used": False})
     if not rec or rec["expires_at"] < now_iso():
         raise HTTPException(400, "Invalid or expired reset token")
@@ -765,13 +854,38 @@ async def logout(body: RefreshIn):
 
 @platform_router.delete("/account")
 async def delete_account(user: dict = Depends(current_user)):
-    ws_ids = [m["workspace_id"] for m in await memberships_for(user["id"])]
-    await db.digital_cards.delete_many({"workspace_id": {"$in": ws_ids}})
-    await db.memberships.delete_many({"user_id": user["id"]})
-    await db.workspaces.delete_many({"id": {"$in": ws_ids}, "owner_id": user["id"]})
-    await db.sessions.delete_many({"user_id": user["id"]})
-    await db.users.delete_one({"id": user["id"]})
-    return {"ok": True}
+    """Irreversibly delete the account. Deletes workspaces the user OWNS and all their data
+    (cards, leads, analytics, notifications, meetings, referrals, usage, api-keys, webhooks).
+    For workspaces merely SHARED with the user, only their membership is removed — other
+    members' data is preserved. Cross-member data is never deleted here."""
+    uid = user["id"]
+    all_ms = await memberships_for(uid)
+    all_ws_ids = [m["workspace_id"] for m in all_ms]
+    owned = await db.workspaces.find({"id": {"$in": all_ws_ids}, "owner_id": uid}, {"_id": 0, "id": 1}).to_list(1000)
+    owned_ws_ids = [w["id"] for w in owned]
+    if owned_ws_ids:
+        owned_cards = await db.digital_cards.find({"workspace_id": {"$in": owned_ws_ids}}, {"_id": 0, "slug": 1}).to_list(5000)
+        slugs = [c["slug"] for c in owned_cards if c.get("slug")]
+        await db.leads.delete_many({"$or": [{"workspace_id": {"$in": owned_ws_ids}}, {"cardSlug": {"$in": slugs}}]})
+        if slugs:
+            await db.analytics_events.delete_many({"cardSlug": {"$in": slugs}})
+        await db.notifications.delete_many({"workspace_id": {"$in": owned_ws_ids}})
+        await db.meetings.delete_many({"workspace_id": {"$in": owned_ws_ids}})
+        await db.digital_cards.delete_many({"workspace_id": {"$in": owned_ws_ids}})
+        await db.referrals.delete_many({"$or": [{"referrer_ws_id": {"$in": owned_ws_ids}}, {"referred_ws_id": {"$in": owned_ws_ids}}]})
+        await db.api_keys.delete_many({"workspace_id": {"$in": owned_ws_ids}})
+        await db.webhooks.delete_many({"workspace_id": {"$in": owned_ws_ids}})
+        await db.memberships.delete_many({"workspace_id": {"$in": owned_ws_ids}})
+        await db.workspaces.delete_many({"id": {"$in": owned_ws_ids}})
+    # remove only THIS user's membership from any shared workspaces (preserve others' data)
+    await db.memberships.delete_many({"user_id": uid})
+    await db.usage_counters.delete_many({"subject_id": uid})
+    await db.ai_usage.delete_many({"user_id": uid})
+    await db.sessions.delete_many({"user_id": uid})
+    await db.email_verifications.delete_many({"user_id": uid})
+    await db.password_resets.delete_many({"user_id": uid})
+    await db.users.delete_one({"id": uid})
+    return {"ok": True, "deleted_workspaces": len(owned_ws_ids)}
 
 
 @platform_router.get("/account/export")
@@ -1010,7 +1124,7 @@ async def card_wallet_pass(slug: str, platform: str):
     contact = card.get("contact", {})
     # Neutral pass payload the provider adapter would sign/issue when configured.
     pass_data = {
-        "organizationName": ident.get("company") or "ARIADNI ID",
+        "organizationName": ident.get("company") or "TapPresence",
         "description": f"{ident.get('fullName', '')} — {ident.get('jobTitle', '')}".strip(" —"),
         "name": ident.get("fullName", ""), "title": ident.get("jobTitle", ""),
         "company": ident.get("company", ""), "phone": contact.get("phone", ""),
@@ -1359,10 +1473,11 @@ def _draft_followup(b: FollowupIn) -> str:
 
 
 @platform_router.post("/ai/followup")
-async def ai_followup(body: FollowupIn, user: dict = Depends(current_user)):
+async def ai_followup(body: FollowupIn, request: Request, user: dict = Depends(current_user)):
     """Drafts a follow-up. User must review + send (AI never auto-sends).
     Uses the configured LLM (Emergent universal key) with a deterministic
     multilingual template as a guaranteed fallback."""
+    rate_limit(request, "ai", 20, 60)
     _ms = await memberships_for(user["id"])
     _ws_id = _ms[0]["workspace_id"] if _ms else None
     _ent, _period = await enforce_quota(user, _ws_id, "ai")
@@ -1445,9 +1560,10 @@ def _parse_scan_json(raw: str) -> dict:
 
 
 @platform_router.post("/scan/card")
-async def scan_card(body: ScanIn, user: dict = Depends(current_user)):
+async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current_user)):
     """OCR a business card / event badge into a STRUCTURED DRAFT. Never creates a lead.
     The user must review + confirm the draft via /scan/confirm to persist a CRM lead."""
+    rate_limit(request, "scan", 15, 60)
     _ms = await memberships_for(user["id"])
     _ws_id = _ms[0]["workspace_id"] if _ms else None
     _ent, _period = await enforce_quota(user, _ws_id, "scanner")
@@ -1680,6 +1796,7 @@ async def integration_hub(wid: str, user: dict = Depends(current_user)):
 @platform_router.post("/workspaces/{wid}/api-keys")
 async def create_api_key(wid: str, body: ApiKeyIn, user: dict = Depends(current_user)):
     await require_ws_admin(user, wid)
+    await require_team(user, wid)
     raw = "tpk_" + _secrets.token_urlsafe(32)
     prefix = raw[:12]
     doc = {"id": str(uuid.uuid4()), "workspace_id": wid, "name": body.name or "API key",
@@ -1699,6 +1816,7 @@ async def revoke_api_key(wid: str, key_id: str, user: dict = Depends(current_use
 @platform_router.post("/workspaces/{wid}/webhooks")
 async def create_webhook(wid: str, body: WebhookIn, user: dict = Depends(current_user)):
     await require_ws_admin(user, wid)
+    await require_team(user, wid)
     if not body.url.startswith("http"):
         raise HTTPException(400, "Invalid URL")
     bad = [e for e in body.events if e not in WEBHOOK_EVENTS]
@@ -1800,6 +1918,8 @@ async def _create_member(wid: str, email: str, name: str, role: str):
 @platform_router.post("/workspaces/{wid}/members")
 async def invite_member(wid: str, body: MemberIn, user: dict = Depends(current_user)):
     await require_ws_admin(user, wid)
+    await require_team(user, wid)
+    await enforce_seat_limit(user, wid)
     u, created = await _create_member(wid, body.email, body.name, body.role)
     await db.notifications.insert_one({"id": str(uuid.uuid4()), "workspace_id": wid, "type": "team_invite",
                                        "scope": "workspace_admin",
@@ -1811,6 +1931,7 @@ async def invite_member(wid: str, body: MemberIn, user: dict = Depends(current_u
 @platform_router.patch("/workspaces/{wid}/members/{uid}")
 async def update_member(wid: str, uid: str, body: dict, user: dict = Depends(current_user)):
     await require_ws_admin(user, wid)
+    await require_team(user, wid)
     upd = {}
     if body.get("role") in WS_ROLES:
         upd["role"] = body["role"]
@@ -1837,6 +1958,7 @@ async def remove_member(wid: str, uid: str, user: dict = Depends(current_user)):
 @platform_router.put("/workspaces/{wid}/branding")
 async def set_branding(wid: str, body: BrandingIn, user: dict = Depends(current_user)):
     await require_ws_admin(user, wid)
+    await require_team(user, wid)
     await db.workspaces.update_one({"id": wid}, {"$set": {"branding": body.branding, "locked_fields": body.locked_fields}})
     await audit(wid, user["id"], "team.branding", {"locked": body.locked_fields})
     return await db.workspaces.find_one({"id": wid}, {"_id": 0})
@@ -1850,6 +1972,7 @@ class ImportIn(BaseModel):
 @platform_router.post("/workspaces/{wid}/import")
 async def import_members(wid: str, body: ImportIn, user: dict = Depends(current_user)):
     await require_ws_admin(user, wid)
+    await require_team(user, wid)
     ws = await db.workspaces.find_one({"id": wid}, {"_id": 0})
     branding = (ws or {}).get("branding", {})
     reader = csv.DictReader(io.StringIO(body.csv.strip()))
@@ -1861,6 +1984,7 @@ async def import_members(wid: str, body: ImportIn, user: dict = Depends(current_
             continue
         u, is_new = await _create_member(wid, email, row.get("name", ""), row.get("role", "MEMBER"))
         if is_new:
+            await enforce_seat_limit(user, wid)
             created_users += 1
         if body.create_cards:
             base = (row.get("name") or email.split("@")[0]).lower().replace(" ", "-")
@@ -1965,6 +2089,15 @@ async def run_migration():
         await db.leads.create_index("cardSlug")
         await db.analytics_events.create_index([("cardSlug", 1), ("type", 1)])
         await db.campaigns.create_index([("workspace_id", 1), ("code", 1)])
+        # Phase 5 — indexes justified by actual query patterns (audit)
+        await db.referrals.create_index("referrer_ws_id")
+        await db.referrals.create_index("referred_ws_id")
+        await db.usage_counters.create_index([("subject_id", 1), ("metric", 1), ("period", 1)])
+        await db.notifications.create_index([("workspace_id", 1), ("created_at", -1)])
+        await db.idempotency_keys.create_index([("key", 1), ("scope", 1)], unique=True)
+        await db.leads.create_index("workspace_id")
+        await db.login_attempts.create_index("identifier", unique=True)
+        await db.workspaces.create_index("referral_code")
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 

@@ -55,7 +55,7 @@ export const TEMPLATES = [
 ];
 
 export const TESTIMONIALS = [
-  { quote: "ARIADNI ID has completely changed how we network. It's professional, modern and incredibly powerful.",
+  { quote: "TapPresence has completely changed how we network. It's professional, modern and incredibly powerful.",
     name: "Sarah Johnson", role: "Marketing Director", company: "Google", img: ASSETS.avSarah },
   { quote: "The NFC card quality is amazing and the AI follow-up saves us hours every week.",
     name: "Michael Chen", role: "CEO", company: "TechFlow", img: ASSETS.avMichael },

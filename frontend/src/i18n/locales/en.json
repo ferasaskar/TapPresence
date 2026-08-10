@@ -673,5 +673,73 @@
     "ed_slugRequired": "Slug is required",
     "ed_cardSaved": "Card saved",
     "ed_saveFailed": "Save failed"
+  },
+  "legal": {
+    "privacyTitle": "Privacy Policy",
+    "termsTitle": "Terms of Service",
+    "notFound": "Not found",
+    "placeholderBadge": "Placeholder — pending legal review",
+    "backHome": "Back to TapPresence",
+    "privacyBody": "This is placeholder Privacy Policy content for TapPresence. Final approved legal language will be inserted here before commercial launch. It will describe what data we collect (profile info, leads you receive, analytics events), how it is used, retention periods, and your rights to export or delete your data.",
+    "termsBody": "This is placeholder Terms of Service content for TapPresence. Final approved legal language will be inserted here before commercial launch. It will cover acceptable use, subscriptions and billing, NFC hardware, and account termination.",
+    "sections": "Sections",
+    "dataRights": "Your data rights",
+    "dataRightsBody": "You can export or delete your account data at any time from Settings → Data & privacy."
+  },
+  "exchange": {
+    "title": "Exchange Contact",
+    "detailsShared": "Details shared",
+    "willBeInTouch": "will be in touch. Save their contact below.",
+    "willBeInTouchGeneric": "They will be in touch. Save their contact below.",
+    "saveContact": "Save {{name}}'s contact",
+    "saveContactGeneric": "Save contact",
+    "shareToConnect": "Share your details to connect.",
+    "shareToConnectWith": "Share your details to connect with {{name}}.",
+    "fullName": "Your full name",
+    "email": "Email",
+    "phoneOptional": "Phone (optional)",
+    "messageOptional": "Message (optional)",
+    "cta": "Exchange Contact",
+    "required": "Name and email or phone required",
+    "failed": "Could not exchange"
+  },
+  "qr": {
+    "scanToView": "Scan to view"
+  },
+  "share": {
+    "whatsapp": "WhatsApp",
+    "email": "Email",
+    "shareCard": "Share",
+    "native": "Share",
+    "emailSubject": "Join me on TapPresence",
+    "emailBody": "Create your professional digital identity with TapPresence: {{url}}",
+    "cardEmailSubject": "My digital card",
+    "cardEmailBody": "Here is my TapPresence digital card: {{url}}",
+    "copied": "Link copied",
+    "cardShareText": "Check out my TapPresence card"
+  },
+  "dataRights": {
+    "section": "Data & privacy",
+    "exportTitle": "Export my data",
+    "exportDesc": "Download a copy of your account, cards and leads as a JSON file.",
+    "exportBtn": "Export data",
+    "exporting": "Preparing…",
+    "exported": "Your data has been downloaded",
+    "deleteTitle": "Delete my account",
+    "deleteDesc": "Permanently delete your account and the workspaces you own, including their cards, leads, analytics and notifications. Shared team data owned by others is preserved. This cannot be undone.",
+    "deleteBtn": "Delete account",
+    "confirmTitle": "Delete your account?",
+    "confirmBody": "This permanently deletes your account and everything in the workspaces you own — cards, leads, analytics, meetings and notifications. Team data owned by other members is kept. This action cannot be undone.",
+    "confirmPrompt": "Type DELETE to confirm",
+    "confirmWord": "DELETE",
+    "cancel": "Cancel",
+    "confirmBtn": "Delete permanently",
+    "deleting": "Deleting…",
+    "deleted": "Your account has been deleted",
+    "deleteFailed": "Could not delete account"
+  },
+  "profileNotFound": {
+    "title": "Profile not found",
+    "body": "This card doesn't exist or hasn't been published yet."
   }
 }

@@ -6,9 +6,7 @@ import { ASSETS } from "./data";
 import GoldWaveCanvas from "./GoldWaveCanvas";
 
 const AriadniMark = ({ className = "", style }) => (
-  <svg viewBox="0 0 24 24" className={className} style={style} fill="none" aria-hidden>
-    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
-  </svg>
+  <img src="/tp-mark.png" alt="TapPresence" style={style} className={`object-contain ${className}`} />
 );
 
 const QuickAction = ({ icon: Icon, label }) => (
@@ -58,14 +56,14 @@ export default function HeroVisual() {
               <div className="flex flex-1 flex-col items-center justify-center pl-16">
                 <AriadniMark className="h-14 w-14 text-[#D6A653]" style={{ filter: "drop-shadow(0 4px 14px rgba(214,166,83,0.35))" }} />
                 <div className="mt-1 flex items-center gap-1.5">
-                  <span className="lp-gold-text text-xl font-semibold tracking-tight">ARIADNI</span>
+                  <span className="lp-gold-text text-xl font-semibold tracking-tight">TapPresence</span>
                   <span className="text-xl font-semibold tracking-tight text-neutral-200">ID</span>
                 </div>
               </div>
               <div className="flex items-end justify-between">
                 <span className="text-[9px] tracking-[0.25em] text-neutral-600">DIGITAL IDENTITY</span>
                 <div className="rounded-md bg-white p-1">
-                  <img src={qrUrl("feras-askar")} alt="Scan ARIADNI profile" className="h-12 w-12" style={{ filter: "sepia(1) saturate(2.2) hue-rotate(2deg) brightness(0.82)" }} />
+                  <img src={qrUrl("feras-askar")} alt="Scan TapPresence profile" className="h-12 w-12" style={{ filter: "sepia(1) saturate(2.2) hue-rotate(2deg) brightness(0.82)" }} />
                 </div>
               </div>
             </div>
@@ -83,14 +81,14 @@ export default function HeroVisual() {
                 <div className="flex h-full flex-col items-center px-5 pt-10">
                   <div className="flex items-center gap-1.5">
                     <AriadniMark className="h-4 w-4 text-[#D6A653]" />
-                    <span className="text-[11px] font-semibold tracking-wide text-neutral-200">ARIADNI <span className="text-[#D6A653]">ID</span></span>
+                    <span className="text-[11px] font-semibold tracking-wide text-neutral-200">TapPresence</span>
                   </div>
                   <div className="mt-6 h-[92px] w-[92px] overflow-hidden rounded-full ring-2 ring-[#D6A653]/40">
                     <img src={ASSETS.heroPortrait} alt="Alex Morgan" className="h-full w-full object-cover" />
                   </div>
                   <h3 className="mt-3 text-[17px] font-semibold text-white">Alex Morgan</h3>
                   <p className="text-[11px] text-neutral-400">CEO &amp; Founder</p>
-                  <p className="text-[10px] tracking-[0.2em] text-[#D6A653]">ARIADNI ID</p>
+                  <p className="text-[10px] tracking-[0.2em] text-[#D6A653]">TapPresence</p>
 
                   <div className="mt-5 grid w-full grid-cols-4 gap-2">
                     <QuickAction icon={Phone} label="Call" />

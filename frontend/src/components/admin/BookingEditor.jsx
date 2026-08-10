@@ -45,7 +45,7 @@ export default function BookingEditor({ form, set, cardId }) {
     <div className="space-y-5">
       <div className={`${panel} flex items-center justify-between`}>
         <div>
-          <p className="flex items-center gap-2 font-medium text-white"><CalendarClock className="h-4 w-4 text-[#D6A653]" /> Native ARIADNI Booking</p>
+          <p className="flex items-center gap-2 font-medium text-white"><CalendarClock className="h-4 w-4 text-[#D6A653]" /> Native TapPresence Booking</p>
           <p className="text-xs text-white/50">Let visitors book meetings directly on your card — no external tool.</p>
         </div>
         <Switch checked={!!b.nativeEnabled} onCheckedChange={(v) => set("booking.nativeEnabled", v)} data-testid="booking-native-toggle" />
@@ -62,7 +62,7 @@ export default function BookingEditor({ form, set, cardId }) {
           <Input value={b.bookingUrl || ""} onChange={(e) => set("booking.bookingUrl", e.target.value)} placeholder="Calendly / Cal.com" data-testid="editor-booking" />
         </F>
       </div>
-      <p className="text-xs text-white/40">When native booking is ON, your card uses the ARIADNI calendar. When OFF, it falls back to the external URL if set.</p>
+      <p className="text-xs text-white/40">When native booking is ON, your card uses the TapPresence calendar. When OFF, it falls back to the external URL if set.</p>
 
       {!cardId ? (
         <div className={`${panel} text-sm text-white/55`}>Save/publish this card first, then return here to add meeting types and set your working hours. Sensible defaults (Mon–Fri, 9–6, 15/30/45-min meetings) are created automatically.</div>

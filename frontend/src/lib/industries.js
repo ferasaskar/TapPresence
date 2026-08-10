@@ -1,4 +1,4 @@
-// ARIADNI ID — Industry personalization engine (data-driven, template-agnostic).
+// TapPresence — Industry personalization engine (data-driven, template-agnostic).
 // One base template + industry skin + accent + layered background.
 
 const IMG = "https://static.prod-images.emergentagent.com/jobs/b7cf9ea3-4027-4bce-9aa9-3953ffa20ee3/images/";

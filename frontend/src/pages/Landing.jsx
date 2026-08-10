@@ -19,9 +19,7 @@ const Reveal = ({ children, delay = 0, className = "", ...rest }) => (
 );
 
 const AriadniMark = ({ className = "" }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
-    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
-  </svg>
+  <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} aria-hidden />
 );
 
 const goTo = (hash) => {
@@ -32,7 +30,7 @@ const goTo = (hash) => {
 const Brand = ({ size = "text-xl" }) => (
   <span className={`flex items-center gap-2 ${size} font-semibold tracking-tight`} data-testid="brand">
     <AriadniMark className="h-6 w-6 text-[#D6A653]" />
-    ARIADNI <span className="lp-gold-text">ID</span>
+    TapPresence
   </span>
 );
 
@@ -431,7 +429,7 @@ function Footer() {
           <p className="mt-4 max-w-[240px] text-[13px] leading-relaxed text-[#70757E]">
             {t("landing.footer.tagline")}
           </p>
-          <p className="mt-6 text-[12px] text-[#5b6068]">© {new Date().getFullYear()} ARIADNI ID. {t("landing.footer.rights")}</p>
+          <p className="mt-6 text-[12px] text-[#5b6068]">© {new Date().getFullYear()} TapPresence. {t("landing.footer.rights")}</p>
           <Link to="/privacy-center" data-testid="footer-privacy-choices" className="mt-2 inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">{t("landing.footer.privacyChoices")}</Link>
         </div>
         {FOOTER_GROUPS.map((g) => (

@@ -10,30 +10,24 @@ import { useLocale } from "@/i18n/useLocale";
 import { Home, CreditCard, CalendarDays, BarChart3, Settings as SettingsIcon, ScanLine, LogOut, ShieldCheck, Users, Mail, Plug, Receipt, Gift } from "lucide-react";
 
 const AriadniMark = ({ className = "" }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
-    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
-  </svg>
+  <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} aria-hidden />
 );
 
 // Shared, role-aware owner navigation. Reused across Home / My Card / Meetings / Settings.
 export const OwnerNav = ({ active }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, entitlements } = useAuth();
   const { t } = useLocale();
   const navigate = useNavigate();
   const isAdmin = user?.role === "SUPER_ADMIN";
   const [cards, setCards] = useState([]);
-  const [canTeam, setCanTeam] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [analyticsCard, setAnalyticsCard] = useState(null);
+  const canTeam = isAdmin || !!entitlements?.team;
 
   const refresh = () => {
     api.get("/admin/cards").then((r) => setCards(r.data)).catch(() => {});
   };
-  useEffect(() => {
-    refresh();
-    if (isAdmin) { setCanTeam(true); return; }
-    api.get("/workspaces/me").then(({ data }) => setCanTeam((data || []).some((w) => w.owner_id === user?.id))).catch(() => {});
-  }, [isAdmin, user]);
+  useEffect(() => { refresh(); }, [isAdmin, user]);
   const primary = cards[0];
 
   const items = [
@@ -57,7 +51,7 @@ export const OwnerNav = ({ active }) => {
           <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2.5" data-testid="nav-brand">
             <AriadniMark className="h-5 w-5 text-[#D6A653]" />
             <div className="text-left">
-              <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">ARIADNI ID</p>
+              <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">TapPresence</p>
               <h1 className="text-[14px] font-medium leading-tight text-white">{t("nav.studio")}</h1>
             </div>
           </button>

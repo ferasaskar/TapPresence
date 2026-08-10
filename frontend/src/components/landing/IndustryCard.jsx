@@ -1,9 +1,7 @@
 import { Phone, Mail, MessageCircle, Download, Nfc } from "lucide-react";
 
 const AriadniMark = ({ className = "" }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden>
-    <path d="M12 3 L21 20 L15.6 20 L12 12 L8.4 20 L3 20 Z" fill="currentColor" />
-  </svg>
+  <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} />
 );
 
 const MedicalDecoration = ({ ac }) => (
@@ -60,7 +58,7 @@ export function IndustryCard({ c, className = "" }) {
           {/* brand header */}
           <div className="flex items-center gap-1.5">
             <AriadniMark className="h-5 w-5 text-[#D6A653]" />
-            <span className="text-[14px] font-semibold tracking-wide text-white">ARIADNI <span className="text-[#D6A653]">ID</span></span>
+            <span className="text-[14px] font-semibold tracking-wide text-white">TapPresence</span>
           </div>
 
           {/* portrait */}

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, API_BASE } from "@/lib/api";import { useLocale } from "@/i18n/useLocale";
 import { OwnerNav } from "@/components/admin/OwnerNav";
 import { toast } from "sonner";
-import { Loader2, Gift, Copy, Users, Award, Clock, Share2, Download } from "lucide-react";
+import { Loader2, Gift, Copy, Users, Award, Clock, Share2, Download, MessageCircle, Mail } from "lucide-react";
 
 const Stat = ({ icon: Icon, label, value, sub, testid }) => (
   <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid={testid}>
@@ -34,6 +34,15 @@ export default function Referral() {
     if (navigator.share) { try { await navigator.share({ title: "TapPresence", url: d.share_url }); } catch {} }
     else copy(d.share_url, t("referral.copied"));
   };
+  const shareWhatsApp = () => {
+    const text = `${t("share.emailBody", { url: d.share_url })}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  };
+  const shareEmail = () => {
+    const subject = encodeURIComponent(t("share.emailSubject"));
+    const body = encodeURIComponent(t("share.emailBody", { url: d.share_url }));
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
 
   return (
     <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="referral-page">
@@ -64,6 +73,10 @@ export default function Referral() {
                   <button onClick={() => copy(d.share_url, t("referral.copied"))} data-testid="referral-copy-url" className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-sm text-white/80 hover:border-[#D6A653]/50"><Copy className="h-4 w-4" /></button>
                   <button onClick={share} data-testid="referral-share" className="flex items-center gap-1.5 rounded-lg bg-[#D6A653] px-3 py-2 text-sm font-medium text-black hover:brightness-110"><Share2 className="h-4 w-4" /></button>
                 </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2" data-testid="referral-quick-share">
+                <button onClick={shareWhatsApp} data-testid="referral-share-whatsapp" className="inline-flex items-center gap-1.5 rounded-full border border-[#25D366]/40 bg-[#25D366]/10 px-4 py-2 text-sm text-[#5cf29a] transition-colors hover:bg-[#25D366]/20"><MessageCircle className="h-4 w-4" /> {t("share.whatsapp")}</button>
+                <button onClick={shareEmail} data-testid="referral-share-email" className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 transition-colors hover:bg-white/10"><Mail className="h-4 w-4 text-[#D6A653]" /> {t("share.email")}</button>
               </div>
               {/* QR of the invite link (reuses referral_code) */}
               <div className="mt-5 flex flex-col items-center gap-3 sm:flex-row sm:items-center" data-testid="referral-qr-block">

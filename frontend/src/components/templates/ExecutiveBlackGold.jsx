@@ -313,7 +313,7 @@ export const ExecutiveBlackGold = ({ data }) => {
             itemClassName="flex items-center justify-center w-10 h-10 rounded-full border text-neutral-400 transition-colors duration-300"
           />
           <p className="mt-6 text-[11px] tracking-[0.2em] uppercase text-neutral-600">
-            © {new Date().getFullYear()} {id.fullName} · ARIADNI ID
+            © {new Date().getFullYear()} {id.fullName} · TapPresence
           </p>
         </footer>
       </div>
