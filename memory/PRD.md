@@ -1,4 +1,41 @@
-# ARIADNI ID — Product Requirements & Build Log
+# TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
+
+## P0 PRODUCTION-READINESS + REBRAND PHASE (2026-06, iteration 18) — IMPLEMENTED & QA VERIFIED
+Extended existing systems only (no rebuilds). Backend 14/14 pytest pass (iteration_18.json); frontend all P0 flows pass; the one HIGH flagged item (3 residual "ARIADNI ID" strings on Landing) was fixed + self-verified (source + live DOM clean). Pending manual user confirmation.
+
+### Phase 1 — P0 (backend authoritative)
+- **Team plan-gating** via existing entitlement engine: `require_team()` + `enforce_seat_limit()` in `platform_v1.py` applied to invite_member, update_member, set_branding, import_members (per-new-member seat check), create_api_key, create_webhook → trial/free/pro get **402**; SUPER_ADMIN/team pass. Verified.
+- **Auth abuse protection**: in-memory per-IP `rate_limit()` + Mongo `login_attempts` lockout (5 fails ⇒ 15-min lock, 429). Applied to login (server.py), register/forgot/reset, and cost endpoints scan/ai. Failed-login logging (no passwords). Verified 5×401→6th 429.
+- **CORS**: env-driven `CORS_ORIGINS`; `allow_credentials` disabled when wildcard (safe default). expose Retry-After.
+- Unused entitlement flags (`custom_domain`, `white_label`) have no exposed endpoints; `api` now gated behind Team via hub key/webhook creation.
+
+### Phase 2 — Data rights
+- **Settings → Data & privacy** (`Settings.jsx`): Export (downloads `tappresence-data-*.json` from existing GET /account/export) + Delete account (typed-DELETE confirm dialog) + Privacy Center link. Localized EN/AR/ES.
+- **delete_account cascade fixed**: deletes owned-workspace cards/leads/analytics/notifications/meetings/referrals/api-keys/webhooks + user's sessions/usage; for SHARED workspaces only removes the user's membership (preserves others' data). Token revoked after delete. Verified.
+
+### Phase 3 — Partial-feature fixes
+- **VCF access rules** (`server.py get_vcard`): now requires `status=published` AND active entitlement → draft/unknown 404, inactive 410. Verified.
+- **Localization finished**: Legal (branded + placeholder badge + data-rights note), ExchangeContactDialog, QRBlock, Settings data-rights, public-card not-found — all `t()` EN/AR/ES; public card mirrors card language onto `document.dir` (Arabic RTL). Locales now **596 keys, in sync**.
+- **Sharing UX**: Referral page adds one-tap WhatsApp + Email (reuse existing share_url). Public card adds native share button (navigator.share + clipboard fallback).
+
+### Phase 4 — Official TapPresence rebrand (approved)
+- All visible ARIADNI/ARIADNI ID → **TapPresence**: Landing (header/footer/body/testimonial), Login, Register, OwnerNav, Billing, Legal, Settings, public-card footers (3 templates), PublicProfile `<title>`, BookingEditor, PricingSection schema, index.html title/description, wallet org fallback (backend).
+- Official gold **TP logomark** installed from supplied asset → `/public/tp-mark.png` (+ favicon.png, logo512.png). Header marks swapped from old triangle SVG to the TP image across Landing/OwnerNav/CreateCard/IndustryShowcase/IndustryCard/HeroVisual. theme-color #0B0D12. Arabic uses Tajawal font (index.html + `[dir=rtl]` CSS).
+- Localized shared Dialog/Sheet `sr-only` "Close" via i18n singleton (EN Close / AR إغلاق / ES Cerrar).
+- **Controlled migration**: legacy storage keys `ariadni_lang`/`ariadni_token` intentionally KEPT (internal `AriadniMark` component identifier also kept — not user-visible). Zero visible ARIADNI remains (source + live DOM verified).
+
+### Phase 5 — Observability + DB
+- **GET /api/health** → `{status, db, time}`, no secrets.
+- New indexes: referrals(referrer/referred ws), usage_counters, notifications, idempotency_keys(unique), leads.workspace_id, login_attempts(unique), workspaces.referral_code.
+
+### Legal (exception honored)
+- Legal page structure + branding + localized labels done; **substantive legal text remains a clearly-marked placeholder** ("pending legal review"). Final Privacy Policy, Terms of Service, GDPR/refund/subscription wording still require approved copy before commercial launch.
+
+### Still deferred (unchanged, need explicit approval): Stripe/live payments, RevenueCat, email provider + enforced verification, Apple/Google Wallet issuance, push/SMS, OAuth/social, CRM connectors, custom domains/DNS, enrichment, native iOS/Android, 2FA, PWA.
+
+### Known minor debt: platform_v1.py >2100 lines (split later); in-memory rate limiter is per-process (move to shared store if multi-worker/multi-pod); Create Studio industry SAMPLE preview content (demo person names/marketing copy in lib/industryCards.js) still EN — chrome localized, sample data not.
+
+
 
 ## LOCALIZATION COMPLETION + CONSENT/REFERRAL WIRING (2026-06, iteration 17) — IMPLEMENTED & QA 100%
 Completes remaining EN/AR/ES coverage and product wiring requested by user. All agent/testing-agent verified (iteration_17.json 100% backend + frontend, retest_needed=false); pending manual user confirmation.

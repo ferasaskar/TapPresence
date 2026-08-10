@@ -45,6 +45,13 @@ export default function PublicProfile() {
 
   useEffect(() => { setState("loading"); load(lang, true); }, [slug]); // eslint-disable-line
 
+  // Public-card visitors: mirror the displayed card language onto the document dir
+  useEffect(() => {
+    if (!card) return;
+    const a = card._activeLang || (card._availableLangs || ["en"])[0];
+    document.documentElement.dir = RTL.includes(a) ? "rtl" : "ltr";
+  }, [card]);
+
   const changeLang = (l) => {
     setLang(l);
     localStorage.setItem(`lang_${slug}`, l);
