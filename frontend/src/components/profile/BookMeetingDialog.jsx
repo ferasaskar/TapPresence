@@ -10,7 +10,7 @@ const guessTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().tim
 const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: tz });
 const fmtDay = (d) => new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
-export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653", ownerName = "" }) {
+export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653", ownerName = "", initialGuest = null }) {
   const ac = accent;
   const visitorTz = guessTz();
   const [step, setStep] = useState("type");
@@ -28,7 +28,8 @@ export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653"
 
   useEffect(() => {
     if (!open) return;
-    setStep("type"); setSlot(""); setDone(null); setF({ name: "", email: "", phone: "", note: "" });
+    setStep("type"); setSlot(""); setDone(null);
+    setF({ name: initialGuest?.name || "", email: initialGuest?.email || "", phone: initialGuest?.phone || "", note: "" });
     api.get(`/cards/${slug}/booking`).then(({ data }) => {
       setTypes(data.meeting_types || []); setOwnerTz(data.owner_timezone || "UTC");
     }).catch(() => {});

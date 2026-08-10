@@ -1182,11 +1182,11 @@ async def export_leads_csv(user: dict = Depends(current_user)):
     leads = await db.leads.find({"cardSlug": {"$in": slugs}}, {"_id": 0}).to_list(5000)
     buf = io.StringIO()
     w = csv.writer(buf)
-    cols = ["name", "email", "phone", "company", "title", "status", "source", "campaign",
-            "interest", "notes", "cardSlug", "created_at", "next_follow_up"]
+    cols = ["name", "email", "phone", "company", "title", "website", "status", "source", "campaign", "event",
+            "interest", "notes", "tags", "cardSlug", "met_at", "created_at", "next_follow_up"]
     w.writerow(cols)
     for l in leads:
-        w.writerow([l.get(c, "") for c in cols])
+        w.writerow([",".join(l.get("tags", [])) if c == "tags" else l.get(c, "") for c in cols])
     buf.seek(0)
     return StreamingResponse(io.BytesIO(buf.getvalue().encode()), media_type="text/csv",
                              headers={"Content-Disposition": 'attachment; filename="leads.csv"'})
@@ -1623,7 +1623,7 @@ async def _user_entitlements(user: dict) -> dict:
     return await resolve_entitlements(ms[0]["workspace_id"])
 
 
-SCAN_SOURCES = {"business_card_scan", "badge_scan"}
+SCAN_SOURCES = {"business_card_scan", "badge_scan", "qr_scan"}
 
 
 class ScanIn(BaseModel):
@@ -1751,8 +1751,9 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
         "company": body.company.strip(), "title": body.title.strip(),
         "website": body.website.strip(), "message": body.notes.strip(), "interest": body.interest.strip(),
         "address": body.address.strip(), "city": body.city.strip(), "country": body.country.strip(),
-        "language": lang, "source": source, "campaign": "", "consent": True,
-        "status": "NEW", "tags": ["scanned"], "notes": body.notes.strip(),
+        "language": lang, "source": source, "campaign": "", "event": "", "consent": True,
+        "status": "new", "tags": ["scanned"], "notes": body.notes.strip(),
+        "met_at": now_iso(), "next_follow_up": "",
         "scanned": True, "captured_by": user["id"],
         "read": False, "created_at": now_iso(), "updated_at": now_iso(), "last_activity": now_iso(),
     }
@@ -1816,7 +1817,9 @@ async def _notif_visibility_query(user: dict) -> dict:
 @platform_router.get("/notifications")
 async def notifications(user: dict = Depends(current_user)):
     q = await _notif_visibility_query(user)
-    items = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    # Scheduled follow-up reminders stay hidden until they are due.
+    not_future = {"$or": [{"remind_at": {"$exists": False}}, {"remind_at": {"$lte": now_iso()}}]}
+    items = await db.notifications.find({"$and": [q, not_future]}, {"_id": 0}).sort("created_at", -1).to_list(200)
     unread = sum(1 for n in items if not n.get("read"))
     return {"items": items, "unread": unread}
 

@@ -7,7 +7,7 @@ import { OwnerNav } from "@/components/admin/OwnerNav";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { User, Mail, ShieldCheck, Globe, Clock, CreditCard, LogOut, Building2, Download, Trash2, Shield, Loader2 } from "lucide-react";
+import { User, Mail, ShieldCheck, Globe, Clock, CreditCard, LogOut, Building2, Download, Trash2, Shield, Loader2, Nfc } from "lucide-react";
 
 const Row = ({ icon: Icon, label, value, testId }) => (
   <div className="flex items-center justify-between border-b border-white/8 py-3.5 last:border-0" data-testid={testId}>
@@ -107,6 +107,7 @@ export default function Settings() {
 
         <div className="mt-5 flex flex-wrap gap-3">
           <button onClick={() => navigate("/admin")} className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-5 py-2.5 text-sm text-white/80 hover:text-white" data-testid="settings-manage-card"><CreditCard className="h-4 w-4 text-[#D4AF37]" /> {t("settings.manageCard")}</button>
+          <button onClick={() => navigate("/nfc")} className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-5 py-2.5 text-sm text-white/80 hover:text-white" data-testid="settings-nfc"><Nfc className="h-4 w-4 text-[#D4AF37]" /> {t("nfc.title")}</button>
           <button onClick={logout} className="inline-flex items-center gap-2 rounded-full border border-red-400/30 bg-red-500/10 px-5 py-2.5 text-sm text-red-300 hover:bg-red-500/20" data-testid="settings-logout"><LogOut className="h-4 w-4" /> {t("settings.logout")}</button>
         </div>
       </main>

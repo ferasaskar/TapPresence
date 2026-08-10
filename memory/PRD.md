@@ -1,5 +1,29 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## P0 + P1 VALUE ROADMAP (2026-06, iteration 22) — IMPLEMENTED & QA VERIFIED
+Extended existing systems only (no new DB, no duplicate scanner/CRM/analytics, no Free plan, no quota changes, no "Presences" abstraction). Backend 20/20 pytest (iteration_22.json), frontend 100% E2E. Uses existing collections/endpoints throughout.
+
+### P0 (all four items — testing_agent verified)
+1. **Contacts & Leads enrichment** (`server.py` create_lead / `platform_v1.py` scan_confirm / `Leads.jsx`): new/normalized lead fields company, title, website, tags, notes, event, met_at, captured_by, next_follow_up. New leads now store lowercase `status:"new"` (was "NEW"). Richer 7-stage pipeline replaces the old 6: **new, contacted, qualified, meeting, opportunity, customer, not_interested** with legacy aliases mapped for old data (meeting_booked→meeting, converted→customer, archived→not_interested, won→customer, lost→not_interested, follow_up→contacted) via `normalize_stage()`. New endpoint `PATCH /api/admin/leads/{id}/fields` (LeadFieldsIn) edits contact-context. Lead rows + detail modal show company/title/tags and an editable Contact Details block. CSV export extended (website/event/tags/met_at).
+2. **Quick follow-up actions** (`Leads.jsx`): Call / WhatsApp / Email (existing) + **Book Meeting** (reuses `BookMeetingDialog` with new `initialGuest` prefill, scoped to the lead's card) + **Remind Me**. Reminder = `POST/DELETE /api/admin/leads/{id}/remind`: sets `next_follow_up` AND creates ONE in-app notification (type `lead_reminder`, `remind_at`) that stays hidden in `GET /notifications` until due (`remind_at<=now` filter added). Replacing a reminder deletes the prior one (no duplicates); clearing/deleting the lead removes it. Reuses existing Meetings engine, AI drafts, Notification Center — no new follow-up engine.
+3. **Universal Scanner** (`ScanCardDialog.jsx` + new `lib/qrContact.js` using `jsqr`): ONE flow — on Scan it first decodes a **contact QR client-side** (offline, free, private): vCard/MECARD/mailto/tel/URL → straight to Review with `source=qr_scan`; if no QR, falls back to the existing LLM OCR for business cards/badges. `SCAN_SOURCES` gained `qr_scan`; `/scan/confirm` unchanged path creates the same Lead. No second scanner/contacts DB.
+4. **NFC Destination UX** (new `pages/NfcCards.jsx` at `/nfc`, linked from Settings): lists workspace NFC devices, shows current destination card, and lets the user **re-point a token to any existing card** via the existing `POST /nfc/activate` rebind (no chip re-encode) + Mark lost / Reactivate via existing `/nfc/devices/{token}/status`. Empty state when no devices. Backend rebind already existed — this adds the owner-facing UX only.
+
+### P1 (analytics + campaign attribution + branded QR — self-verified: curl + pyzbar decode + UI screenshot)
+5+6. **Analytics breakdowns + campaign/event attribution** (extended the single `GET /api/admin/analytics/overview` + `AnalyticsOverview.jsx`): kept the existing funnel/trend/top-actions and ADDED `channels` (Direct/QR/NFC from view/scan/nfctap events + scanner_leads) and `breakdowns` = by_card (views/leads/meetings), by_source (incl. scanner sources), **by_event**, **by_campaign**, by_member (captured_by → resolved names). Campaign/event attribution folded into this ONE analytics surface (leads carry event/campaign). No second analytics DB/dashboard.
+8. **Branded QR** (`server.py _brand_qr`): the existing `/cards/{slug}/qr` now centers the official TapPresence mark (`frontend/public/tp-mark.png`, ~20% size, white backing) with error correction bumped M→**H**. Verified it still decodes to the correct profile URL (pyzbar). No colors/styles/frames/config UI — logo-only, as approved.
+
+### Intentionally SKIPPED/DEFERRED (per user credit-control directive)
+- **P1 item 7 Email Signature "improvements": SKIPPED** — the existing Signature Manager already generates email-safe HTML with card data + QR + branding-lock + 3 templates + copy HTML/rich. No high-value gap identified; not rebuilding for roadmap-wording's sake. Will revisit only if the user names a specific need.
+- The existing funnel keeps its stages (View→Engaged→Leads→Booked→Completed) rather than renaming to View→Share→Save→Lead→Meeting — same conversion narrative; Share/Save granularity is visible via top_actions + the new channel breakdown. Avoided churning stable localized funnel labels.
+- Unchanged/deferred as before: Stripe/live payments, Wallet, enrichment, CRM connectors, mobile widgets, Free plan, quota changes, white-label.
+
+### i18n: added `leads.*` (stages meeting/opportunity/customer/not_interested, contact-detail + reminder + book labels, source_* labels), `scan.*` (universalHint/qrRead/qrReviewIntro), `nfc.*`, `analytics.*` breakdown labels — EN/AR/ES in sync (Arabic RTL). 
+### NOTE: In this preview env the member accounts (feras@/mona@/luis@) currently own NO cards (prior test-data pruning) — use SUPER_ADMIN admin@ariadni.id for admin testing. Restored `booking.nativeEnabled=true` on demo card feras-askar (auto-seeds 15/30/45 meeting types) so Book Meeting demos end-to-end.
+### Pending: manual user confirmation.
+
+
+
 ## REFERRAL PHASE 2 — REDEMPTION / NUDGE / CELEBRATION / QUALIFICATION SAFETY + SAMPLE i18n (2026-06, iterations 20–21) — IMPLEMENTED & QA VERIFIED
 Extended the existing "Invite 5 → Get 1 Month Free" ledger only (no new referral system). Backend 11/11 + lifecycle pass (iteration_20); dashboard-nudge HIGH fix re-verified 100% (iteration_21). No live payments/external providers activated. Pending manual user confirmation.
 

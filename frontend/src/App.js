@@ -23,7 +23,7 @@ import Referral from "@/pages/Referral";
 import Meetings from "@/pages/Meetings";
 import ManageMeeting from "@/pages/ManageMeeting";
 import Activate from "@/pages/Activate";
-import Legal from "@/pages/Legal";
+import NfcCards from "@/pages/NfcCards";import Legal from "@/pages/Legal";
 import LocaleToast from "@/components/LocaleToast";
 import ConsentBanner from "@/components/ConsentBanner";
 import PrivacyCenter from "@/pages/PrivacyCenter";
@@ -57,6 +57,7 @@ function App() {
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Home /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/nfc" element={<ProtectedRoute><NfcCards /></ProtectedRoute>} />
             <Route path="/team" element={<ProtectedRoute><Team /></ProtectedRoute>} />
             <Route path="/admin/platform" element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
             <Route path="/industry-studio" element={<ProtectedRoute><IndustryStudio /></ProtectedRoute>} />

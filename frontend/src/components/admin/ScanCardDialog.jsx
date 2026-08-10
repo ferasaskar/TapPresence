@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Camera, Upload, ScanLine, Loader2, RefreshCw, Check } from "lucide-react";
+import { Camera, Upload, ScanLine, Loader2, RefreshCw, Check, QrCode } from "lucide-react";
 import { toast } from "sonner";
+import { decodeQrFromDataUrl, parseContact } from "@/lib/qrContact";
 
 const RTL = ["ar"];
 const EMPTY = { name: "", title: "", company: "", email: "", phone: "", website: "",
@@ -106,9 +107,24 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
     if (!image) return;
     setScanning(true);
     try {
-      const { data } = await api.post("/scan/card", { image_base64: image, source });
+      // Universal scanner: try to decode a QR / contact-QR locally first (offline, free, private).
+      const qrText = await decodeQrFromDataUrl(image);
+      if (qrText) {
+        const parsed = parseContact(qrText);
+        if (parsed) {
+          setDraft({ ...EMPTY, ...parsed, language: "en" });
+          setSource("qr_scan");
+          setStep("review");
+          toast.success(t("scan.qrRead"));
+          return;
+        }
+      }
+      // No contact QR found → fall back to OCR for business cards / badges.
+      const ocrSource = source === "qr_scan" ? "business_card_scan" : source;
+      const { data } = await api.post("/scan/card", { image_base64: image, source: ocrSource });
       if (data.configured === false) { toast.error(data.message || t("scan.notConfigured")); return; }
       setDraft({ ...EMPTY, ...data.draft });
+      setSource(ocrSource);
       setStep("review");
       toast.success(t("scan.cardRead"));
     } catch (err) {
@@ -176,6 +192,9 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
                 </SelectContent>
               </Select>
             </div>
+            <p className="flex items-center gap-1.5 text-xs text-white/45" data-testid="scan-universal-hint">
+              <QrCode className="h-3.5 w-3.5 text-[#D6A653]" /> {t("scan.universalHint")}
+            </p>
 
             <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black">
               {image ? (
@@ -215,7 +234,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
 
         {step === "review" && (
           <div className="space-y-3">
-            <p className="text-xs text-white/50">{t("scan.reviewIntro")}</p>
+            <p className="text-xs text-white/50">{source === "qr_scan" ? t("scan.qrReviewIntro") : t("scan.reviewIntro")}</p>
             {field("name", t("scan.fFullName"))}
             <div className="grid grid-cols-2 gap-3">
               {field("title", t("scan.fJobTitle"))}

@@ -441,8 +441,9 @@ async def create_lead(slug: str, body: LeadIn, idempotency_key: str | None = Hea
     lead = {
         "id": str(uuid.uuid4()), "cardSlug": slug, "workspace_id": card.get("workspace_id"),
         "name": body.name.strip(), "email": body.email.strip(), "phone": body.phone.strip(),
-        "company": "", "title": "", "message": body.message.strip(), "interest": "",
-        "source": "inquiry", "campaign": "", "status": "NEW", "tags": [], "notes": "",
+        "company": "", "title": "", "website": "", "message": body.message.strip(), "interest": "",
+        "source": "inquiry", "campaign": "", "event": "", "met_at": now, "captured_by": "",
+        "next_follow_up": "", "status": "new", "tags": [], "notes": "",
         "read": False, "created_at": now, "updated_at": now, "last_activity": now,
     }
     await db.leads.insert_one(lead)
@@ -469,14 +470,36 @@ async def track_event(slug: str, body: TrackIn):
     return {"ok": True}
 
 
+TP_MARK_PATH = str(Path(__file__).resolve().parent.parent / "frontend" / "public" / "tp-mark.png")
+
+
+def _brand_qr(url: str, fill: str = "#0B0D12", back: str = "#FFFFFF"):
+    """Existing QR with the official TapPresence mark centered. Error correction bumped to H so the
+    small (~20%) center logo never affects scan reliability."""
+    qr = qrcode.QRCode(version=None, box_size=10, border=2,
+                       error_correction=qrcode.constants.ERROR_CORRECT_H)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color=fill, back_color=back).convert("RGBA")
+    try:
+        logo = Image.open(TP_MARK_PATH).convert("RGBA")
+        qw, qh = img.size
+        lw = max(1, qw // 5)  # ~20% of the QR
+        logo = logo.resize((lw, lw), Image.LANCZOS)
+        pad = max(2, lw // 6)
+        backing = Image.new("RGBA", (lw + 2 * pad, lw + 2 * pad), (255, 255, 255, 255))
+        bx, by = (qw - backing.width) // 2, (qh - backing.height) // 2
+        img.paste(backing, (bx, by), backing)
+        img.paste(logo, ((qw - lw) // 2, (qh - lw) // 2), logo)
+    except Exception:
+        pass
+    return img.convert("RGB")
+
+
 @api_router.get("/cards/{slug}/qr")
 async def get_qr(slug: str):
     url = f"{PUBLIC_APP_URL}/{slug}?src=qr" if PUBLIC_APP_URL else f"/{slug}?src=qr"
-    qr = qrcode.QRCode(version=None, box_size=10, border=2,
-                       error_correction=qrcode.constants.ERROR_CORRECT_M)
-    qr.add_data(url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="#2D2B2A", back_color="#FAFAF8")
+    img = _brand_qr(url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
@@ -684,21 +707,92 @@ async def mark_lead_read(lead_id: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+class LeadFieldsIn(BaseModel):
+    company: Optional[str] = None
+    title: Optional[str] = None
+    website: Optional[str] = None
+    tags: Optional[List[str]] = None
+    notes: Optional[str] = None
+    interest: Optional[str] = None
+    met_at: Optional[str] = None
+    event: Optional[str] = None
+    campaign: Optional[str] = None
+    next_follow_up: Optional[str] = None
+
+
+@api_router.patch("/admin/leads/{lead_id}/fields")
+async def update_lead_fields(lead_id: str, body: LeadFieldsIn, user: dict = Depends(get_current_user)):
+    """Edit lightweight contact-context fields on an existing lead (company/title/website/tags/notes/met_at/event/campaign/next_follow_up)."""
+    await _lead_or_403(lead_id, user)
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    now = datetime.now(timezone.utc).isoformat()
+    upd["updated_at"] = now
+    upd["last_activity"] = now
+    await db.leads.update_one({"id": lead_id}, {"$set": upd})
+    return await db.leads.find_one({"id": lead_id}, {"_id": 0})
+
+
+@api_router.post("/admin/leads/{lead_id}/remind")
+async def set_lead_reminder(lead_id: str, body: Dict[str, Any], user: dict = Depends(get_current_user)):
+    """Set/replace a follow-up reminder. Stores next_follow_up on the lead and creates ONE in-app
+    notification that surfaces in the Notification Center at the chosen time. Replacing/cancelling
+    removes the previous pending reminder so no duplicates accumulate."""
+    lead = await _lead_or_403(lead_id, user)
+    when = str(body.get("when", "")).strip()
+    if not when:
+        raise HTTPException(status_code=400, detail="A reminder date/time is required")
+    note = str(body.get("note", "")).strip()
+    now = datetime.now(timezone.utc).isoformat()
+    # remove any existing pending reminder for this lead (idempotent, no duplicates)
+    await db.notifications.delete_many({"type": "lead_reminder", "lead_id": lead_id})
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "type": "lead_reminder",
+        "recipient_user_id": user["id"], "workspace_id": lead.get("workspace_id"),
+        "scope": "card", "card_slug": lead.get("cardSlug"), "lead_id": lead_id,
+        "remind_at": when,
+        "title": f"Follow up with {lead.get('name', 'lead')}",
+        "body": note or f"Scheduled follow-up · /{lead.get('cardSlug', '')}",
+        "read": False, "created_at": when,
+    })
+    await db.leads.update_one({"id": lead_id}, {"$set": {"next_follow_up": when, "updated_at": now, "last_activity": now}})
+    return {"ok": True, "next_follow_up": when}
+
+
+@api_router.delete("/admin/leads/{lead_id}/remind")
+async def clear_lead_reminder(lead_id: str, user: dict = Depends(get_current_user)):
+    await _lead_or_403(lead_id, user)
+    await db.notifications.delete_many({"type": "lead_reminder", "lead_id": lead_id})
+    now = datetime.now(timezone.utc).isoformat()
+    await db.leads.update_one({"id": lead_id}, {"$set": {"next_follow_up": "", "updated_at": now}})
+    return {"ok": True}
+
+
 @api_router.delete("/admin/leads/{lead_id}")
 async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
     await _lead_or_403(lead_id, user)
+    await db.notifications.delete_many({"type": "lead_reminder", "lead_id": lead_id})
     await db.leads.delete_one({"id": lead_id})
     return {"ok": True}
 
 
-LEAD_STAGES = ("new", "contacted", "meeting_booked", "qualified", "converted", "archived")
+# Richer pipeline: New, Contacted, Qualified, Meeting, Opportunity, Customer, Not Interested.
+LEAD_STAGES = ("new", "contacted", "qualified", "meeting", "opportunity", "customer", "not_interested")
+LEGACY_STAGE_ALIASES = {
+    "meeting_booked": "meeting", "converted": "customer", "archived": "not_interested",
+    "won": "customer", "lost": "not_interested", "follow_up": "contacted",
+}
+
+
+def normalize_stage(s: str) -> str:
+    s = (s or "new").strip().lower()
+    return LEGACY_STAGE_ALIASES.get(s, s)
 
 
 @api_router.patch("/admin/leads/{lead_id}/status")
 async def set_lead_status(lead_id: str, body: Dict[str, Any], user: dict = Depends(get_current_user)):
     """Move a lead through the existing pipeline. Uses the lead model's existing `status` field."""
     await _lead_or_403(lead_id, user)
-    st = str(body.get("status", "")).lower()
+    st = normalize_stage(str(body.get("status", "")))
     if st not in LEAD_STAGES:
         raise HTTPException(status_code=400, detail="Invalid status")
     now = datetime.now(timezone.utc).isoformat()
@@ -750,6 +844,7 @@ async def analytics_overview(days: int = 30, user: dict = Depends(get_current_us
         {"cardSlug": {"$in": slugs}, "created_at": {"$gte": cutoff}}, {"_id": 0}).to_list(50000)
     views = sum(1 for e in events if e["type"] == "view")
     scans = sum(1 for e in events if e["type"] == "scan")
+    nfctaps = sum(1 for e in events if e["type"] == "nfctap")
     taps = [e for e in events if e["type"] == "tap"]
     by_key = Counter((e.get("key") or "other") for e in taps)
     top_actions = [{"key": k, "count": v} for k, v in by_key.most_common(6)]
@@ -768,6 +863,40 @@ async def analytics_overview(days: int = 30, user: dict = Depends(get_current_us
             day_counts[e["created_at"][:10]] += 1
     series = sorted([{"date": k, "count": v} for k, v in day_counts.items()], key=lambda x: x["date"])[-min(days, 30):]
 
+    # ---- Breakdowns (single analytics store; no new events, no writes) ----
+    SCAN_SOURCES = {"business_card_scan", "badge_scan", "qr_scan"}
+    lead_docs = await db.leads.find(
+        {"cardSlug": {"$in": slugs}, "created_at": {"$gte": cutoff}},
+        {"_id": 0, "cardSlug": 1, "source": 1, "event": 1, "campaign": 1, "captured_by": 1}).to_list(20000) if slugs else []
+    meet_docs = await db.meetings.find(
+        {"card_id": {"$in": ids}, "created_at": {"$gte": cutoff}}, {"_id": 0, "card_id": 1}).to_list(20000) if ids else []
+
+    id_to_slug = {c["id"]: c["slug"] for c in cards}
+    name_by_slug = {}
+    for c in await db.digital_cards.find({"slug": {"$in": slugs}}, {"_id": 0, "slug": 1, "identity": 1}).to_list(5000):
+        name_by_slug[c["slug"]] = (c.get("identity", {}) or {}).get("fullName", "") or c["slug"]
+
+    views_by_slug = Counter(e["cardSlug"] for e in events if e["type"] in ("view", "scan", "nfctap"))
+    leads_by_slug = Counter(l["cardSlug"] for l in lead_docs)
+    meets_by_slug = Counter(id_to_slug.get(m["card_id"]) for m in meet_docs if id_to_slug.get(m["card_id"]))
+    by_card = sorted(
+        [{"slug": s, "name": name_by_slug.get(s, s), "views": views_by_slug.get(s, 0),
+          "leads": leads_by_slug.get(s, 0), "meetings": meets_by_slug.get(s, 0)} for s in slugs],
+        key=lambda x: (x["views"] + x["leads"] * 3 + x["meetings"] * 5), reverse=True)[:10]
+
+    by_source = [{"key": k, "count": v} for k, v in Counter((l.get("source") or "inquiry") for l in lead_docs).most_common()]
+    scanner_leads = sum(v for l in lead_docs for v in [1] if (l.get("source") in SCAN_SOURCES))
+    by_event = [{"key": k, "count": v} for k, v in Counter((l.get("event") or "").strip() for l in lead_docs if (l.get("event") or "").strip()).most_common(10)]
+    by_campaign = [{"key": k, "count": v} for k, v in Counter((l.get("campaign") or "").strip() for l in lead_docs if (l.get("campaign") or "").strip()).most_common(10)]
+
+    member_counts = Counter((l.get("captured_by") or "").strip() for l in lead_docs if (l.get("captured_by") or "").strip())
+    members = []
+    if member_counts:
+        users = await db.users.find({"id": {"$in": list(member_counts)}}, {"_id": 0, "id": 1, "name": 1}).to_list(200)
+        uname = {u["id"]: u.get("name") or u["id"] for u in users}
+        members = sorted([{"key": uid, "name": uname.get(uid, "Teammate"), "count": c} for uid, c in member_counts.items()],
+                         key=lambda x: x["count"], reverse=True)[:10]
+
     return {
         "range_days": days,
         "cards": len(cards),
@@ -780,6 +909,15 @@ async def analytics_overview(days: int = 30, user: dict = Depends(get_current_us
             "meetings_completed": meetings_completed,
         },
         "totals": {"views": views, "scans": scans, "taps": len(taps), "leads_all_time": leads_total},
+        "channels": {"direct": views, "qr": scans, "nfc": nfctaps},
+        "breakdowns": {
+            "by_card": by_card,
+            "by_source": by_source,
+            "scanner_leads": scanner_leads,
+            "by_event": by_event,
+            "by_campaign": by_campaign,
+            "by_member": members,
+        },
         "top_actions": top_actions,
         "series": series,
     }
