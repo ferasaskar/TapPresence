@@ -495,9 +495,10 @@ async def subscribe(body: SubscribeIn, user: dict = Depends(current_user)):
     if _rf:
         sub["referral"] = _rf
     await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription": sub, "plan": body.plan}})
-    # A referred workspace becoming PAID is a qualified paid referral (idempotent).
+    # DEMO billing: activating a paid plan is treated as a verified paid-subscription event.
+    # When Stripe is connected, this same hook is invoked from the verified webhook instead.
     if body.plan in ("pro", "team"):
-        await _qualify_referral(ws_id)
+        await record_paid_subscription_event(ws_id, source="demo")
     return {"ok": True, "subscription": sub, "entitlements": await resolve_entitlements(ws_id)}
 
 
@@ -702,18 +703,18 @@ async def _recompute_referral_rewards(referrer_ws_id: str):
     qualified = await db.referrals.count_documents({"referrer_ws_id": referrer_ws_id, "status": "qualified"})
     signed_up = await db.referrals.count_documents({"referrer_ws_id": referrer_ws_id, "status": "signed_up"})
     earned = (qualified // per) * months
-    # create durable, idempotent grant records for any newly earned free months
-    existing = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id})
+    # create durable, idempotent grant records for any newly earned free months (excluding voided)
+    existing = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id, "voided": {"$ne": True}})
     for i in range(existing, earned):
         try:
             await db.referral_reward_grants.insert_one({
                 "id": str(uuid.uuid4()), "referrer_ws_id": referrer_ws_id, "index": i + 1,
                 "months": 1, "reward_type": "free_month", "redeemed": False, "redeemed_at": None,
-                "source": "referral", "earned_at": now_iso(),
+                "voided": False, "source": "referral", "earned_at": now_iso(),
             })
         except Exception:
             pass  # unique index guards against double insert
-    redeemed = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id, "redeemed": True})
+    redeemed = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id, "redeemed": True, "voided": {"$ne": True}})
     ledger = {
         "qualified_count": qualified,
         "signed_up_count": signed_up,
@@ -728,18 +729,58 @@ async def _recompute_referral_rewards(referrer_ws_id: str):
     return ledger
 
 
-async def _qualify_referral(referred_ws_id: str):
+async def _qualify_referral(referred_ws_id: str, source: str = "unknown", event_id: Optional[str] = None):
     """Marks a referral as a QUALIFIED PAID referral exactly once (idempotent via status guard),
-    then recomputes the referrer's reward ledger. Called when a referred workspace activates a paid plan."""
+    then recomputes the referrer's reward ledger. Called only from record_paid_subscription_event
+    (a verified successful paid-subscription event) — never directly from checkout initiation."""
     r = await db.referrals.find_one({"referred_ws_id": referred_ws_id}, {"_id": 0})
     if not r or r.get("status") == "qualified":
         return
     res = await db.referrals.update_one(
         {"id": r["id"], "status": {"$ne": "qualified"}},
-        {"$set": {"status": "qualified", "qualified_at": now_iso()}},
+        {"$set": {"status": "qualified", "qualified_at": now_iso(),
+                  "qualification_source": source, "qualification_event_id": event_id}},
     )
     if res.modified_count:
         await _recompute_referral_rewards(r["referrer_ws_id"])
+
+
+async def record_paid_subscription_event(ws_id: str, source: str, event_id: Optional[str] = None):
+    """SINGLE idempotent entry point for a VERIFIED successful PAID subscription.
+    Pipeline stage separation (signup → trial → checkout initiation → SUCCESSFUL PAID → qualified → grant):
+    a referral becomes qualified ONLY here, never on checkout initiation. Demo billing passes
+    source='demo'; a future Stripe webhook passes source='stripe' + the Stripe event id.
+    Deduplicated via the billing_events collection so replays/retries cannot double-count."""
+    key = event_id or f"{source}:{ws_id}"
+    if await db.billing_events.find_one({"key": key}):
+        return False
+    try:
+        await db.billing_events.insert_one({
+            "id": str(uuid.uuid4()), "key": key, "ws_id": ws_id, "source": source,
+            "type": "paid_subscription_active", "created_at": now_iso(),
+        })
+    except Exception:
+        return False  # unique index guards against a race
+    await _qualify_referral(ws_id, source=source, event_id=event_id)
+    return True
+
+
+async def revoke_referral_qualification(ws_id: str, reason: str):
+    """FUTURE refund/chargeback safety hook (NOT wired to any provider yet). When a paid
+    subscription is later refunded/charged back within an eligibility window (policy TBD, pending
+    approval), this un-qualifies the referral and voids the newest UNREDEEMED reward grant so a
+    fraudulent/refunded subscription cannot yield a permanent free month. Redeemed grants are never
+    silently revoked. Idempotent."""
+    r = await db.referrals.find_one({"referred_ws_id": ws_id}, {"_id": 0})
+    if not r or r.get("status") != "qualified":
+        return False
+    await db.referrals.update_one({"id": r["id"]}, {"$set": {"status": "revoked", "revoked_at": now_iso(), "revoke_reason": reason}})
+    # void the highest-index unredeemed grant for the referrer (do not touch redeemed grants)
+    grant = await db.referral_reward_grants.find_one({"referrer_ws_id": r["referrer_ws_id"], "redeemed": False}, sort=[("index", -1)])
+    if grant:
+        await db.referral_reward_grants.update_one({"id": grant["id"]}, {"$set": {"voided": True, "voided_at": now_iso(), "void_reason": reason}})
+    await _recompute_referral_rewards(r["referrer_ws_id"])
+    return True
 
 
 async def _issue_session(user, request: Request):
@@ -2157,6 +2198,7 @@ async def run_migration():
         await db.workspaces.create_index("referral_code")
         await db.referral_reward_grants.create_index([("referrer_ws_id", 1), ("index", 1)], unique=True)
         await db.referrals.create_index("status")
+        await db.billing_events.create_index("key", unique=True)
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 

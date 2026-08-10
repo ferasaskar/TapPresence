@@ -769,6 +769,80 @@
     "how3": "Cada {{count}} amigos de pago te dan {{months}} mes gratis.",
     "qualifiedNote": "Solo cuentan los amigos que se suscriben a un plan de pago. Los clics, registros y pruebas no cuentan.",
     "pendingNote": "{{count}} registrados — aún no suscritos",
-    "signupDiscount": "Los nuevos amigos también obtienen un {{pct}}% de descuento en su primer mes."
+    "signupDiscount": "Los nuevos amigos también obtienen un {{pct}}% de descuento en su primer mes.",
+    "redemptionTitle": "Tus recompensas",
+    "earnedLabel": "Meses gratis ganados",
+    "availableLabel": "Disponibles ahora",
+    "redeemedLabel": "Canjeados",
+    "willApply": "Ganado — se aplicará cuando la facturación elegible esté activa",
+    "noRewardsYet": "Aún no hay meses gratis — cada {{count}} amigos de pago te dan uno.",
+    "oneMonth": "1 mes gratis",
+    "celebrateTitle": "¡Ganaste {{count}} mes gratis!",
+    "celebrateTitle_plural": "¡Ganaste {{count}} meses gratis!",
+    "celebrateBody": "Cada {{count}} amigos de pago = 1 mes gratis. ¡Sigue invitando!",
+    "celebrateClose": "Genial",
+    "nudgeStart": "Invita a {{count}} amigos. Consigue 1 mes gratis.",
+    "nudgeProgress": "{{remaining}} referido de pago más para 1 mes gratis",
+    "nudgeProgress_plural": "{{remaining}} referidos de pago más para 1 mes gratis",
+    "nudgeUnlocked": "🎉 Ganaste {{count}} mes gratis, ¡invita a más!",
+    "nudgeUnlocked_plural": "🎉 Ganaste {{count}} meses gratis, ¡invita a más!",
+    "nudgeCta": "Invitar amigos"
+  },
+  "industries": {
+    "real_estate": {
+      "label": "Bienes raíces",
+      "role": "Consultor inmobiliario"
+    },
+    "business": {
+      "label": "Negocios y consultoría",
+      "role": "Consultor de negocios"
+    },
+    "sales": {
+      "label": "Ventas y marketing",
+      "role": "Estratega de marketing"
+    },
+    "technology": {
+      "label": "Tecnología e IA",
+      "role": "Arquitecto de soluciones de IA"
+    },
+    "healthcare": {
+      "label": "Salud",
+      "role": "Médico general"
+    },
+    "legal": {
+      "label": "Servicios legales",
+      "role": "Abogado sénior"
+    },
+    "education": {
+      "label": "Educación y formación",
+      "role": "Líder de aprendizaje y desarrollo"
+    },
+    "hospitality": {
+      "label": "Hostelería",
+      "role": "Gerente de hotel"
+    },
+    "automotive": {
+      "label": "Automoción",
+      "role": "Especialista automotriz"
+    },
+    "beauty": {
+      "label": "Belleza y bienestar",
+      "role": "Coach de bienestar"
+    },
+    "finance": {
+      "label": "Finanzas",
+      "role": "Asesor financiero"
+    },
+    "custom": {
+      "label": "Sector personalizado",
+      "role": "Tu cargo"
+    }
+  },
+  "industryCard": {
+    "call": "Llamar",
+    "email": "Correo",
+    "whatsapp": "WhatsApp",
+    "save": "Guardar",
+    "tap": "Toca tu tarjeta"
   }
 }

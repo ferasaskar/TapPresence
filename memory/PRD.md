@@ -1,5 +1,22 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## REFERRAL PHASE 2 — REDEMPTION / NUDGE / CELEBRATION / QUALIFICATION SAFETY + SAMPLE i18n (2026-06, iterations 20–21) — IMPLEMENTED & QA VERIFIED
+Extended the existing "Invite 5 → Get 1 Month Free" ledger only (no new referral system). Backend 11/11 + lifecycle pass (iteration_20); dashboard-nudge HIGH fix re-verified 100% (iteration_21). No live payments/external providers activated. Pending manual user confirmation.
+
+- **Reward Redemption View** (`Referral.jsx`): shows free months earned / available / redeemed + per-grant rows. Because live billing is deferred, every unredeemed grant reads **"Earned — will apply when eligible billing is active"**; NOTHING is marked redeemed without a real billing event. `redemption-none` copy when no rewards yet. Provider-neutral — Stripe can later consume `referral_reward_grants`.
+- **Dashboard Nudge** (`ReferralNudge.jsx`, mounted in `Home.jsx` ABOVE the cards ternary so it shows for 0-card and populated owners): subtle premium banner, config-driven message (0 qualified → "Invite 5 friends. Get 1 month free."; in-progress → "N more paid referrals to unlock…"; unlocked → "🎉 You earned N free month…"), links to /referral, mini progress dots. Not a popup; reuses existing /referral state.
+- **Reward Celebration** (`RewardCelebration.jsx`, CSS confetti, no deps): fires ONCE when `free_months_earned` exceeds `localStorage.tp_referral_earned_seen`; never loops on refresh; localized EN/AR/ES.
+- **Qualification safety refactor**: new single idempotent hook `record_paid_subscription_event(ws_id, source, event_id)` (dedup via `billing_events` unique `key`) is the ONLY path that calls `_qualify_referral`. `/billing/subscribe` (demo) now calls it with `source='demo'`; a future Stripe webhook calls it with `source='stripe'` + event id. Pipeline states are now cleanly separated: signup → trial → checkout initiation → **verified paid** → qualified → grant. Checkout initiation alone can never qualify in a real flow.
+- **Refund/chargeback room (NOT wired)**: `revoke_referral_qualification(ws_id, reason)` un-qualifies a referral and voids the newest UNREDEEMED grant (redeemed grants never silently revoked); recompute is voided-aware. Final refund eligibility window intentionally left for future approval.
+- **Create Studio sample localization**: industry sample cards (`IndustryCard.jsx`) now localize industry label + role + action labels (Call/Email/WhatsApp/Save/Tap your card/Exchange Contact) via `industries.*` + `industryCard.*` (EN/AR/ES, Arabic RTL). Sample person/company names kept as proper nouns.
+- **Super Admin**: `referrals_per_reward` (5) + `reward_months` (1) configurable via existing commercial config; threshold flows through nudge/progress/redemption/celebration everywhere (no hardcoding).
+- Locales now **669 keys**, EN/AR/ES in sync.
+
+### Known remaining user-visible i18n debt (reported, not in this scope):
+Public-card ACTION button labels in the 3 templates + the Create Studio live-preview phone mockup (Exchange Contact / Send a Message / Save / Share / QR / Apple Wallet / Google Wallet) are still English — this is broader public-template-chrome localization touching all renderers; recommend a dedicated pass.
+
+
+
 ## REFERRAL REWARD MODEL REPLACED (2026-06, iteration 19) — IMPLEMENTED & QA VERIFIED
 **Official model now: "Invite 5 Friends. Get 1 Month Free."** This SUPERSEDES the old percentage-based referrer reward (referrer_reward_pct / max_reward_discount_pct / per-cycle cap / overflow queue) — that model is NO LONGER the current rule and its config keys were removed from defaults + code and unset from the stored commercial_config.
 

@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { OwnerNav } from "@/components/admin/OwnerNav";
 import { AnalyticsOverview } from "@/components/admin/AnalyticsOverview";
 import { OnboardingChecklist } from "@/components/admin/OnboardingChecklist";
+import { ReferralNudge } from "@/components/admin/ReferralNudge";
 import { useLocale } from "@/i18n/useLocale";
 import { Loader2, Eye, QrCode, MousePointerClick, Inbox, Pencil, ExternalLink, Share2, CalendarDays, Plus, Clock, User, CheckCircle2, CircleDot } from "lucide-react";
 import { toast } from "sonner";
@@ -61,6 +62,8 @@ export default function Home() {
           <h2 className="text-2xl font-light tracking-tight text-white">{user?.name ? t("home.welcome", { name: user.name.split(" ")[0] }) : t("home.welcomeNoName")}</h2>
           <p className="mt-1 text-sm text-white/45">{t("home.subtitle")}</p>
         </div>
+
+        {cards !== null ? <div className="mb-6"><ReferralNudge /></div> : null}
 
         {cards === null ? (
           <div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-[#D6A653]" /></div>

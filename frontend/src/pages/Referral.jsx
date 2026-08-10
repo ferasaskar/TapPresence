@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, API_BASE } from "@/lib/api";import { useLocale } from "@/i18n/useLocale";
 import { OwnerNav } from "@/components/admin/OwnerNav";
+import { RewardCelebration } from "@/components/admin/RewardCelebration";
 import { toast } from "sonner";
-import { Loader2, Gift, Copy, Users, Award, Clock, Share2, Download, MessageCircle, Mail } from "lucide-react";
+import { Loader2, Gift, Copy, Users, Award, Clock, Share2, Download, MessageCircle, Mail, CheckCircle2, Hourglass } from "lucide-react";
 
 const Stat = ({ icon: Icon, label, value, sub, testid }) => (
   <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid={testid}>
@@ -15,8 +16,20 @@ const Stat = ({ icon: Icon, label, value, sub, testid }) => (
 export default function Referral() {
   const { t } = useLocale();
   const [d, setD] = useState(undefined);
+  const [celebrate, setCelebrate] = useState(null);
 
-  useEffect(() => { api.get("/referral").then(({ data }) => setD(data)).catch(() => setD(null)); }, []);
+  useEffect(() => {
+    api.get("/referral").then(({ data }) => {
+      setD(data);
+      // Celebration fires ONCE when a newly earned reward is detected (never loops on refresh).
+      const earned = data?.reward?.free_months_earned || 0;
+      const seen = parseInt(localStorage.getItem("tp_referral_earned_seen") || "0", 10);
+      if (earned > seen) {
+        setCelebrate({ months: earned - seen, per: data.config?.referrals_per_reward || 5 });
+      }
+      localStorage.setItem("tp_referral_earned_seen", String(earned));
+    }).catch(() => setD(null));
+  }, []);
 
   const copy = (text, msg) => { navigator.clipboard.writeText(text); toast.success(msg); };
   const downloadQr = async () => {
@@ -46,6 +59,7 @@ export default function Referral() {
 
   return (
     <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="referral-page">
+      {celebrate ? <RewardCelebration months={celebrate.months} perReward={celebrate.per} onClose={() => setCelebrate(null)} /> : null}
       <div className="grain-overlay" style={{ opacity: 0.04 }} />
       <OwnerNav active="referral" />
       <main className="relative mx-auto max-w-3xl px-4 py-8 sm:px-8">
@@ -138,6 +152,42 @@ export default function Referral() {
                 {t("referralProgram.signupDiscount", { pct: d.config.referred_discount_month_pct })}
               </div>
             ) : null}
+
+            {/* Reward Redemption View — provider-neutral; nothing marked redeemed without a billing event */}
+            <div className="mt-6 rounded-2xl border border-white/10 bg-[#0A0B0D] p-6" data-testid="referral-redemption">
+              <h3 className="flex items-center gap-2 text-sm font-medium text-white"><Gift className="h-4 w-4 text-[#D4AF37]" /> {t("referralProgram.redemptionTitle")}</h3>
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-center" data-testid="redemption-earned">
+                  <p className="text-2xl font-light text-[#D4AF37]">{d.reward?.free_months_earned || 0}</p>
+                  <p className="mt-0.5 text-[11px] text-white/45">{t("referralProgram.earnedLabel")}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-center" data-testid="redemption-available">
+                  <p className="text-2xl font-light text-white">{d.reward?.free_months_available || 0}</p>
+                  <p className="mt-0.5 text-[11px] text-white/45">{t("referralProgram.availableLabel")}</p>
+                </div>
+                <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-center" data-testid="redemption-redeemed">
+                  <p className="text-2xl font-light text-white">{d.reward?.free_months_redeemed || 0}</p>
+                  <p className="mt-0.5 text-[11px] text-white/45">{t("referralProgram.redeemedLabel")}</p>
+                </div>
+              </div>
+              {(d.reward?.free_months_earned || 0) > 0 ? (
+                <div className="mt-4 space-y-2" data-testid="redemption-grants">
+                  {Array.from({ length: d.reward.free_months_earned }).map((_, i) => {
+                    const redeemed = i < (d.reward.free_months_redeemed || 0);
+                    return (
+                      <div key={i} className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5 text-sm" data-testid={`redemption-grant-${i}`}>
+                        {redeemed ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Hourglass className="h-4 w-4 text-[#D4AF37]" />}
+                        <span className="text-white/80">{t("referralProgram.oneMonth")}</span>
+                        <span className="ml-auto text-xs text-white/45">{redeemed ? t("referralProgram.redeemedLabel") : t("referralProgram.willApply")}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-white/45" data-testid="redemption-none">{t("referralProgram.noRewardsYet", { count: d.config.referrals_per_reward })}</p>
+              )}
+            </div>
+
 
             <div className="mt-8 rounded-2xl border border-white/10 bg-[#0A0B0D] p-6" data-testid="referral-how">
               <h3 className="text-sm font-medium text-white">{t("referralProgram.howTitle")}</h3>

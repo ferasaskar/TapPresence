@@ -1,0 +1,18 @@
+{
+  "summary": "Retest of iteration_20 HIGH bug fix: ReferralNudge hoisted above the cards ternary in Home.jsx (line ~66). Verified on the deployed preview URL with a freshly-registered owner (POST /api/auth/register → 200, token key 'ariadni_token'). On /dashboard the nudge (data-testid=dashboard-referral-nudge) now renders alongside the empty-state (data-testid=home-empty) for a 0-card owner. Nudge message = 'Invite 5 friends. Get 1 month free.' — count '5' comes from GET /api/referral config.referrals_per_reward (config-driven, not hardcoded). Clicking the nudge navigates to /referral and the Reward Redemption View (data-testid=referral-redemption) is present. After creating one card via POST /api/admin/cards, the nudge still renders alongside home-card (regression covered). All 4 requested checks pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/test_reports/iteration_20.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Home.jsx line 66 uses `cards !== null` guard so the nudge only mounts after /admin/cards resolves — prevents flicker/duplicate-fetch races. Good.",
+    "Review request text says the dashboard is at '/admin' but the actual route in App.jsx is '/dashboard' ('/admin' shows the My Cards list). Not a bug — just note for future test requests: Home.jsx mounts at /dashboard."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend-only retest)", "frontend": "100% (4/4 checks)"},
+  "test_credentials": "Fresh test accounts created dynamically via POST /api/auth/register (prefix iter21_ / iter21b_, password Test@1234). Ephemeral; safe to purge by email prefix.",
+  "seed_data_creation": "2 disposable trial workspaces + 1 draft card (slug nudge-<suffix>). Cleanable by prefix 'iter21'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter20 HIGH bug is fixed and verified. Home.jsx now unconditionally renders ReferralNudge once cards have loaded (cards!==null guard). Empty state + nudge coexist; card state + nudge coexist; nudge → /referral navigation works; referral-redemption present on /referral. Note that the dashboard route is /dashboard (not /admin — /admin is the My Cards page). All other iter20 findings (LOW: hardcoded EN CTA labels in CreateCard.jsx LIVE PREVIEW phone mockup) still open but out of scope for this retest."
+}

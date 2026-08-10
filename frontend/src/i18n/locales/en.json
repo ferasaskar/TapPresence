@@ -769,6 +769,80 @@
     "how3": "Every {{count}} paid friends earns you {{months}} month free.",
     "qualifiedNote": "Only friends who subscribe to a paid plan count toward your reward. Clicks, sign-ups and trials don't count.",
     "pendingNote": "{{count}} signed up — not subscribed yet",
-    "signupDiscount": "New friends also get {{pct}}% off their first month."
+    "signupDiscount": "New friends also get {{pct}}% off their first month.",
+    "redemptionTitle": "Your rewards",
+    "earnedLabel": "Free months earned",
+    "availableLabel": "Available now",
+    "redeemedLabel": "Redeemed",
+    "willApply": "Earned — will apply when eligible billing is active",
+    "noRewardsYet": "No free months yet — every {{count}} paid friends earns you one.",
+    "oneMonth": "1 free month",
+    "celebrateTitle": "You earned {{count}} month free!",
+    "celebrateTitle_plural": "You earned {{count}} months free!",
+    "celebrateBody": "Every {{count}} paid friends = 1 month free. Keep inviting!",
+    "celebrateClose": "Awesome",
+    "nudgeStart": "Invite {{count}} friends. Get 1 month free.",
+    "nudgeProgress": "{{remaining}} more paid referral to unlock 1 month free",
+    "nudgeProgress_plural": "{{remaining}} more paid referrals to unlock 1 month free",
+    "nudgeUnlocked": "🎉 You earned {{count}} free month — invite more!",
+    "nudgeUnlocked_plural": "🎉 You earned {{count}} free months — invite more!",
+    "nudgeCta": "Invite friends"
+  },
+  "industries": {
+    "real_estate": {
+      "label": "Real Estate",
+      "role": "Real Estate Consultant"
+    },
+    "business": {
+      "label": "Business & Consulting",
+      "role": "Business Consultant"
+    },
+    "sales": {
+      "label": "Sales & Marketing",
+      "role": "Marketing Strategist"
+    },
+    "technology": {
+      "label": "Technology & AI",
+      "role": "AI Solutions Architect"
+    },
+    "healthcare": {
+      "label": "Healthcare",
+      "role": "General Practitioner"
+    },
+    "legal": {
+      "label": "Legal Services",
+      "role": "Senior Attorney"
+    },
+    "education": {
+      "label": "Education & Training",
+      "role": "Learning & Development Lead"
+    },
+    "hospitality": {
+      "label": "Hospitality",
+      "role": "Hotel Manager"
+    },
+    "automotive": {
+      "label": "Automotive",
+      "role": "Automotive Specialist"
+    },
+    "beauty": {
+      "label": "Beauty & Wellness",
+      "role": "Wellness Coach"
+    },
+    "finance": {
+      "label": "Finance",
+      "role": "Financial Advisor"
+    },
+    "custom": {
+      "label": "Custom Industry",
+      "role": "Your Title"
+    }
+  },
+  "industryCard": {
+    "call": "Call",
+    "email": "Email",
+    "whatsapp": "WhatsApp",
+    "save": "Save",
+    "tap": "Tap your card"
   }
 }

@@ -1,4 +1,5 @@
 import { Phone, Mail, MessageCircle, Download, Nfc } from "lucide-react";
+import { useLocale } from "@/i18n/useLocale";
 
 const AriadniMark = ({ className = "" }) => (
   <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} />
@@ -16,15 +17,16 @@ const MedicalDecoration = ({ ac }) => (
 );
 
 const ACTIONS = [
-  { icon: Phone, label: "Call" },
-  { icon: Mail, label: "Email" },
-  { icon: MessageCircle, label: "WhatsApp" },
-  { icon: Download, label: "Save" },
+  { icon: Phone, key: "call" },
+  { icon: Mail, key: "email" },
+  { icon: MessageCircle, key: "whatsapp" },
+  { icon: Download, key: "save" },
 ];
 
 // The ONE master industry card. Same structure for every industry — the
 // background mood, accent, icon and content are the only things that change.
 export function IndustryCard({ c, className = "" }) {
+  const { t } = useLocale();
   const ac = c.accent;
   const base = c.base || "10,10,12";
   const mult = { soft: 1.3, medium: 1, rich: 0.68 }[c.intensity] || 1;
@@ -68,29 +70,29 @@ export function IndustryCard({ c, className = "" }) {
 
           {/* text hierarchy */}
           <h3 className="mt-4 text-center text-[22px] font-semibold leading-tight text-white">{c.name}</h3>
-          <p className="mt-1 text-center text-[13px]" style={{ color: ac }}>{c.role}</p>
+          <p className="mt-1 text-center text-[13px]" style={{ color: ac }}>{t(`industries.${c.id}.role`, c.role)}</p>
           <p className="mt-0.5 text-center text-[11px]" style={{ color: `${ac}cc` }}>{c.company}</p>
 
           {/* action icons */}
           <div className="mt-5 grid w-full grid-cols-4 gap-2">
             {ACTIONS.map((a) => (
-              <div key={a.label} className="flex flex-col items-center gap-1.5" data-testid={`ind-action-${c.id}-${a.label.toLowerCase()}`}>
+              <div key={a.key} className="flex flex-col items-center gap-1.5" data-testid={`ind-action-${c.id}-${a.key}`}>
                 <span className="flex h-11 w-11 items-center justify-center rounded-full border" style={{ borderColor: `${ac}80` }}>
                   <a.icon className="h-4 w-4" style={{ color: ac }} strokeWidth={1.75} />
                 </span>
-                <span className="text-[10px] text-neutral-400">{a.label}</span>
+                <span className="text-[10px] text-neutral-400">{t(`industryCard.${a.key}`)}</span>
               </div>
             ))}
           </div>
 
           {/* main CTA */}
           <div className="mt-5 w-full rounded-xl border py-3 text-center text-[13px] font-medium text-white" style={{ borderColor: `${ac}80`, backgroundColor: `${ac}12` }} data-testid={`ind-exchange-${c.id}`}>
-            Exchange Contact
+            {t("exchange.title")}
           </div>
 
           {/* tap micro-copy */}
           <div className="mt-3.5 flex items-center gap-2 text-[11px] text-neutral-400">
-            <Nfc className="h-3.5 w-3.5" style={{ color: ac }} /> Tap your card
+            <Nfc className="h-3.5 w-3.5" style={{ color: ac }} /> {t("industryCard.tap")}
           </div>
         </div>
       </div>
@@ -98,7 +100,7 @@ export function IndustryCard({ c, className = "" }) {
       {/* industry label */}
       <div className="mt-4 flex items-center gap-2" data-testid={`ind-label-${c.id}`}>
         <LabelIcon className="h-5 w-5" style={{ color: ac }} strokeWidth={1.75} />
-        <span className="text-[14px] text-neutral-200">{c.label}</span>
+        <span className="text-[14px] text-neutral-200">{t(`industries.${c.id}.label`, c.label)}</span>
       </div>
     </div>
   );
