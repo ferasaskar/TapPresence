@@ -25,6 +25,7 @@ import ManageMeeting from "@/pages/ManageMeeting";
 import Activate from "@/pages/Activate";
 import NfcCards from "@/pages/NfcCards";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "@/pages/AuthExtra";import Legal from "@/pages/Legal";
+import ControlCenter from "@/pages/ControlCenter";
 import LocaleToast from "@/components/LocaleToast";
 import ConsentBanner from "@/components/ConsentBanner";
 import PrivacyCenter from "@/pages/PrivacyCenter";
@@ -40,6 +41,21 @@ function ProtectedRoute({ children }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+// SUPER_ADMIN-only routes (/control/*). Normal customers are redirected away.
+function SuperAdminRoute({ children }) {
+  const { user, ready } = useAuth();
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#050607]">
+        <Loader2 className="w-6 h-6 animate-spin text-[#D6A653]" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== "SUPER_ADMIN") return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -63,7 +79,9 @@ function App() {
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/nfc" element={<ProtectedRoute><NfcCards /></ProtectedRoute>} />
             <Route path="/team" element={<ProtectedRoute><Team /></ProtectedRoute>} />
-            <Route path="/admin/platform" element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
+            <Route path="/admin/platform" element={<Navigate to="/control" replace />} />
+            <Route path="/control" element={<SuperAdminRoute><ControlCenter /></SuperAdminRoute>} />
+            <Route path="/control/:section" element={<SuperAdminRoute><ControlCenter /></SuperAdminRoute>} />
             <Route path="/industry-studio" element={<ProtectedRoute><IndustryStudio /></ProtectedRoute>} />
             <Route path="/signatures" element={<ProtectedRoute><Signatures /></ProtectedRoute>} />
             <Route path="/integrations" element={<ProtectedRoute><IntegrationHub /></ProtectedRoute>} />
@@ -71,7 +89,7 @@ function App() {
             <Route path="/templates" element={<ProtectedRoute><CreateCard /></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
             <Route path="/referral" element={<ProtectedRoute><Referral /></ProtectedRoute>} />
-            <Route path="/admin/commercial" element={<ProtectedRoute><CommercialSettings /></ProtectedRoute>} />
+            <Route path="/admin/commercial" element={<Navigate to="/control/plans" replace />} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/m/:token" element={<ManageMeeting />} />
             <Route path="/industries" element={<IndustryShowcase />} />

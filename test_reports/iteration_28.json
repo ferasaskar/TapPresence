@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 28 (Control Center) verified end-to-end. Backend: 15/15 pytest tests passing covering (a) authorization isolation — all 8 /admin/control/* endpoints return 403 for normal customer token and 200 for SUPER_ADMIN; (b) Overview KPIs render real counts and money metrics (mrr/arr/revenue_month/churn/trial_to_paid) are None while money_available=false; (c) date range filter works; (d) Health, Referrals, Security, Audit search; (e) Flags create+toggle round-trip; (f) Entitlements get+set persist; (g) Pricing preview + publish creates a new commercial_config_versions entry AND audit log entry action=admin.pricing.publish; (h) Customer detail + resend_verification + suspend/unsuspend flow for teamtest@demo.com. Frontend: Login as admin@ariadni.id redirects to /control; Control Center shell renders; all 14 nav sections load their ctrl-{section} root; kpi-mrr/arr/rev/churn show 'Not available until billing connected'; ctrl-overview-range present; customers-search filters + row click opens customer-detail dialog; plans-preview-btn opens plans-publish-dialog with apply-new / apply-migrate / plans-confirm-publish; flag-key-input + flag-add + flag-toggle-{key} work; SUPER_ADMIN admin row has NO cust-suspend button (also no cust-resend / cust-revoke — see note); industry-toggle-* renders (12); ent-plan-pro + ent-save present. Normal customer (work@gmail.com) is redirected to /dashboard from /control, /control/customers, /control/plans, and /admin/commercial.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Customer detail dialog", "issues": ["DialogContent is missing `aria-describedby` / `Description` (Radix a11y warning in console). Not blocking but should be addressed for a11y."]},
+      {"screen": "Customer detail dialog (SUPER_ADMIN row)", "issues": ["When the target user is SUPER_ADMIN, cust-suspend is correctly hidden — but cust-resend and cust-revoke are ALSO hidden in that case. Requirement was only 'no suspend button on a SUPER_ADMIN row'. Verify with product whether resend/revoke should still be available on admin rows (they still are safe operations)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_control.py",
+    "/app/test_reports/pytest/iter28_control.xml"
+  ],
+  "action_items": [
+    "(a11y minor) Add aria-describedby / DialogDescription to customer-detail and plans-publish-dialog DialogContent to silence Radix warnings.",
+    "(product decision) Confirm whether cust-resend / cust-revoke should be available on SUPER_ADMIN customer rows — they are currently hidden along with cust-suspend."
+  ],
+  "critical_code_review_comments": [
+    "_require_super correctly guards every /admin/control/* endpoint (verified via 403 sweep across 8 endpoints).",
+    "Overview money metrics correctly return None with money_available=false so the UI can render the 'Not available until billing connected' state — good separation of concerns.",
+    "Pricing publish is versioned (commercial_config_versions) AND audited (action=admin.pricing.publish) atomically — good.",
+    "SuperAdminRoute (App.js) short-circuits to /dashboard for non-SUPER_ADMIN — verified with work@gmail.com. Old /admin/platform + /admin/commercial redirects behave correctly.",
+    "ControlCenter.jsx is 615 lines and holds 15 subsections + shell inline. Consider splitting per-section components into /pages/control/*.jsx files for maintainability if further sections are added."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_control.py"
+  ],
+  "success_rate": { "backend": "100% (15/15)", "frontend": "100% (all critical flows + testids verified)" },
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN); work@gmail.com / mohammed (normal customer); teamtest@demo.com (suspend target — verified present, suspended then unsuspended, left unsuspended).",
+  "seed_data_creation": "Test artifacts CLEANED UP: feature_flags 'iter28_test_flag' + 'ui_iter28_flag' deleted from mongo after tests. commercial_config trial.days set to 14 (from a publish). teamtest@demo.com left unsuspended (verified). No other persistent state changes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Control Center is fully functional. Backend tests live in /app/backend/tests/test_iter28_control.py — run with `pytest backend/tests/test_iter28_control.py -o addopts=''`. If retesting, be aware: (1) each pricing/publish call creates a new commercial_config_versions row (they will accumulate); (2) suspend flow relies on teamtest@demo.com existing — skip if absent. The two minor UI notes (DialogDescription a11y warning + resend/revoke hidden on super-admin rows) are non-blocking design questions for the main agent to confirm.",
+  "rca of the issue": "N/A — no blocking issues found."
+}

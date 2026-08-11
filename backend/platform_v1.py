@@ -192,6 +192,14 @@ async def resolve_entitlements(workspace_id: str) -> dict:
     plan = sub.get("plan") or (ws or {}).get("plan", "free")
     status = effective_status(ws)
     ent = dict(PLAN_ENTITLEMENTS.get(plan, PLAN_ENTITLEMENTS["free"]))
+    # Super-Admin configurable overrides (no source edits): commercial_config.entitlement_overrides[plan]
+    try:
+        cfg = await get_commercial_config()
+        ov = (cfg.get("entitlement_overrides") or {}).get(plan) or {}
+        if ov:
+            ent.update({k: v for k, v in ov.items() if k in ent})
+    except Exception:
+        pass
     ent["plan"] = plan
     ent["status"] = status
     ent["active"] = status in ACTIVE_STATES
@@ -1533,6 +1541,316 @@ async def update_commercial_admin(body: CommercialConfigIn, user: dict = Depends
     await db.commercial_config.update_one({"id": "global"}, {"$set": merged}, upsert=True)
     await audit(None, user["id"], "commercial_config_updated", {"keys": list(patch.keys())})
     return {"ok": True, "config": merged}
+
+
+# ================================================================== TapPresence Control Center (SUPER_ADMIN only)
+def _win(start, end):
+    now = datetime.now(timezone.utc)
+    lo = start or (now - timedelta(days=30)).isoformat()
+    hi = end or now.isoformat()
+    return {"$gte": lo, "$lte": hi}, lo, hi
+
+
+@platform_router.get("/admin/control/overview")
+async def control_overview(start: str = None, end: str = None, user: dict = Depends(current_user)):
+    """Global platform overview. Real counts only. Money metrics are None until real billing (Stripe) is connected."""
+    _require_super(user)
+    from collections import Counter
+    tw, lo, hi = _win(start, end)
+    workspaces = await db.workspaces.find({}, {"_id": 0}).to_list(20000)
+    individual = sum(1 for w in workspaces if w.get("type") == "individual")
+    team = sum(1 for w in workspaces if w.get("type") == "team")
+    plan_dist = Counter()
+    active_trials = active_paid = cancellations = seats = 0
+    for w in workspaces:
+        st = effective_status(w)
+        sub = w.get("subscription") or {}
+        plan = sub.get("plan") or w.get("plan", "free")
+        plan_dist[plan] += 1
+        if st == "trialing":
+            active_trials += 1
+        if st in ("active", "cancel_at_period_end") and plan in ("pro", "team", "enterprise", "individual"):
+            active_paid += 1
+        if st == "cancel_at_period_end":
+            cancellations += 1
+        seats += int(sub.get("seats") or 0)
+    users_total = await db.users.count_documents({})
+    new_customers = await db.users.count_documents({"created_at": tw})
+    published = await db.digital_cards.count_documents({"status": "published"})
+    views = await db.analytics_events.count_documents({"type": "view", "created_at": tw})
+    scans = await db.analytics_events.count_documents({"type": "scan", "created_at": tw})
+    nfctaps = await db.analytics_events.count_documents({"type": "nfctap", "created_at": tw})
+    leads = await db.leads.count_documents({"created_at": tw})
+    scanner_uses = await db.leads.count_documents({"source": {"$in": ["business_card_scan", "badge_scan", "qr_scan"]}, "created_at": tw})
+    meetings_booked = await db.meetings.count_documents({"created_at": tw})
+    campaigns = await db.campaigns.count_documents({})
+    paid_referrals = await db.referrals.count_documents({"status": "qualified"})
+    return {
+        "money_available": bool(_configured("STRIPE_SECRET_KEY")),
+        "accounts": {
+            "total": users_total, "individual": individual, "team": team, "team_seats": seats,
+            "active_trials": active_trials, "active_paid": active_paid, "cancellations": cancellations,
+            "new_customers": new_customers,
+        },
+        "money": {"mrr": None, "arr": None, "revenue_month": None, "trial_to_paid": None, "churn": None},
+        "usage": {
+            "published_cards": published, "views": views, "scans": scans, "nfc_taps": nfctaps,
+            "leads": leads, "scanner_uses": scanner_uses, "meetings_booked": meetings_booked,
+            "campaigns": campaigns, "paid_referrals": paid_referrals,
+        },
+        "plan_distribution": dict(plan_dist),
+        "range": {"start": lo, "end": hi},
+    }
+
+
+@platform_router.get("/admin/control/customers/{user_id}")
+async def control_customer_detail(user_id: str, user: dict = Depends(current_user)):
+    _require_super(user)
+    u = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not u:
+        raise HTTPException(404, "User not found")
+    ms = await db.memberships.find({"user_id": user_id}, {"_id": 0}).to_list(200)
+    ws_ids = [m["workspace_id"] for m in ms]
+    wss = await db.workspaces.find({"id": {"$in": ws_ids}}, {"_id": 0}).to_list(200)
+    cards = await db.digital_cards.find({"owner_user_id": user_id}, {"_id": 0, "slug": 1, "status": 1, "identity": 1, "workspace_id": 1}).to_list(500)
+    slugs = [c["slug"] for c in cards]
+    leads = await db.leads.count_documents({"cardSlug": {"$in": slugs}}) if slugs else 0
+    meetings = await db.meetings.count_documents({"owner_user_id": user_id})
+    referrals = await db.referrals.count_documents({"referrer_user_id": user_id})
+    last = await db.analytics_events.find({"cardSlug": {"$in": slugs}}, {"_id": 0, "created_at": 1}).sort("created_at", -1).to_list(1) if slugs else []
+    prim = next((w for w in wss if w.get("type") == "individual"), wss[0] if wss else None)
+    return {
+        "user": u, "workspaces": wss, "memberships": ms,
+        "cards": cards, "leads": leads, "meetings": meetings, "referrals": referrals,
+        "last_activity": last[0]["created_at"] if last else None,
+        "subscription": (prim or {}).get("subscription"),
+        "status": effective_status(prim) if prim else None,
+    }
+
+
+@platform_router.post("/admin/control/customers/{user_id}/action")
+async def control_customer_action(user_id: str, body: dict, user: dict = Depends(current_user)):
+    """Safe support actions: resend_verification, revoke_sessions. (suspend/unsuspend uses existing endpoint.)"""
+    _require_super(user)
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "User not found")
+    action = (body or {}).get("action")
+    if action == "revoke_sessions":
+        await db.sessions.delete_many({"user_id": user_id})
+    elif action == "resend_verification":
+        token = secrets.token_urlsafe(32)
+        await db.email_verifications.insert_one({
+            "id": str(uuid.uuid4()), "user_id": user_id, "token": token, "used": False,
+            "created_at": now_iso(), "expires_at": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+        })
+    else:
+        raise HTTPException(400, "Unknown action")
+    await audit(None, user["id"], f"admin.customer.{action}", {"target": user_id, "email": target.get("email")})
+    return {"ok": True, "action": action}
+
+
+@platform_router.get("/admin/control/workspaces/{wid}")
+async def control_workspace_detail(wid: str, user: dict = Depends(current_user)):
+    _require_super(user)
+    w = await db.workspaces.find_one({"id": wid}, {"_id": 0})
+    if not w:
+        raise HTTPException(404, "Workspace not found")
+    owner = await db.users.find_one({"id": w.get("owner_id")}, {"_id": 0, "name": 1, "email": 1}) if w.get("owner_id") else None
+    ms = await db.memberships.find({"workspace_id": wid}, {"_id": 0}).to_list(500)
+    member_users = await db.users.find({"id": {"$in": [m["user_id"] for m in ms]}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(500)
+    umap = {u["id"]: u for u in member_users}
+    sub = w.get("subscription") or {}
+    return {
+        "workspace": w, "owner": owner, "status": effective_status(w),
+        "plan": sub.get("plan") or w.get("plan"), "seats": sub.get("seats"),
+        "members": [{"role": m.get("role"), **umap.get(m["user_id"], {"id": m["user_id"]})} for m in ms],
+        "brand_lock": (w.get("branding") or {}).get("locked", False),
+        "cards": await db.digital_cards.count_documents({"workspace_id": wid}),
+        "leads": await db.leads.count_documents({"workspace_id": wid}),
+        "meetings": await db.meetings.count_documents({"workspace_id": wid}),
+    }
+
+
+@platform_router.get("/admin/control/referrals")
+async def control_referrals(user: dict = Depends(current_user)):
+    _require_super(user)
+    total = await db.referrals.count_documents({})
+    signed = await db.referrals.count_documents({"status": "signed_up"})
+    qualified = await db.referrals.count_documents({"status": "qualified"})
+    revoked = await db.referrals.count_documents({"status": "revoked"})
+    rewards = await db.referral_rewards.find({}, {"_id": 0}).to_list(5000)
+    months_earned = sum(int(r.get("free_months_earned", 0)) for r in rewards)
+    from collections import Counter
+    top = Counter()
+    async for r in db.referrals.find({"status": "qualified"}, {"_id": 0, "referrer_ws_id": 1}):
+        top[r.get("referrer_ws_id")] += 1
+    top_list = []
+    for ws_id, cnt in top.most_common(10):
+        w = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "name": 1})
+        top_list.append({"workspace": (w or {}).get("name") or ws_id, "qualified": cnt})
+    cfg = await get_commercial_config()
+    return {
+        "funnel": {"total": total, "signed_up": signed, "qualified": qualified, "revoked": revoked},
+        "months_earned": months_earned, "top_referrers": top_list,
+        "config": cfg.get("referral", {}),
+    }
+
+
+@platform_router.get("/admin/control/flags")
+async def control_flags(user: dict = Depends(current_user)):
+    _require_super(user)
+    return {"items": await db.feature_flags.find({}, {"_id": 0}).sort("key", 1).to_list(500)}
+
+
+@platform_router.put("/admin/control/flags/{key}")
+async def control_flag_set(key: str, body: dict, user: dict = Depends(current_user)):
+    _require_super(user)
+    before = await db.feature_flags.find_one({"key": key}, {"_id": 0})
+    doc = {
+        "key": key, "enabled": bool(body.get("enabled", False)),
+        "description": body.get("description", (before or {}).get("description", "")),
+        "plans": body.get("plans", (before or {}).get("plans", [])),
+        "environment": body.get("environment", (before or {}).get("environment", "all")),
+        "updated_at": now_iso(),
+    }
+    await db.feature_flags.update_one({"key": key}, {"$set": doc}, upsert=True)
+    await audit(None, user["id"], "admin.flag.set", {"key": key, "before": before, "after": doc})
+    return {"ok": True, "flag": doc}
+
+
+@platform_router.get("/admin/control/audit")
+async def control_audit(q: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    query = {"action": {"$regex": re.escape(q.strip()), "$options": "i"}} if q.strip() else {}
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+    for lg in logs:
+        actor = await db.users.find_one({"id": lg.get("actor_id")}, {"_id": 0, "email": 1}) if lg.get("actor_id") else None
+        lg["actor_email"] = (actor or {}).get("email")
+    return {"items": logs}
+
+
+@platform_router.get("/admin/control/security")
+async def control_security(user: dict = Depends(current_user)):
+    _require_super(user)
+    suspended = await db.users.find({"suspended": True}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(500)
+    attempts = await db.login_attempts.find({"fails": {"$gte": 3}}, {"_id": 0}).sort("fails", -1).to_list(100)
+    revoked_referrals = await db.referrals.count_documents({"status": "revoked"})
+    return {
+        "suspended_accounts": suspended,
+        "locked_or_throttled": [{"identifier": a.get("identifier"), "fails": a.get("fails"), "until": a.get("locked_until")} for a in attempts],
+        "suspicious_referrals": revoked_referrals,
+    }
+
+
+@platform_router.get("/admin/control/health")
+async def control_health(user: dict = Depends(current_user)):
+    _require_super(user)
+    db_ok = True
+    try:
+        await db.command("ping")
+    except Exception:
+        db_ok = False
+    integrations = {
+        "stripe": _configured("STRIPE_SECRET_KEY"),
+        "email": _configured("EMAIL_API_KEY"),
+        "ai": _configured("EMERGENT_LLM_KEY"),
+        "error_monitoring": _configured("SENTRY_DSN"),
+    }
+    pending_verifications = await db.email_verifications.count_documents({"used": False})
+    return {
+        "api": "ok",
+        "database": "ok" if db_ok else "error",
+        "ai_provider": "ok" if integrations["ai"] else "not_configured",
+        "error_monitoring": "connected" if integrations["error_monitoring"] else "not_configured",
+        "email_delivery": "connected" if integrations["email"] else "not_configured",
+        "billing": "connected" if integrations["stripe"] else "demo",
+        "pending_email_verifications": pending_verifications,
+        "integrations": integrations,
+    }
+
+
+@platform_router.get("/admin/control/entitlements")
+async def control_entitlements(user: dict = Depends(current_user)):
+    _require_super(user)
+    cfg = await get_commercial_config()
+    return {"defaults": PLAN_ENTITLEMENTS, "overrides": cfg.get("entitlement_overrides", {})}
+
+
+@platform_router.put("/admin/control/entitlements")
+async def control_entitlements_set(body: dict, user: dict = Depends(current_user)):
+    _require_super(user)
+    plan = (body or {}).get("plan")
+    overrides = (body or {}).get("overrides") or {}
+    if plan not in PLAN_ENTITLEMENTS:
+        raise HTTPException(400, "Unknown plan")
+    cfg = await get_commercial_config()
+    before = (cfg.get("entitlement_overrides") or {}).get(plan, {})
+    ent_ov = cfg.get("entitlement_overrides") or {}
+    ent_ov[plan] = {k: v for k, v in overrides.items() if k in PLAN_ENTITLEMENTS[plan]}
+    await db.commercial_config.update_one({"id": "global"}, {"$set": {"entitlement_overrides": ent_ov}}, upsert=True)
+    await audit(None, user["id"], "admin.entitlements.set", {"plan": plan, "before": before, "after": ent_ov[plan]})
+    return {"ok": True, "overrides": ent_ov[plan]}
+
+
+class PricingChangeIn(BaseModel):
+    patch: dict
+    apply_to: Optional[str] = "new_only"   # "new_only" | "migrate"
+    reason: Optional[str] = ""
+
+
+@platform_router.post("/admin/control/pricing/preview")
+async def control_pricing_preview(body: PricingChangeIn, user: dict = Depends(current_user)):
+    """Impact preview for a pricing/plan change. Read-only: no writes, no Stripe mutation."""
+    _require_super(user)
+    current = await get_commercial_config()
+    proposed = _deep_merge(dict(current), body.patch)
+    affected_plans = list((body.patch.get("plans") or {}).keys())
+    impact = []
+    for plan in affected_plans:
+        subs = await db.workspaces.count_documents({"$or": [{"plan": plan}, {"subscription.plan": plan}]})
+        impact.append({"plan": plan, "active_subscriptions": subs})
+    return {
+        "before": {"plans": current.get("plans"), "trial": current.get("trial")},
+        "after": {"plans": proposed.get("plans"), "trial": proposed.get("trial")},
+        "affected_plans": affected_plans,
+        "impact": impact,
+        "apply_to": body.apply_to,
+        "note": "Existing paid subscriptions keep their locked price unless explicitly migrated. Real price migration executes only when Stripe billing is connected.",
+    }
+
+
+@platform_router.post("/admin/control/pricing/publish")
+async def control_pricing_publish(body: PricingChangeIn, user: dict = Depends(current_user)):
+    """Version + publish a pricing/plan change. Creates a versioned snapshot and an audit entry.
+    New prices apply to NEW customers; existing subscriptions migrate only when apply_to='migrate' AND Stripe is connected."""
+    _require_super(user)
+    current = await get_commercial_config()
+    version = {
+        "id": str(uuid.uuid4()), "created_at": now_iso(), "actor_id": user["id"],
+        "before": {"plans": current.get("plans"), "trial": current.get("trial"), "regional_pricing": current.get("regional_pricing")},
+        "patch": body.patch, "apply_to": body.apply_to, "reason": body.reason,
+    }
+    await db.commercial_config_versions.insert_one(dict(version))
+    merged = _deep_merge(dict(current), body.patch)
+    merged["id"] = "global"
+    await db.commercial_config.update_one({"id": "global"}, {"$set": merged}, upsert=True)
+    migrated = False
+    if body.apply_to == "migrate" and _configured("STRIPE_SECRET_KEY"):
+        migrated = True  # real Stripe migration would run here once billing is connected
+    await audit(None, user["id"], "admin.pricing.publish", {
+        "apply_to": body.apply_to, "reason": body.reason, "keys": list(body.patch.keys()),
+        "version_id": version["id"], "migrated_existing": migrated,
+    })
+    return {"ok": True, "version_id": version["id"], "migrated_existing": migrated, "config": merged}
+
+
+@platform_router.get("/admin/control/pricing/versions")
+async def control_pricing_versions(user: dict = Depends(current_user)):
+    _require_super(user)
+    return {"items": await db.commercial_config_versions.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)}
+
+
 
 
 

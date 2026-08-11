@@ -29,8 +29,8 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
-      navigate("/dashboard");
+      const u = await login(email, password);
+      navigate(u?.role === "SUPER_ADMIN" ? "/control" : "/dashboard");
     } catch (err) {
       setError(fmtErr(err.response?.data?.detail) || err.message || t("auth.genericError"));
     } finally {

@@ -69,7 +69,7 @@ export const OwnerNav = ({ active }) => {
     { key: "settings", label: t("nav.settings"), icon: SettingsIcon, onClick: () => navigate("/settings") },
   ];
   const adminItems = [
-    { key: "command", label: t("nav.command"), icon: ShieldCheck, onClick: () => navigate("/admin/platform") },
+    { key: "command", label: t("nav.command"), icon: ShieldCheck, onClick: () => navigate("/control") },
   ];
 
   const Item = ({ it }) => {

@@ -577,3 +577,35 @@ User directive: ONE authoritative pricing config across Super Admin → Billing 
 - Real Stripe payments and transactional email delivery (auth/verification/reset flows built; delivery blocked until provider configured).
 - Meetings date-filter (uses temporal tabs today/upcoming/past already); could adopt DateFilter later if desired.
 
+
+
+---
+
+## 2026-06 — TapPresence Control Center (SUPER_ADMIN operator console) — verified iteration_28 (backend 15/15, frontend 100%)
+
+Distinct platform-operator experience at `/control/*`, separate from the customer app.
+- **Routing/guard**: `SuperAdminRoute` in `App.js`; SUPER_ADMIN login → `/control` (Login.jsx). Old routes folded: `/admin/platform` → `/control`, `/admin/commercial` → `/control/plans`. Normal customers hitting `/control/*` redirect to `/dashboard`; all `/admin/control/*` APIs return 403 for non-super.
+- **Backend** (`platform_v1.py`, all `_require_super`): `/admin/control/overview` (real counts + money=None), `/customers/{id}` + `/customers/{id}/action` (resend_verification/revoke_sessions), `/workspaces/{id}`, `/referrals`, `/flags` (GET/PUT), `/audit`, `/security`, `/health`, `/entitlements` (GET/PUT overrides merged in `resolve_entitlements`), `/pricing/preview`, `/pricing/publish` (versioned + audit), `/pricing/versions`. Reuses existing `/admin/platform/users|workspaces|suspend`, `/admin/commercial`, `/admin/industries`, `/integrations/status`.
+- **Frontend**: single `pages/ControlCenter.jsx` (shell: fixed sidebar desktop + drawer mobile + top bar; footer "Open TapPresence App" + "Log out"). 15 sections all live.
+
+### Page-by-page status (what is REAL vs deferred)
+| Section | Live? | Real data | Deferred/unavailable |
+|---|---|---|---|
+| Overview | ✅ | account counts, trials/paid/cancellations (from subscription state), product usage (views/scans/nfc/leads/scanner/meetings/campaigns/referrals), plan distribution, global date filter | MRR/ARR/Revenue/Churn/Trial→Paid show "Not available until billing connected" |
+| Customers | ✅ | search, detail (status/verify/plan/cards/leads/meetings/referrals/country/lang/tz/created/last activity), actions: resend verify, revoke sessions, suspend/unsuspend | email actually sends only when email provider connected |
+| Companies/Workspaces | ✅ | owner, plan, status, seats, members, cards, leads, meetings, brand-lock | — |
+| Subscriptions | ✅ | grouped by real subscription status | money figures need Stripe |
+| Revenue & Analytics | ✅ | real product analytics | revenue KPIs "Not available" until Stripe |
+| Plans & Pricing | ✅ | Draft→Impact Preview→Confirm→Publish; versioned snapshots (`commercial_config_versions`) + audit; new-only vs migrate decision recorded | real Stripe price migration executes only when Stripe connected |
+| Product & Entitlements | ✅ | per-plan override editor; merged into `resolve_entitlements` (no source edits) | — |
+| Referral Program | ✅ | funnel, qualified, months earned, top referrers, config | — |
+| Templates & Industries | ✅ | list + enable/disable | — |
+| Feature Flags | ✅ | add/toggle, stored in `feature_flags` collection | flags are stored/managed; wire into gates as needed |
+| Integrations | ✅ | Connected/Not-configured from real env; no secrets shown | providers themselves not connected |
+| System Health | ✅ | API/DB/AI/billing(demo)/email/Sentry states, pending verifications | deeper metrics after Sentry connected |
+| Security & Abuse | ✅ | suspended accounts, throttled logins, revoked referrals | — |
+| Audit Log | ✅ | actor/action/timestamp/meta (before/after for pricing/flags/entitlements); searchable | — |
+| Settings | ✅ | operator info | — |
+
+**Not connected (external creds needed): Stripe (all money metrics + real price migration), transactional email (delivery), Sentry (deep health).**
+
