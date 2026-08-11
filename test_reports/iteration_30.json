@@ -1,0 +1,23 @@
+{
+  "summary": "Iter30 verified Control Center reconciliation, human labels, workspace type filter, and Draft→Preview→Publish entitlements end-to-end. Backend: 17/17 pytest passed (test_iter30_control_reconciliation.py). Reconciliation across pages holds: overview.accounts={total:2,individual:2,company:0,enterprise:0}, plan_distribution={trial:2} (no 'free' key), subscriptions.summary={trialing:2,active:0}, /customers returns exactly 2 rows (Loiy owner, Mohammed owner) with role_label='Owner' (no WORKSPACE_OWNER enum, no 'free', no ariadni.ai/teamtest/admin@ariadni.id leaks), /workspaces returns 2 (both individual); type=company → 0, type=individual → 2; include_internal=true bumps both /customers and /workspaces beyond the defaults and reveals 'TapPresence HQ'. Entitlements: plans exactly ['trial','pro','team','enterprise'] (no 'free', no 'white_label'); provider_status = {wallet:false, ai_followup:true, custom_domain:false, api:true}; PUT rejects 'free' and 'white_label' with 400; preview returns diff+affected_customers; publish writes to commercial_config.entitlement_overrides and creates 'admin.entitlements.publish' audit entry (verified via /admin/control/audit). Authorization: work@gmail.com gets 403 on all 5 /admin/control/* endpoints tested and is redirected from /control/customers to /dashboard. Frontend Playwright (1920×1080): admin lands on /control; /control/customers shows 2 compact tap-to-open cards with 'Owner' label and 'Trial' plan, detail dialog opens with human labels; include-internal toggle bumps to 3 rows; /control/companies titled 'Workspaces' with ws-type-all/company/individual chips (company→0 rows, individual→2 rows, no 'TapPresence HQ' in default); /control/product shows 4 plan tabs (no ent-plan-free / no ent-plan-white_label), human labels present (Max cards, Mobile wallet passes, AI follow-up, Card scanner, Remove branding, Custom domain, API access), ent-unavailable-wallet + ent-unavailable-custom_domain badges rendered while ent-unavailable-ai_followup is absent (EMERGENT_LLM_KEY configured); Draft→Preview dialog opens, reason field accepts input, Confirm & Publish shows 'Entitlements published & audited' toast. Regression: normal customer login → /dashboard succeeds and cannot reach /control/*.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_control_reconciliation.py",
+    "/app/test_reports/pytest/iter30.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "customer_ws_filter/is_real_paid/display_plan helpers are correctly shared across /overview, /customers, /workspaces, /subscriptions — reconciliation math holds by construction.",
+    "PUT /admin/control/entitlements does not reject empty overrides on the backend (frontend disables confirm button via `disabled={!preview || !Object.keys(preview.diff).length}`); consider server-side 400 if diff is empty to fully prevent audit-log noise.",
+    "ROLE_LABELS map correctly translates WORKSPACE_OWNER→Owner; ENT_LABEL covers all shipped keys; white_label key is filtered out at UI layer (never sent to editor).",
+    "ENTITLEMENT_PROVIDER wallet requires BOTH Apple+Google keys via any(); currently correctly returns false when neither is configured."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter30_control_reconciliation.py"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all flows + testids verified)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN); work@gmail.com / mohammed (individual customer)",
+  "seed_data_creation": "Entitlements pro.max_cards override was created during publish test and immediately reset to {} at cleanup. No persistent seed data left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter30 fully verified: cross-page reconciliation (2 real customers, 2 individual workspaces, plan_distribution={trial:2}, subs.summary={trialing:2,active:0}), human role labels (Owner/Admin/Member), Workspaces type filter (company=0, individual=2), Product plan tabs restricted to trial/pro/team/enterprise, provider-gated features (wallet+custom_domain unavailable badges; ai_followup+api available), Draft→Preview→Publish flow writes admin.entitlements.publish audit entry. Test file: /app/backend/tests/test_iter30_control_reconciliation.py — run with `pytest backend/tests/test_iter30_control_reconciliation.py -o addopts=''`."
+}

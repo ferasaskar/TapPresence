@@ -1691,6 +1691,59 @@ async def control_subscriptions(include_internal: bool = False, user: dict = Dep
     return {"summary": dict(summary), "items": items, "money_available": bool(_configured("STRIPE_SECRET_KEY"))}
 
 
+ROLE_LABELS = {"SUPER_ADMIN": "Super Admin", "WORKSPACE_OWNER": "Owner", "WORKSPACE_ADMIN": "Admin", "MANAGER": "Manager", "MEMBER": "Member"}
+PUBLIC_PLANS = ["trial", "pro", "team", "enterprise"]
+# feature -> env keys that must be configured for the feature to actually work (None = not provider-gated)
+ENTITLEMENT_PROVIDER = {"wallet": ("APPLE_WALLET_CERT_B64", "GOOGLE_WALLET_ISSUER_ID"), "ai_followup": ("EMERGENT_LLM_KEY",), "custom_domain": ("CUSTOM_DOMAIN_HOST",), "api": ()}
+
+
+@platform_router.get("/admin/control/customers")
+async def control_customers(q: str = "", include_internal: bool = False, user: dict = Depends(current_user)):
+    """Customer ACCOUNTS = owners of customer workspaces (NOT every user; team members are not separate customers)."""
+    _require_super(user)
+    wss = await db.workspaces.find(customer_ws_filter(include_internal), {"_id": 0}).sort("created_at", -1).to_list(20000)
+    out = []
+    ql = q.strip().lower()
+    for w in wss:
+        owner = await db.users.find_one({"id": w.get("owner_id")}, {"_id": 0, "password_hash": 0}) if w.get("owner_id") else None
+        if not owner:
+            continue
+        if ql and ql not in (owner.get("name") or "").lower() and ql not in (owner.get("email") or "").lower() and ql not in (w.get("name") or "").lower():
+            continue
+        out.append({
+            "user_id": owner["id"], "name": owner.get("name"), "email": owner.get("email"),
+            "role": owner.get("role"), "role_label": ROLE_LABELS.get(owner.get("role"), owner.get("role")),
+            "email_verified": owner.get("email_verified", False), "suspended": owner.get("suspended", False),
+            "workspace": w.get("name"), "workspace_id": w["id"], "account_type": w.get("type"),
+            "plan": display_plan(w), "status": effective_status(w), "environment": w.get("environment"),
+            "members": await db.memberships.count_documents({"workspace_id": w["id"]}),
+        })
+    return {"items": out}
+
+
+@platform_router.get("/admin/control/workspaces")
+async def control_workspaces(q: str = "", include_internal: bool = False, type: str = "all", user: dict = Depends(current_user)):
+    _require_super(user)
+    wss = await db.workspaces.find(customer_ws_filter(include_internal), {"_id": 0}).sort("created_at", -1).to_list(20000)
+    out = []
+    ql = q.strip().lower()
+    for w in wss:
+        if type == "company" and w.get("type") not in ("company", "team"):
+            continue
+        if type == "individual" and w.get("type") != "individual":
+            continue
+        if ql and ql not in (w.get("name") or "").lower():
+            continue
+        out.append({
+            "id": w["id"], "name": w.get("name"), "type": w.get("type"),
+            "plan": display_plan(w), "status": effective_status(w), "environment": w.get("environment"),
+            "members": await db.memberships.count_documents({"workspace_id": w["id"]}),
+            "cards": await db.digital_cards.count_documents({"workspace_id": w["id"]}),
+            "leads": await db.leads.count_documents({"workspace_id": w["id"]}),
+        })
+    return {"items": out}
+
+
 @platform_router.get("/admin/control/customers/{user_id}")
 async def control_customer_detail(user_id: str, user: dict = Depends(current_user)):
     _require_super(user)
@@ -1862,22 +1915,52 @@ async def control_health(user: dict = Depends(current_user)):
 async def control_entitlements(user: dict = Depends(current_user)):
     _require_super(user)
     cfg = await get_commercial_config()
-    return {"defaults": PLAN_ENTITLEMENTS, "overrides": cfg.get("entitlement_overrides", {})}
+    defaults = {p: PLAN_ENTITLEMENTS[p] for p in PUBLIC_PLANS if p in PLAN_ENTITLEMENTS}
+
+    def prov(feature):
+        keys = ENTITLEMENT_PROVIDER.get(feature)
+        if keys is None:
+            return None  # not provider-gated (built-in)
+        if keys == ():
+            return True
+        return any(_configured(k) for k in keys)
+    provider_status = {f: prov(f) for f in ("wallet", "ai_followup", "custom_domain", "api")}
+    return {"plans": PUBLIC_PLANS, "defaults": defaults,
+            "overrides": {p: v for p, v in (cfg.get("entitlement_overrides") or {}).items() if p in PUBLIC_PLANS},
+            "provider_status": provider_status}
+
+
+@platform_router.post("/admin/control/entitlements/preview")
+async def control_entitlements_preview(body: dict, user: dict = Depends(current_user)):
+    _require_super(user)
+    plan = (body or {}).get("plan")
+    overrides = (body or {}).get("overrides") or {}
+    if plan not in PUBLIC_PLANS:
+        raise HTTPException(400, "Unknown plan")
+    cfg = await get_commercial_config()
+    base = PLAN_ENTITLEMENTS[plan]
+    before = {**base, **((cfg.get("entitlement_overrides") or {}).get(plan) or {})}
+    after = {**base, **{k: v for k, v in overrides.items() if k in base}}
+    diff = {k: {"before": before.get(k), "after": after.get(k)} for k in after if before.get(k) != after.get(k)}
+    affected = await db.workspaces.count_documents({"environment": "production_customer", "$or": [{"plan": plan}, {"subscription.plan": plan}]})
+    return {"plan": plan, "diff": diff, "affected_customers": affected}
 
 
 @platform_router.put("/admin/control/entitlements")
 async def control_entitlements_set(body: dict, user: dict = Depends(current_user)):
+    """Publish entitlement overrides for a plan (Draft->Preview->Confirm->Publish). Records before/after in the Audit Log."""
     _require_super(user)
     plan = (body or {}).get("plan")
     overrides = (body or {}).get("overrides") or {}
-    if plan not in PLAN_ENTITLEMENTS:
+    reason = (body or {}).get("reason", "")
+    if plan not in PUBLIC_PLANS:
         raise HTTPException(400, "Unknown plan")
     cfg = await get_commercial_config()
     before = (cfg.get("entitlement_overrides") or {}).get(plan, {})
     ent_ov = cfg.get("entitlement_overrides") or {}
     ent_ov[plan] = {k: v for k, v in overrides.items() if k in PLAN_ENTITLEMENTS[plan]}
     await db.commercial_config.update_one({"id": "global"}, {"$set": {"entitlement_overrides": ent_ov}}, upsert=True)
-    await audit(None, user["id"], "admin.entitlements.set", {"plan": plan, "before": before, "after": ent_ov[plan]})
+    await audit(None, user["id"], "admin.entitlements.publish", {"plan": plan, "reason": reason, "before": before, "after": ent_ov[plan]})
     return {"ok": True, "overrides": ent_ov[plan]}
 
 

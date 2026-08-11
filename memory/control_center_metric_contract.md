@@ -62,4 +62,15 @@ The difference between the two columns proves internal/demo data (feras-askar) i
 - Control Center header shows **"Super Admin"**, not the admin email.
 
 ## Backend helpers (platform_v1.py)
-`customer_ws_filter(include_internal)`, `is_real_paid(sub)`, `display_plan(ws)`, endpoints `/admin/control/overview` (users vs accounts, mutually-exclusive, include_internal, period vs current-state), `/admin/control/subscriptions` (summary + list, never "free").
+`customer_ws_filter(include_internal)`, `is_real_paid(sub)`, `display_plan(ws)`, `ROLE_LABELS`, `PUBLIC_PLANS`, `ENTITLEMENT_PROVIDER`. Endpoints all share the classifier: `/admin/control/overview`, `/subscriptions`, `/customers`, `/workspaces`, `/entitlements` (+ `/entitlements/preview`, PUT publish w/ audit).
+
+## Cross-page reconciliation (verified iteration_30, all from environment=production_customer)
+| Page | Source | Result |
+|---|---|---|
+| Overview → Customer Accounts | `/admin/control/overview` accounts.total | 2 |
+| Customers | `/admin/control/customers` (owners of customer workspaces) | 2 (Loiy, Mohammed — role "Owner") |
+| Workspaces breakdown | `/admin/control/workspaces` | 0 companies + 2 individuals = 2 |
+| Subscriptions | `/admin/control/subscriptions` | trialing 2, active 0 |
+| Plan distribution | `/admin/control/overview` | {trial: 2} |
+
+All five reconcile. Customers shows customer ACCOUNTS only (team members appear inside a customer's detail, not as separate rows). Internal (TapPresence HQ, ariadni.ai team, admin) and test (demo.com) are excluded by default and only revealed via the "Include internal/test data" toggle. Product & Entitlements: plans = trial/pro/team/enterprise (no free/white_label), human labels, provider-not-connected badges (wallet & custom_domain unavailable), and a Draft→Preview→Confirm→Publish flow that writes an `admin.entitlements.publish` audit entry. Roles shown as human labels (Owner/Admin/Manager/Member/Super Admin). Mobile uses compact tap-to-open cards instead of desktop tables.

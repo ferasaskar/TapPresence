@@ -17,7 +17,7 @@ const cget = (p, params) => api.get(`/admin/control${p}`, { params }).then((r) =
 const SECTIONS = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "customers", label: "Customers", icon: Users },
-  { key: "companies", label: "Companies / Workspaces", icon: Building2 },
+  { key: "companies", label: "Workspaces", icon: Building2 },
   { key: "subscriptions", label: "Subscriptions", icon: CreditCard },
   { key: "revenue", label: "Revenue & Analytics", icon: TrendingUp },
   { key: "plans", label: "Plans & Pricing", icon: Tags },
@@ -150,56 +150,53 @@ const Overview = () => {
   );
 };
 
+const ROLE_LABEL = { SUPER_ADMIN: "Super Admin", WORKSPACE_OWNER: "Owner", WORKSPACE_ADMIN: "Admin", MANAGER: "Manager", MEMBER: "Member" };
+const roleLabel = (r) => ROLE_LABEL[r] || r;
+const statusTone = (s) => s === "trialing" ? "text-[#D6A653]" : s === "active" ? "text-emerald-300" : s === "past_due" ? "text-amber-300" : "text-white/45";
+
 const Customers = () => {
   const [q, setQ] = useState("");
+  const [inc, setInc] = useState(false);
   const [rows, setRows] = useState([]);
   const [sel, setSel] = useState(null);
   const [detail, setDetail] = useState(null);
   const [busy, setBusy] = useState(false);
-  const load = () => api.get("/admin/platform/users", { params: { q } }).then((r) => setRows(r.data.items || [])).catch(() => {});
-  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [q]);
-  const open = async (u) => { setSel(u); setDetail(null); try { setDetail(await cget(`/customers/${u.id}`)); } catch (_) {} };
+  const load = () => cget("/customers", { q, include_internal: inc }).then((d) => setRows(d.items || [])).catch(() => {});
+  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [q, inc]);
+  const open = async (r) => { setSel(r); setDetail(null); try { setDetail(await cget(`/customers/${r.user_id}`)); } catch (_) {} };
   const act = async (action) => {
     setBusy(true);
     try {
-      if (action === "suspend" || action === "unsuspend") {
-        await api.post(`/admin/platform/users/${sel.id}/suspend`, { suspended: action === "suspend" });
-      } else {
-        await api.post(`/admin/control/customers/${sel.id}/action`, { action });
-      }
-      toast.success("Done");
-      await open(sel); load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Action failed"); }
-    finally { setBusy(false); }
+      if (action === "suspend" || action === "unsuspend") await api.post(`/admin/platform/users/${sel.user_id}/suspend`, { suspended: action === "suspend" });
+      else await api.post(`/admin/control/customers/${sel.user_id}/action`, { action });
+      toast.success("Done"); await open(sel); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Action failed"); } finally { setBusy(false); }
   };
   return (
     <div className="space-y-4" data-testid="ctrl-customers">
-      <h2 className="text-xl font-light text-white">Customers</h2>
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email…" className="border-white/12 bg-white/[0.03] pl-9 text-white" data-testid="customers-search" />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><h2 className="text-xl font-light text-white">Customers</h2><p className="text-[11px] text-white/40">Customer accounts only — team members appear inside their account.</p></div>
+        <IncludeInternal on={inc} onClick={() => setInc(!inc)} />
       </div>
-      <Panel>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead><tr className="text-[11px] uppercase tracking-wider text-white/40">
-              <th className="pb-2">Name</th><th className="pb-2">Email</th><th className="pb-2">Plan</th><th className="pb-2">Status</th><th className="pb-2">Role</th>
-            </tr></thead>
-            <tbody>
-              {rows.map((u) => (
-                <tr key={u.id} onClick={() => open(u)} className="cursor-pointer border-t border-white/6 hover:bg-white/[0.03]" data-testid={`customer-row-${u.id}`}>
-                  <td className="py-2.5 text-white">{u.name}{u.suspended ? <span className="ml-2 rounded bg-red-500/15 px-1.5 text-[10px] text-red-300">suspended</span> : null}</td>
-                  <td className="py-2.5 text-white/60">{u.email}{!u.email_verified ? <span className="ml-1 text-amber-400">•</span> : null}</td>
-                  <td className="py-2.5 text-white/70">{u.plan || "—"}</td>
-                  <td className="py-2.5 text-white/70">{u.status || "—"}</td>
-                  <td className="py-2.5 text-white/50">{u.role}</td>
-                </tr>
-              ))}
-              {!rows.length ? <tr><td colSpan={5} className="py-6 text-center text-white/40">No customers</td></tr> : null}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+      <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, email…" className="border-white/12 bg-white/[0.03] pl-9 text-white" data-testid="customers-search" /></div>
+      <div className="space-y-2">
+        {rows.map((r) => (
+          <button key={r.user_id} onClick={() => open(r)} data-testid={`customer-row-${r.user_id}`}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.02] p-3 text-left hover:bg-white/[0.04]">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm text-white">{r.name}
+                {r.suspended ? <span className="rounded bg-red-500/15 px-1.5 text-[10px] text-red-300">suspended</span> : null}
+                {!r.email_verified ? <span className="text-amber-400" title="unverified">•</span> : null}</p>
+              <p className="truncate text-[11px] text-white/45">{r.email} · {r.workspace}</p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-xs text-white/80">{r.plan} <span className={statusTone(r.status)}>· {r.status}</span></p>
+              <p className="text-[10px] text-white/40">{r.account_type} · {roleLabel(r.role)}</p>
+            </div>
+          </button>
+        ))}
+        {!rows.length ? <p className="py-8 text-center text-sm text-white/40">No customers</p> : null}
+      </div>
 
       <Dialog open={!!sel} onOpenChange={(v) => !v && setSel(null)}>
         <DialogContent className="max-w-lg border-white/10 bg-[#0B0D12] text-white" data-testid="customer-detail">
@@ -209,13 +206,14 @@ const Customers = () => {
               <div className="grid grid-cols-2 gap-2 text-white/70">
                 <Field k="Email" v={detail.user.email} />
                 <Field k="Verified" v={detail.user.email_verified ? "Yes" : "No"} />
-                <Field k="Plan" v={detail.subscription?.plan || detail.workspaces[0]?.plan || "—"} />
-                <Field k="Status" v={detail.status || "—"} />
+                <Field k="Role" v={roleLabel(detail.user.role)} />
+                <Field k="Plan" v={sel?.plan || "—"} />
+                <Field k="Status" v={detail.status || sel?.status || "—"} />
                 <Field k="Cards" v={detail.cards.length} />
                 <Field k="Leads" v={detail.leads} />
                 <Field k="Meetings" v={detail.meetings} />
                 <Field k="Referrals" v={detail.referrals} />
-                <Field k="Country" v={detail.user.country || detail.workspaces[0]?.region?.market || "—"} />
+                <Field k="Country" v={detail.user.country || "—"} />
                 <Field k="Language" v={(detail.user.language || "—").toUpperCase()} />
                 <Field k="Timezone" v={detail.user.timezone || "—"} />
                 <Field k="Created" v={(detail.user.created_at || "").slice(0, 10)} />
@@ -240,26 +238,38 @@ const Customers = () => {
 
 const Companies = () => {
   const [q, setQ] = useState("");
+  const [inc, setInc] = useState(false);
+  const [type, setType] = useState("all");
   const [rows, setRows] = useState([]);
   const [sel, setSel] = useState(null);
   const [detail, setDetail] = useState(null);
-  useEffect(() => { const t = setTimeout(() => api.get("/admin/platform/workspaces", { params: { q } }).then((r) => setRows(r.data.items || [])).catch(() => {}), 300); return () => clearTimeout(t); }, [q]);
+  useEffect(() => { const t = setTimeout(() => cget("/workspaces", { q, include_internal: inc, type }).then((d) => setRows(d.items || [])).catch(() => {}), 300); return () => clearTimeout(t); }, [q, inc, type]);
   const open = async (w) => { setSel(w); setDetail(null); try { setDetail(await cget(`/workspaces/${w.id}`)); } catch (_) {} };
   return (
     <div className="space-y-4" data-testid="ctrl-companies">
-      <h2 className="text-xl font-light text-white">Companies / Workspaces</h2>
-      <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search workspaces…" className="border-white/12 bg-white/[0.03] pl-9 text-white" data-testid="companies-search" /></div>
-      <Panel>
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-          <thead><tr className="text-[11px] uppercase tracking-wider text-white/40"><th className="pb-2">Name</th><th className="pb-2">Type</th><th className="pb-2">Plan</th><th className="pb-2">Status</th><th className="pb-2">Members</th><th className="pb-2">Cards</th><th className="pb-2">Leads</th></tr></thead>
-          <tbody>{rows.map((w) => (
-            <tr key={w.id} onClick={() => open(w)} className="cursor-pointer border-t border-white/6 hover:bg-white/[0.03]" data-testid={`company-row-${w.id}`}>
-              <td className="py-2.5 text-white">{w.name}</td><td className="py-2.5 text-white/60">{w.type}</td><td className="py-2.5 text-white/70">{w.plan}</td><td className="py-2.5 text-white/70">{w.status}</td><td className="py-2.5 text-white/70">{w.members}</td><td className="py-2.5 text-white/70">{w.cards}</td><td className="py-2.5 text-white/70">{w.leads}</td>
-            </tr>))}
-            {!rows.length ? <tr><td colSpan={7} className="py-6 text-center text-white/40">No workspaces</td></tr> : null}
-          </tbody>
-        </table></div>
-      </Panel>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xl font-light text-white">Workspaces</h2>
+        <IncludeInternal on={inc} onClick={() => setInc(!inc)} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {[["all", "All"], ["company", "Companies"], ["individual", "Individuals"]].map(([k, l]) => <RadioPill key={k} on={type === k} onClick={() => setType(k)} testId={`ws-type-${k}`}>{l}</RadioPill>)}
+      </div>
+      <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search workspaces…" className="border-white/12 bg-white/[0.03] pl-9 text-white" data-testid="companies-search" /></div>
+      <div className="space-y-2">
+        {rows.map((w) => (
+          <button key={w.id} onClick={() => open(w)} data-testid={`company-row-${w.id}`}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.02] p-3 text-left hover:bg-white/[0.04]">
+            <div className="min-w-0">
+              <p className="text-sm text-white">{w.name}{w.environment !== "production_customer" ? <span className="ml-2 rounded bg-white/10 px-1.5 text-[10px] uppercase text-white/50">{w.environment}</span> : null}</p>
+              <p className="text-[11px] text-white/45">{w.type === "company" || w.type === "team" ? "Company" : "Individual"} · {w.plan} <span className={statusTone(w.status)}>· {w.status}</span></p>
+            </div>
+            <div className="shrink-0 text-right text-[11px] text-white/50">
+              <p>{w.members} member{w.members === 1 ? "" : "s"}</p><p>{w.cards} card{w.cards === 1 ? "" : "s"} · {w.leads} leads</p>
+            </div>
+          </button>
+        ))}
+        {!rows.length ? <p className="py-8 text-center text-sm text-white/40">No workspaces</p> : null}
+      </div>
       <Dialog open={!!sel} onOpenChange={(v) => !v && setSel(null)}>
         <DialogContent className="max-w-lg border-white/10 bg-[#0B0D12] text-white" data-testid="company-detail">
           <DialogHeader><DialogTitle>{sel?.name}</DialogTitle><DialogDescription className="sr-only">Workspace details and members</DialogDescription></DialogHeader>
@@ -267,8 +277,8 @@ const Companies = () => {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2 text-white/70">
                 <Field k="Owner" v={detail.owner?.email || "—"} />
-                <Field k="Type" v={detail.workspace.type} />
-                <Field k="Plan" v={detail.plan || "—"} />
+                <Field k="Type" v={detail.workspace.type === "individual" ? "Individual" : "Company"} />
+                <Field k="Plan" v={sel?.plan || "—"} />
                 <Field k="Status" v={detail.status} />
                 <Field k="Seats" v={detail.seats ?? "—"} />
                 <Field k="Members" v={detail.members.length} />
@@ -279,7 +289,7 @@ const Companies = () => {
               </div>
               <div className="rounded-lg border border-white/8 p-3">
                 <p className="mb-1.5 text-[11px] uppercase tracking-wider text-white/40">Members</p>
-                {detail.members.map((m) => <div key={m.id} className="flex justify-between py-0.5 text-white/70"><span>{m.email || m.id}</span><span className="text-white/40">{m.role}</span></div>)}
+                {detail.members.map((m) => <div key={m.id} className="flex justify-between py-0.5 text-white/70"><span>{m.email || m.id}</span><span className="text-white/40">{roleLabel(m.role)}</span></div>)}
               </div>
             </div>
           )}
@@ -414,29 +424,68 @@ const Plans = () => {
   );
 };
 
+const ENT_LABEL = { max_cards: "Max cards", premium_templates: "Premium templates", analytics: "Analytics level", analytics_months: "Analytics history (months)", leads: "Leads / CRM", wallet: "Mobile wallet passes", crm: "CRM", campaigns: "Campaigns", ai_followup: "AI follow-up", ai_limit: "AI monthly limit", ai_period: "AI reset period", scanner: "Card scanner", scanner_limit: "Scanner monthly limit", scanner_period: "Scanner reset period", team: "Team seats", remove_branding: "Remove branding", custom_domain: "Custom domain", api: "API access", integrations: "Integrations" };
+const entLabel = (k) => ENT_LABEL[k] || k.replace(/_/g, " ");
+const PROVIDER_KEY = { wallet: "wallet", ai_followup: "ai_followup", custom_domain: "custom_domain" };
+
 const Product = () => {
   const [data, setData] = useState(null);
   const [plan, setPlan] = useState("pro");
   const [ov, setOv] = useState({});
-  useEffect(() => { cget("/entitlements").then((d) => { setData(d); }).catch(() => {}); }, []);
+  const [preview, setPreview] = useState(null);
+  const [reason, setReason] = useState("");
+  useEffect(() => { cget("/entitlements").then(setData).catch(() => {}); }, []);
   useEffect(() => { if (data) setOv({ ...(data.overrides?.[plan] || {}) }); }, [plan, data]);
   if (!data) return <Loader />;
   const defaults = data.defaults[plan] || {};
-  const save = async () => { try { await api.put("/admin/control/entitlements", { plan, overrides: ov }); toast.success("Entitlements saved"); const d = await cget("/entitlements"); setData(d); } catch (e) { toast.error("Save failed"); } };
+  const ps = data.provider_status || {};
+  const doPreview = async () => { try { setPreview(await api.post("/admin/control/entitlements/preview", { plan, overrides: ov }).then((r) => r.data)); } catch { toast.error("Preview failed"); } };
+  const publish = async () => { try { await api.put("/admin/control/entitlements", { plan, overrides: ov, reason }); toast.success("Entitlements published & audited"); setPreview(null); setReason(""); setData(await cget("/entitlements")); } catch { toast.error("Publish failed"); } };
   return (
     <div className="space-y-4" data-testid="ctrl-product">
       <h2 className="text-xl font-light text-white">Product & Entitlements</h2>
-      <div className="flex flex-wrap gap-2">{Object.keys(data.defaults).map((p) => <RadioPill key={p} on={plan === p} onClick={() => setPlan(p)} testId={`ent-plan-${p}`}>{p}</RadioPill>)}</div>
-      <Panel title={`Overrides for "${plan}"`} testId="ent-editor" actions={<button onClick={save} className="rounded-lg bg-[#D6A653] px-4 py-1.5 text-sm font-medium text-[#050607]" data-testid="ent-save">Save</button>}>
+      <div className="flex flex-wrap gap-2">{data.plans.map((p) => <RadioPill key={p} on={plan === p} onClick={() => setPlan(p)} testId={`ent-plan-${p}`}>{p}</RadioPill>)}</div>
+      <Panel title={`Overrides for "${plan}"`} testId="ent-editor"
+        actions={<button onClick={doPreview} className="rounded-lg bg-[#D6A653] px-4 py-1.5 text-sm font-medium text-[#050607]" data-testid="ent-preview">Preview changes</button>}>
         <div className="grid gap-3 sm:grid-cols-2">
-          {Object.entries(defaults).map(([k, dv]) => {
+          {Object.entries(defaults).filter(([k]) => k !== "white_label").map(([k, dv]) => {
             const cur = ov[k] !== undefined ? ov[k] : dv;
-            if (typeof dv === "boolean") return <BoolField key={k} label={k} value={!!cur} onChange={(v) => setOv({ ...ov, [k]: v })} testId={`ent-${k}`} />;
-            if (typeof dv === "number") return <NumField key={k} label={k} value={cur} onChange={(v) => setOv({ ...ov, [k]: v })} testId={`ent-${k}`} />;
-            return <TextField key={k} label={k} value={String(cur ?? "")} onChange={(v) => setOv({ ...ov, [k]: v })} testId={`ent-${k}`} />;
+            const provFeat = PROVIDER_KEY[k];
+            const provOk = provFeat ? ps[provFeat] : null;
+            const unavailable = provFeat && provOk === false;
+            const label = entLabel(k);
+            return (
+              <div key={k} className="relative">
+                {typeof dv === "boolean" ? <BoolField label={label} value={!!cur} onChange={(v) => setOv({ ...ov, [k]: v })} testId={`ent-${k}`} />
+                  : typeof dv === "number" ? <NumField label={label} value={cur} onChange={(v) => setOv({ ...ov, [k]: v })} testId={`ent-${k}`} />
+                    : <TextField label={label} value={String(cur ?? "")} onChange={(v) => setOv({ ...ov, [k]: v })} testId={`ent-${k}`} />}
+                {unavailable ? <p className="mt-1 flex items-center gap-1 text-[10px] text-amber-300" data-testid={`ent-unavailable-${k}`}><AlertTriangle className="h-3 w-3" /> Provider not connected — feature unavailable even if enabled</p> : null}
+              </div>
+            );
           })}
         </div>
       </Panel>
+
+      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+        <DialogContent className="max-w-lg border-white/10 bg-[#0B0D12] text-white" data-testid="ent-publish-dialog">
+          <DialogHeader><DialogTitle>Impact Preview — {plan}</DialogTitle><DialogDescription className="sr-only">Review entitlement changes before publishing</DialogDescription></DialogHeader>
+          {preview ? (
+            <div className="space-y-3 text-sm">
+              <p className="text-xs text-white/60">{preview.affected_customers} active customer(s) on this plan will be affected.</p>
+              <div className="rounded-lg border border-white/8 p-3 text-xs">
+                {Object.keys(preview.diff).length ? Object.entries(preview.diff).map(([k, v]) => (
+                  <div key={k} className="flex justify-between py-0.5"><span className="text-white/70">{entLabel(k)}</span><span className="text-white/50">{String(v.before)} → <b className="text-[#D6A653]">{String(v.after)}</b></span></div>
+                )) : <span className="text-white/40">No changes.</span>}
+              </div>
+              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (for audit log)" className="border-white/12 bg-white/[0.03] text-white" data-testid="ent-reason" />
+            </div>
+          ) : null}
+          <DialogFooter>
+            <button onClick={() => setPreview(null)} className="rounded-lg border border-white/12 px-4 py-2 text-sm text-white/60">Cancel</button>
+            <button onClick={publish} disabled={!preview || !Object.keys(preview.diff).length} className="rounded-lg bg-[#D6A653] px-4 py-2 text-sm font-medium text-[#050607] disabled:opacity-50" data-testid="ent-confirm-publish">Confirm & Publish</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
