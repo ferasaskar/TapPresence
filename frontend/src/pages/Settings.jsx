@@ -212,6 +212,8 @@ export default function Settings() {
                 <p className="mt-0.5 truncate text-sm text-white/50">
                   {gcal.connected && !gcal.needs_reconnect
                     ? `Bookings sync to ${gcal.email || "your Google Calendar"}.`
+                    : gcal.needs_reconnect && gcal.reason === "calendar_permission_missing"
+                    ? "Calendar permission wasn't granted. Reconnect and allow calendar access so bookings sync."
                     : gcal.needs_reconnect
                     ? "Access expired or was revoked. Reconnect to keep syncing bookings."
                     : "Automatically add TapPresence bookings to your Google Calendar."}

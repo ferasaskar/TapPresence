@@ -1339,15 +1339,27 @@ async def sync_meeting_calendar(meeting_id: str):
         headers = {"Authorization": f"Bearer {at}", "Content-Type": "application/json"}
         eid = m.get("google_event_id")
         base = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        async def _flag_if_denied(resp):
+            if resp.status_code in (401, 403):
+                await db.google_calendar_connections.update_one({"user_id": owner}, {"$set": {"needs_reconnect": True}})
+                logging.error(f"[gcal] calendar access denied http={resp.status_code} user={owner} — needs reconnect")
+
         async with _httpx.AsyncClient(timeout=15) as cx:
             if m.get("status") in ("cancelled", "declined"):
                 if eid:
-                    await cx.delete(f"{base}/{eid}", headers=headers)
-                    await db.meetings.update_one({"id": meeting_id}, {"$set": {"google_event_id": None}})
+                    rd = await cx.delete(f"{base}/{eid}", headers=headers)
+                    if rd.status_code in (200, 204, 404, 410):
+                        await db.meetings.update_one({"id": meeting_id}, {"$set": {"google_event_id": None}})
+                    else:
+                        await _flag_if_denied(rd)
+                        logging.error(f"[gcal] event delete failed http={rd.status_code} event={eid}")
                 return
             body = _gcal_event_body(m)
             if eid:
-                await cx.patch(f"{base}/{eid}", headers=headers, json=body)
+                rp = await cx.patch(f"{base}/{eid}", headers=headers, json=body)
+                if rp.status_code not in (200, 201):
+                    await _flag_if_denied(rp)
+                    logging.error(f"[gcal] event patch failed http={rp.status_code} event={eid}")
             elif m.get("status") in GCAL_ACTIVE_STATUSES:
                 r = await cx.post(base, headers=headers, json=body)
                 if r.status_code in (200, 201):
@@ -1355,6 +1367,7 @@ async def sync_meeting_calendar(meeting_id: str):
                     if new_id:
                         await db.meetings.update_one({"id": meeting_id}, {"$set": {"google_event_id": new_id}})
                 else:
+                    await _flag_if_denied(r)
                     logging.error(f"[gcal] event insert failed http={r.status_code}")
     except Exception as e:
         logging.error(f"[gcal] sync error meeting={meeting_id}: {type(e).__name__}: {e}")
@@ -1367,8 +1380,12 @@ async def gcal_status(user: dict = Depends(get_current_user)):
     conn = await db.google_calendar_connections.find_one({"user_id": user["id"]}, {"_id": 0})
     if not conn:
         return {"configured": True, "connected": False}
-    return {"configured": True, "connected": not conn.get("revoked", False),
-            "needs_reconnect": bool(conn.get("revoked")), "email": conn.get("email"),
+    scope_ok = "calendar.events" in (conn.get("scope") or "")
+    needs = bool(conn.get("revoked")) or bool(conn.get("needs_reconnect")) or not scope_ok
+    reason = "calendar_permission_missing" if not scope_ok else ("reauth_required" if needs else None)
+    return {"configured": True,
+            "connected": (not conn.get("revoked", False)) and scope_ok and not conn.get("needs_reconnect", False),
+            "needs_reconnect": needs, "reason": reason, "email": conn.get("email"),
             "connected_at": conn.get("connected_at")}
 
 
@@ -1420,13 +1437,17 @@ async def gcal_callback(code: Optional[str] = None, state: Optional[str] = None,
         logging.error(f"[gcal] callback exception: {type(e).__name__}: {e}")
         return RedirectResponse(f"{dest}&calendar=error&reason=network")
     now = datetime.now(timezone.utc)
+    granted_scope = t.get("scope", "") or ""
+    if "calendar.events" not in granted_scope:
+        logging.error(f"[gcal] calendar.events scope NOT granted user={user_id} (granted='{granted_scope}')")
+        return RedirectResponse(f"{dest}&calendar=error&reason=calendar_permission_denied")
     existing = await db.google_calendar_connections.find_one({"user_id": user_id}, {"_id": 0, "refresh_token": 1})
     if not refresh_tok and not (existing and existing.get("refresh_token")):
         logging.error(f"[gcal] no refresh_token returned for user={user_id}")
         return RedirectResponse(f"{dest}&calendar=error&reason=no_refresh_token")
     setd = {"user_id": user_id, "email": email.lower(), "access_token": access_tok,
             "access_expiry": (now + timedelta(seconds=int(t.get("expires_in", 3600)))).isoformat(),
-            "scope": t.get("scope", GCAL_SCOPE), "revoked": False, "updated_at": now.isoformat()}
+            "scope": granted_scope, "revoked": False, "needs_reconnect": False, "updated_at": now.isoformat()}
     if refresh_tok:
         setd["refresh_token"] = refresh_tok  # only present on first consent / prompt=consent
     await db.google_calendar_connections.update_one({"user_id": user_id},

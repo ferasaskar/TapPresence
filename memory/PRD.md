@@ -711,3 +711,26 @@ Distinct platform-operator experience at `/control/*`, separate from the custome
 **Verification (preview):** edrina-cepele profile now shows **BOOK A MEETING** side-by-side with Exchange Contact; dialog opens with 3 meeting types; `/api/cards/edrina-cepele/slots` returns 18 bookable slots on the next weekday. Fully functional.
 
 **Note:** This changed live preview DB data only. Not deployed to production. feras-askar previously had a cal.com URL — native now takes precedence (URL retained as fallback).
+
+---
+
+## Calendar date/time + cancel — deep debug (2026-06-11) — preview only
+
+### Issue 1: one-day shift (FIXED)
+Root cause: booking/reschedule date chips built the date string with `toISOString().slice(0,10)` = UTC calendar date. For UTC+ zones (Asia/Dubai, UTC+4) between 00:00–03:59 local, the UTC date lags one day, so the picker offered/fetched the wrong day's slots.
+Fix: generate date strings from LOCAL date parts via `ymd()` helper in `BookMeetingDialog.jsx`, `Meetings.jsx` (reschedule picker), `ManageMeeting.jsx`.
+Backend was already instant-correct: slots are UTC ISO computed in owner tz; `start_utc` stored as UTC; `_gcal_event_body` sends `dateTime=start_utc` + `timeZone:"UTC"`. Live-verified (Asia/Dubai): book 09:00 -> 05:00Z -> 09:00; reschedule 10:00 -> 06:00Z -> 10:00. No shift/no unintended conversion on backend.
+
+### Issue 2: cancel not deleting + REAL Google API verification
+- The dashboard-cancel fix (sync call added to `admin_meeting_status`) is correct — stub test confirms DELETE fires + clears google_event_id.
+- REAL API finding (preview): the ONLY connected calendar (user work@gmail.com, Google acct feras.m.askar@gmail.com) has token scope `email openid` — **NOT `calendar.events`**. So in preview NO events are created (POST 403), google_event_id stays None, nothing to reschedule/cancel. The user's working Create/Reschedule/Cancel were on PRODUCTION (properly-scoped). Could NOT exercise real cancel-delete in preview — no real event exists here.
+- Cause: Google didn't grant the sensitive calendar.events scope during preview consent (scope not approved/added on the preview OAuth consent screen -> Google filters it). Connect code correctly requests GCAL_SCOPE.
+- Additive fixes (do NOT touch OAuth creds/flow or production):
+  1. `gcal_callback` rejects a grant missing calendar.events (redirect reason=calendar_permission_denied) — no more storing a dead "connected" record.
+  2. `gcal_status` returns connected:false + needs_reconnect:true + reason:"calendar_permission_missing" when stored scope lacks calendar.events. UI (Settings) already renders amber "Reconnect needed" + clearer message.
+  3. `sync_meeting_calendar` flags needs_reconnect on 401/403 and no longer clears google_event_id on a failed delete.
+
+### ACTION for user to enable preview calendar (so a true live test is possible)
+Add scope `https://www.googleapis.com/auth/calendar.events` to the Google Cloud OAuth consent screen, keep the account as a Test User, then Settings -> Integrations -> Reconnect. Then a real Create->Reschedule->Cancel with Google events can be verified in preview.
+
+Test scripts: `backend/tests/test_cancel_calendar_sync.py` (stub, PASS), `backend/tests/live_calendar_e2e.py` (real; prints no secrets).

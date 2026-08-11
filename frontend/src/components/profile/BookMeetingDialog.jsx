@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 const LOC = { in_person: MapPin, phone: Phone, video: Video, custom: MapPin };
 const guessTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: tz });
 const fmtDay = (d) => new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -38,7 +39,7 @@ export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653"
 
   const days = Array.from({ length: 21 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i);
-    return d.toISOString().slice(0, 10);
+    return ymd(d);
   });
 
   const chooseType = (m) => { setMt(m); setStep("date"); setDate(""); setSlots([]); };

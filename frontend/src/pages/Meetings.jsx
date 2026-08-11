@@ -22,6 +22,7 @@ const fmt = (iso, tz) => new Date(iso).toLocaleString([], { weekday: "short", mo
 const fmtDay = (d) => new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: tz });
 const dayKey = (iso, tz) => new Date(iso).toLocaleDateString("en-CA", { timeZone: tz || "UTC" });
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 const Act = ({ children, onClick, testId, tone = "default", disabled }) => {
   const tones = { default: "border-white/15 text-white hover:bg-white/5", ok: "border-emerald-400/40 text-emerald-300 hover:bg-emerald-400/10", danger: "border-red-400/40 text-red-300 hover:bg-red-500/10", gold: "border-[#D6A653]/50 text-[#D6A653] hover:bg-[#D6A653]/10" };
@@ -99,7 +100,7 @@ export default function Meetings() {
     catch { setDraft((d) => ({ ...d, [m.id]: "" })); toast.error("Could not draft"); }
   };
 
-  const days = Array.from({ length: 21 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10); });
+  const days = Array.from({ length: 21 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return ymd(d); });
 
   const actionsFor = (m, compact) => {
     const s = m.status;

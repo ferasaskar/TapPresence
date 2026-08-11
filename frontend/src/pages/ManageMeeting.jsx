@@ -8,6 +8,7 @@ const guessTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().tim
 const fmt = (iso, tz) => new Date(iso).toLocaleString([], { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz });
 const fmtDay = (d) => new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: tz });
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export default function ManageMeeting() {
   const { token } = useParams();
@@ -24,7 +25,7 @@ export default function ManageMeeting() {
   const load = () => api.get(`/meetings/manage/${token}`).then(({ data }) => setM(data)).catch(() => setErr(true));
   useEffect(() => { load(); }, [token]); // eslint-disable-line
 
-  const days = Array.from({ length: 21 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10); });
+  const days = Array.from({ length: 21 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return ymd(d); });
 
   const pickDate = async (d) => {
     setDate(d); setLoadingSlots(true); setSlots([]);
