@@ -48,6 +48,60 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
+import asyncio
+import resend
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY") or ""
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+
+
+def _email_configured() -> bool:
+    return bool(RESEND_API_KEY)
+
+
+def _email_shell(title: str, intro: str, cta_text: str, cta_url: str, footnote: str = "") -> str:
+    """Branded, email-safe HTML (inline CSS, table layout) for TapPresence transactional mail."""
+    return f"""\
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#050607;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
+  <tr><td align="center">
+    <table width="480" cellpadding="0" cellspacing="0" style="background:#0d0f13;border:1px solid #1e2128;border-radius:16px;overflow:hidden;">
+      <tr><td style="padding:28px 32px 8px 32px;">
+        <span style="font-size:20px;font-weight:700;color:#ffffff;">Tap<span style="color:#D6A653;">Presence</span></span>
+      </td></tr>
+      <tr><td style="padding:8px 32px 0 32px;">
+        <h1 style="margin:0;font-size:20px;line-height:1.3;color:#ffffff;">{title}</h1>
+        <p style="margin:14px 0 0 0;font-size:14px;line-height:1.6;color:#a2a6ad;">{intro}</p>
+      </td></tr>
+      <tr><td style="padding:24px 32px 8px 32px;">
+        <a href="{cta_url}" style="display:inline-block;background:#D6A653;color:#050607;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:10px;">{cta_text}</a>
+      </td></tr>
+      <tr><td style="padding:12px 32px 28px 32px;">
+        <p style="margin:0;font-size:12px;line-height:1.6;color:#70757e;">Or paste this link into your browser:<br><span style="color:#8a8f97;word-break:break-all;">{cta_url}</span></p>
+        {f'<p style="margin:14px 0 0 0;font-size:12px;color:#70757e;">{footnote}</p>' if footnote else ''}
+      </td></tr>
+      <tr><td style="padding:16px 32px;border-top:1px solid #1e2128;">
+        <p style="margin:0;font-size:11px;color:#5b6068;">© TapPresence. If you didn't request this, you can safely ignore this email.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>"""
+
+
+async def send_email(to: str, subject: str, html: str) -> bool:
+    """Send a transactional email via Resend (non-blocking). Returns False if not configured/failed."""
+    if not RESEND_API_KEY:
+        return False
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": SENDER_EMAIL, "to": [to], "subject": subject, "html": html,
+        })
+        return True
+    except Exception as e:
+        logger.error(f"[email] send failed to {to}: {e}")
+        return False
+
+
 _client = AsyncIOMotorClient(MONGO_URL)
 db = _client[DB_NAME]
 
@@ -822,7 +876,7 @@ async def get_config():
             "google_wallet": _configured("GOOGLE_WALLET_ISSUER_ID", "GOOGLE_WALLET_SA_JSON"),
             "apple_signin": _configured("APPLE_OAUTH_CLIENT_ID"),
             "google_signin": _configured("GOOGLE_OAUTH_CLIENT_ID"),
-            "email": _configured("EMAIL_API_KEY"),
+            "email": _email_configured(),
             "enrichment": _configured("ENRICHMENT_API_KEY"),
             "revenuecat": _configured("REVENUECAT_API_KEY"),
             "hubspot": _configured("HUBSPOT_CLIENT_ID"),
@@ -1121,10 +1175,11 @@ async def register(body: RegisterIn, request: Request):
         "id": str(uuid.uuid4()), "user_id": uid, "token": verify_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), "used": False,
     })
-    # Email adapter: send if configured, else log verification link (dev).
+    # Email: send verification via Resend if configured, else log link (dev).
     link = f"{PUBLIC_APP_URL}/verify?token={verify_token}"
-    if _configured("EMAIL_API_KEY"):
-        logger.info(f"[email] would send verification to {email}")  # provider adapter hook
+    if _email_configured():
+        await send_email(email, "Verify your TapPresence email",
+                         _email_shell("Confirm your email", "Welcome to TapPresence — please confirm your email address to secure your account and unlock everything in your 14-day trial.", "Verify email", link))
     else:
         logger.info(f"[email:NOT_CONFIGURED] verification link for {email}: {link}")
     await audit(ws_id, uid, "account.register")
@@ -1152,8 +1207,9 @@ async def resend_verification(request: Request, user: dict = Depends(current_use
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), "used": False,
     })
     link = f"{PUBLIC_APP_URL}/verify?token={token}"
-    if _configured("EMAIL_API_KEY"):
-        logger.info(f"[email] would resend verification to {user['email']}")
+    if _email_configured():
+        await send_email(user["email"], "Verify your TapPresence email",
+                         _email_shell("Confirm your email", "Here's a fresh link to confirm your TapPresence email address.", "Verify email", link))
     else:
         logger.info(f"[email:NOT_CONFIGURED] verification link for {user['email']}: {link}")
     return {"ok": True}
@@ -1184,7 +1240,11 @@ async def forgot(body: ForgotIn, request: Request):
             "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "used": False,
         })
         link = f"{PUBLIC_APP_URL}/reset?token={token}"
-        logger.info(f"[email{'' if _configured('EMAIL_API_KEY') else ':NOT_CONFIGURED'}] reset link for {email}: {link}")
+        if _email_configured():
+            await send_email(email, "Reset your TapPresence password",
+                             _email_shell("Reset your password", "We received a request to reset your TapPresence password. This link expires in 1 hour.", "Reset password", link, "If you didn't request a password reset, no action is needed."))
+        else:
+            logger.info(f"[email:NOT_CONFIGURED] reset link for {email}: {link}")
     return {"ok": True}  # do not reveal account existence
 
 
@@ -2107,7 +2167,7 @@ async def control_health(user: dict = Depends(current_user)):
         db_ok = False
     integrations = {
         "stripe": _configured("STRIPE_SECRET_KEY"),
-        "email": _configured("EMAIL_API_KEY"),
+        "email": _email_configured(),
         "ai": _configured("EMERGENT_LLM_KEY"),
         "error_monitoring": _configured("SENTRY_DSN"),
     }
@@ -2868,7 +2928,11 @@ async def _create_member(wid: str, email: str, name: str, role: str):
     await db.memberships.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "workspace_id": wid,
                                      "role": role, "status": "invited", "invite_token": token, "created_at": now_iso()})
     link = f"{PUBLIC_APP_URL}/register?invite={token}"
-    logger.info(f"[email{'' if _configured('EMAIL_API_KEY') else ':NOT_CONFIGURED'}] team invite for {email}: {link}")
+    if _email_configured():
+        await send_email(email, "You've been invited to a TapPresence team",
+                         _email_shell("Join your team on TapPresence", "You've been invited to join a team workspace on TapPresence. Set up your account to get started.", "Accept invite", link))
+    else:
+        logger.info(f"[email:NOT_CONFIGURED] team invite for {email}: {link}")
     return user, True
 
 
