@@ -843,14 +843,14 @@ async def card_analytics(card_id: str, user: dict = Depends(get_current_user)):
 
 
 @api_router.get("/admin/analytics/overview")
-async def analytics_overview(days: int = 30, user: dict = Depends(get_current_user)):
-    return await _compute_overview(user, days)
+async def analytics_overview(days: int = 30, start: str = None, end: str = None, user: dict = Depends(get_current_user)):
+    return await _compute_overview(user, days, start, end)
 
 
 @api_router.get("/admin/analytics/export.csv")
-async def analytics_export(days: int = 30, user: dict = Depends(get_current_user)):
+async def analytics_export(days: int = 30, start: str = None, end: str = None, user: dict = Depends(get_current_user)):
     import csv
-    ov = await _compute_overview(user, days)
+    ov = await _compute_overview(user, days, start, end)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["TapPresence Analytics Export", f"last {ov['range_days']} days"])
@@ -880,20 +880,38 @@ async def analytics_export(days: int = 30, user: dict = Depends(get_current_user
                              headers={"Content-Disposition": f"attachment; filename=tappresence-analytics-{days}d.csv"})
 
 
-async def _compute_overview(user: dict, days: int = 30):
+async def _compute_overview(user: dict, days: int = 30, start: str = None, end: str = None):
     """Read-only conversion funnel + trend aggregated across all cards the caller can access.
-    Reuses existing analytics_events / leads / meetings — no writes, no new event semantics."""
+    Reuses existing analytics_events / leads / meetings — no writes, no new event semantics.
+    Accepts either a rolling `days` window or an explicit `start`/`end` ISO range (Today/Week/Month/Custom)."""
     from collections import Counter
-    days = max(1, min(int(days or 30), 365))
+    now = datetime.now(timezone.utc)
+    if start:
+        cutoff = start
+        try:
+            _end_dt = datetime.fromisoformat(end.replace("Z", "+00:00")) if end else now
+            days = max(1, (_end_dt - datetime.fromisoformat(start.replace("Z", "+00:00"))).days + 1)
+        except Exception:
+            days = 30
+    else:
+        days = max(1, min(int(days or 30), 365))
+        cutoff = (now - timedelta(days=days)).isoformat()
+    upper = end
+
+    def tw():
+        q = {"$gte": cutoff}
+        if upper:
+            q["$lte"] = upper
+        return q
+
     q = await _card_query(user)
     cards = await db.digital_cards.find(q, {"_id": 0, "id": 1, "slug": 1, "status": 1}).to_list(5000)
     slugs = [c["slug"] for c in cards]
     ids = [c["id"] for c in cards]
     published = sum(1 for c in cards if c.get("status") == "published")
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
     events = await db.analytics_events.find(
-        {"cardSlug": {"$in": slugs}, "created_at": {"$gte": cutoff}}, {"_id": 0}).to_list(50000)
+        {"cardSlug": {"$in": slugs}, "created_at": tw()}, {"_id": 0}).to_list(50000)
     views = sum(1 for e in events if e["type"] == "view")
     scans = sum(1 for e in events if e["type"] == "scan")
     nfctaps = sum(1 for e in events if e["type"] == "nfctap")
@@ -903,11 +921,11 @@ async def _compute_overview(user: dict, days: int = 30):
 
     leads_total = await db.leads.count_documents({"cardSlug": {"$in": slugs}}) if slugs else 0
     leads_window = await db.leads.count_documents(
-        {"cardSlug": {"$in": slugs}, "created_at": {"$gte": cutoff}}) if slugs else 0
+        {"cardSlug": {"$in": slugs}, "created_at": tw()}) if slugs else 0
     meetings_booked = await db.meetings.count_documents(
-        {"card_id": {"$in": ids}, "created_at": {"$gte": cutoff}}) if ids else 0
+        {"card_id": {"$in": ids}, "created_at": tw()}) if ids else 0
     meetings_completed = await db.meetings.count_documents(
-        {"card_id": {"$in": ids}, "status": "completed"}) if ids else 0
+        {"card_id": {"$in": ids}, "status": "completed", "created_at": tw()}) if ids else 0
 
     day_counts = Counter()
     for e in events:
@@ -918,10 +936,10 @@ async def _compute_overview(user: dict, days: int = 30):
     # ---- Breakdowns (single analytics store; no new events, no writes) ----
     SCAN_SOURCES = {"business_card_scan", "badge_scan", "qr_scan"}
     lead_docs = await db.leads.find(
-        {"cardSlug": {"$in": slugs}, "created_at": {"$gte": cutoff}},
+        {"cardSlug": {"$in": slugs}, "created_at": tw()},
         {"_id": 0, "cardSlug": 1, "source": 1, "event": 1, "campaign": 1, "captured_by": 1}).to_list(20000) if slugs else []
     meet_docs = await db.meetings.find(
-        {"card_id": {"$in": ids}, "created_at": {"$gte": cutoff}}, {"_id": 0, "card_id": 1}).to_list(20000) if ids else []
+        {"card_id": {"$in": ids}, "created_at": tw()}, {"_id": 0, "card_id": 1}).to_list(20000) if ids else []
 
     id_to_slug = {c["id"]: c["slug"] for c in cards}
     name_by_slug = {}

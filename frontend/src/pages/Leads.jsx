@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { OwnerNav } from "@/components/admin/OwnerNav";
+import { DateFilter } from "@/components/admin/DateFilter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Loader2, Search, Phone, Mail, MessageCircle, Sparkles, Trash2, User, CreditCard, Clock, Copy, X, ArrowLeft, CalendarDays, CalendarPlus, Bell, BellOff, Save, Building2, Globe, Tag } from "lucide-react";
@@ -42,7 +43,7 @@ export default function Leads() {
   const [q, setQ] = useState("");
   const [source, setSource] = useState("all");
   const [card, setCard] = useState("all");
-  const [dateRange, setDateRange] = useState("all");
+  const [dateRange, setDateRange] = useState({ preset: "all", start: null, end: null });
   const [openLead, setOpenLead] = useState(null);
   const [draft, setDraft] = useState("");
   const [gen, setGen] = useState(false);
@@ -89,9 +90,10 @@ export default function Leads() {
     if (tab !== "all") list = list.filter((l) => stageOf(l) === tab);
     if (source !== "all") list = list.filter((l) => (l.source || "inquiry") === source);
     if (card !== "all") list = list.filter((l) => l.cardSlug === card);
-    if (dateRange !== "all") {
-      const now = Date.now(); const days = dateRange === "today" ? 1 : dateRange === "7d" ? 7 : 30;
-      list = list.filter((l) => now - new Date(l.created_at).getTime() <= days * 864e5);
+    if (dateRange?.start) {
+      const s = new Date(dateRange.start).getTime();
+      const e = new Date(dateRange.end).getTime();
+      list = list.filter((l) => { const ts = new Date(l.created_at).getTime(); return ts >= s && ts <= e; });
     }
     if (q.trim()) { const s = q.toLowerCase(); list = list.filter((l) => [l.name, l.email, l.phone].some((v) => (v || "").toLowerCase().includes(s))); }
     return [...list].sort((a, b) => new Date(b.last_activity || b.created_at) - new Date(a.last_activity || a.created_at));
@@ -159,7 +161,7 @@ export default function Leads() {
   return (
     <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="leads-page">
       <div className="grain-overlay" style={{ opacity: 0.04 }} />
-      <OwnerNav active="" />
+      <OwnerNav active="leads" />
 
       <main className="relative mx-auto max-w-5xl px-4 py-8 sm:px-8">
         <div className="mb-4 flex items-center gap-3">
@@ -189,7 +191,7 @@ export default function Leads() {
           </div>
           <Select value={source} onValueChange={setSource}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-source"><SelectValue placeholder={t("leads.source")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allSources")}</SelectItem><SelectItem value="inquiry">{t("leads.inquiry")}</SelectItem><SelectItem value="meeting_booking">{t("leads.meetingBooking")}</SelectItem><SelectItem value="business_card_scan">{t("leads.sourceBusinessCard")}</SelectItem><SelectItem value="badge_scan">{t("leads.sourceBadge")}</SelectItem><SelectItem value="qr_scan">{t("leads.sourceQr")}</SelectItem></SelectContent></Select>
           {multiCard ? <Select value={card} onValueChange={setCard}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-card"><SelectValue placeholder={t("leads.card")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allCards")}</SelectItem>{cards.map((c) => <SelectItem key={c.slug} value={c.slug}>/{c.slug}</SelectItem>)}</SelectContent></Select> : null}
-          <Select value={dateRange} onValueChange={setDateRange}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-date"><SelectValue placeholder={t("leads.date")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.anyTime")}</SelectItem><SelectItem value="today">{t("leads.last24h")}</SelectItem><SelectItem value="7d">{t("leads.last7d")}</SelectItem><SelectItem value="30d">{t("leads.last30d")}</SelectItem></SelectContent></Select>
+          <div className="col-span-2 sm:col-span-1" data-testid="leads-filter-date"><DateFilter value={dateRange} onChange={setDateRange} testId="leads-date-filter" allowAll /></div>
         </div>
 
         {leads === null ? (

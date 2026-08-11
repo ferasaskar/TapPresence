@@ -6,6 +6,13 @@
     "close": "Close",
     "localeToast": "Showing TapPresence in {{lang}} · Prices in {{market}} — change anytime"
   },
+  "dateFilter": {
+    "today": "Today",
+    "week": "This Week",
+    "month": "This Month",
+    "custom": "Custom",
+    "all": "All time"
+  },
   "consent": {
     "title": "Your privacy",
     "message": "We use essential cookies to run TapPresence and optional analytics to improve it. You control what we use.",
@@ -279,6 +286,17 @@
     "home": "Home",
     "myCard": "My Card",
     "myCards": "My Cards",
+    "cards": "Cards",
+    "leads": "Leads",
+    "scanner": "Scanner",
+    "nfc": "NFC Cards",
+    "personalAccount": "Personal Account",
+    "adminConsole": "TapPresence Admin Console",
+    "adminTools": "Admin Tools",
+    "owner": "Owner",
+    "admin": "Admin",
+    "manager": "Manager",
+    "menu": "Menu",
     "meetings": "Meetings",
     "analytics": "Analytics",
     "settings": "Settings",
@@ -396,6 +414,10 @@
     "manageCard": "Manage card",
     "logout": "Log out",
     "subtitle": "Your account and workspace.",
+    "tzSaved": "Timezone updated",
+    "tzSuggest": "Your device timezone is {{tz}}. Update your timezone?",
+    "tzApply": "Update",
+    "tzDismiss": "Not now",
     "comingSoon": "Profile editing, password change and notification preferences are coming in a later phase."
   },
   "signatures": {
@@ -420,7 +442,34 @@
     "locked": "Locked by company",
     "preview": "Preview",
     "noCards": "Create a card first to build a signature.",
-    "book": "Book meeting"
+    "book": "Book meeting",
+    "download": "Download HTML",
+    "installTitle": "Install your signature",
+    "installNote": "Your signature is copy-and-paste text — paste it into your email app's signature settings. Don't save it as an image; that would break the clickable links.",
+    "gmail": "Gmail",
+    "outlook": "Outlook",
+    "appleMail": "Apple Mail",
+    "gmailSteps": [
+      "Click Copy signature above.",
+      "In Gmail, open Settings (gear icon) → See all settings.",
+      "Scroll to the Signature section and create or select a signature.",
+      "Paste (Cmd/Ctrl+V) into the signature box.",
+      "Scroll down and click Save Changes."
+    ],
+    "outlookSteps": [
+      "Click Copy signature above.",
+      "In Outlook, go to Settings → Mail → Compose and reply (or Signatures).",
+      "Create a new signature and paste (Cmd/Ctrl+V) into the editor.",
+      "Set it as your default for new emails and replies.",
+      "Click Save."
+    ],
+    "appleMailSteps": [
+      "Click Copy signature above.",
+      "In Apple Mail, open Mail → Settings → Signatures.",
+      "Select your account and click + to add a signature.",
+      "Uncheck 'Always match my default message font', then paste (Cmd+V).",
+      "Close settings — the signature is saved automatically."
+    ]
   },
   "billing": {
     "title": "Billing & Plan",

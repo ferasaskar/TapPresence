@@ -7,6 +7,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [entitlements, setEntitlements] = useState(null);
   const [workspace, setWorkspace] = useState(null);
+  const [memberships, setMemberships] = useState([]);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -17,6 +18,7 @@ export const AuthProvider = ({ children }) => {
         setUser(res.data.user);
         setEntitlements(res.data.entitlements);
         setWorkspace(res.data.workspace);
+        setMemberships(res.data.memberships || []);
       })
       .catch(() => { localStorage.removeItem("ariadni_token"); setUser(false); })
       .finally(() => setReady(true));
@@ -28,6 +30,7 @@ export const AuthProvider = ({ children }) => {
     setUser(data.user);
     setEntitlements(data.entitlements || null);
     setWorkspace(data.workspace || null);
+    setMemberships(data.memberships || []);
     return data.user;
   };
 
@@ -46,11 +49,11 @@ export const AuthProvider = ({ children }) => {
     if (refresh) api.post("/auth/logout", { refresh_token: refresh }).catch(() => {});
     localStorage.removeItem("ariadni_token");
     localStorage.removeItem("ariadni_refresh");
-    setUser(false); setEntitlements(null); setWorkspace(null);
+    setUser(false); setEntitlements(null); setWorkspace(null); setMemberships([]);
   };
 
   return (
-    <AuthContext.Provider value={{ user, entitlements, workspace, ready, login, register, logout }}>
+    <AuthContext.Provider value={{ user, entitlements, workspace, memberships, ready, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

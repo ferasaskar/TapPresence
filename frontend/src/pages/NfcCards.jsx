@@ -56,7 +56,7 @@ export default function NfcCards() {
   return (
     <div className="aria-dark relative min-h-screen bg-[#0B0D12] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="nfc-page">
       <div className="grain-overlay" style={{ opacity: 0.04 }} />
-      <OwnerNav active="" />
+      <OwnerNav active="nfc" />
 
       <main className="relative mx-auto max-w-3xl px-4 py-8 sm:px-8">
         <div className="mb-4 flex items-center gap-3">

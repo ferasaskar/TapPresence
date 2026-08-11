@@ -33,7 +33,8 @@ export default function Register() {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
-      await register(f);
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      await register({ ...f, timezone: tz });
       navigate("/dashboard");
     } catch (err) {
       setError(fmtErr(err.response?.data?.detail) || err.message || t("auth.genericError"));

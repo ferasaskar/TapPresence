@@ -1,0 +1,27 @@
+{
+  "summary": "P0 tenant-isolation audit + new nav shell verification PASSED. Backend: 7/7 pytest cases in /app/backend/tests/test_iter26_tenant.py: (1) work@gmail.com /auth/login returns WORKSPACE_OWNER of workspace 'Mohammed' with memberships. (2) GET /api/admin/cards returns EXACTLY ['edrina-cepele'] — no dr-leo/feras-askar leak. (3) SUPER_ADMIN GET /api/admin/cards returns all cards (edrina-cepele, dr-leo, feras-askar). (4) work@gmail.com GET /api/admin/cards/{other-card-id} returns 403 (Not your card). (5) work@gmail.com GET+PUT own edrina-cepele card succeed (200). (6) GET /api/admin/analytics/overview?days=30 by_card contains only 'edrina-cepele' (or empty). (7) GET /api/admin/leads returns only edrina-cepele leads. Frontend desktop 1920x1080 for work@gmail.com: owner-sidebar visible, context-label='Personal Account', context-role='OWNER', topbar-context matches, all 11 nav items present (home,cards,leads,scanner,meetings,analytics,signatures,nfc,billing,referral,settings), nav-command absent for owner, settings-role='Owner', settings-workspace='Personal Account', settings-cardcount='1'. All 8 authenticated pages load with sidebar visible (offset correct). Mobile 390x844: sidebar hidden, hamburger opens drawer with overlay, nav-item click navigates AND closes drawer (tp-open=false), overlay click closes drawer. Admin desktop: sidebar shows 'TapPresence Admin Console' with 'SUPER ADMIN · GLOBAL' badge, 'ADMIN TOOLS' section with 'Command Center' (nav-command) visible.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_tenant.py",
+    "/app/test_reports/pytest/iter26.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "OwnerNav.jsx renders both the desktop <aside data-testid=owner-sidebar> and the mobile <aside data-testid=owner-drawer> at all viewports (hidden via lg:hidden / hidden lg:flex). This produces duplicate data-testid values (nav-home, nav-cards, ...) in the DOM. Not a functional bug (CSS hides one) but breaks strict-mode Playwright selectors and can confuse assistive tech (both trees are present). Recommend gating with `useMediaQuery` or aria-hidden on the inactive one, or scope selectors: get_by_test_id('owner-sidebar').get_by_test_id('nav-home').",
+    "Tenant scoping in backend/server.py::_card_query + _can_access_card verified against real workspace_id filter. Both /api/admin/cards, /api/admin/analytics/overview, /api/admin/leads and single-card GET/PUT all enforce workspace isolation for WORKSPACE_OWNER (cross-workspace card GET returns 403 'Not your card').",
+    "roleBadge 'SUPER ADMIN · GLOBAL' vs spec-stated 'Super Admin' — visually different casing/wording than review-request text; still passes intent (Super Admin badge). Consider aligning translation key nav.superAdmin if a specific label is desired.",
+    "Non-destructive PUT to /api/admin/cards/{id} requires full model (slug + content). Backend does not accept a partial content-only body (returns 422). Optional: expose PATCH for partial edits."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_tenant.py (new, 7 tests, all pass)",
+    "/app/test_reports/pytest/iter26.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all targeted flows verified)"},
+  "test_credentials": "work@gmail.com / mohammed (WORKSPACE_OWNER of Mohammed workspace, owns edrina-cepele); admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN). Both used as-is; no rotation.",
+  "seed_data_creation": "None. PUT test round-tripped existing edrina-cepele body (idempotent). No test data added or removed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression file: /app/backend/tests/test_iter26_tenant.py (fast, ~2s, safe to rerun; no writes beyond idempotent PUT). Frontend: OwnerNav renders both sidebar+drawer in DOM at all times — use scoped locators like `page.locator('[data-testid=owner-sidebar] [data-testid=nav-command]')` to avoid strict-mode ambiguity. Tenant isolation is confirmed both at API and UI layers; the user's Message-469 concern was a UX/label bug (already fixed) — no data leak ever existed.",
+  "rca of the issue": "User-reported (Message 469) tenant leak was a FALSE POSITIVE at the data layer. Verified: card edrina-cepele has owner_user_id + created_by = work@gmail.com's user_id and workspace_id = Mohammed's workspace. Backend correctly scoped /admin/cards, /admin/analytics/overview, /admin/leads, and single-card GET/PUT via _card_query()/_can_access_card(). Prior confusion caused by (a) the card content displaying the person's name 'Edrina Cepele' (legit content), and (b) a UI regression where Settings hardcoded 'Member' for every non-SUPER_ADMIN. Both fixed: Settings now reads roleLabel from workspace memberships (shows 'Owner' for work@gmail.com), and the new nav shell surfaces contextLabel ('Personal Account') + roleBadge ('OWNER') in the sidebar+topbar so the user has continuous account-context feedback. Mitigation verified end-to-end."
+}

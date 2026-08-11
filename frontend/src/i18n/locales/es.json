@@ -6,6 +6,13 @@
     "close": "Cerrar",
     "localeToast": "Mostrando TapPresence en {{lang}} · Precios en {{market}} — cámbialo cuando quieras"
   },
+  "dateFilter": {
+    "today": "Hoy",
+    "week": "Esta semana",
+    "month": "Este mes",
+    "custom": "Personalizado",
+    "all": "Todo el tiempo"
+  },
   "consent": {
     "title": "Tu privacidad",
     "message": "Usamos cookies esenciales para el funcionamiento de TapPresence y analíticas opcionales para mejorarlo. Tú controlas qué usamos.",
@@ -279,6 +286,17 @@
     "home": "Inicio",
     "myCard": "Mi tarjeta",
     "myCards": "Mis tarjetas",
+    "cards": "Tarjetas",
+    "leads": "Contactos",
+    "scanner": "Escáner",
+    "nfc": "Tarjetas NFC",
+    "personalAccount": "Cuenta personal",
+    "adminConsole": "Consola de administración de TapPresence",
+    "adminTools": "Herramientas de administración",
+    "owner": "Propietario",
+    "admin": "Administrador",
+    "manager": "Gerente",
+    "menu": "Menú",
     "meetings": "Reuniones",
     "analytics": "Analíticas",
     "settings": "Ajustes",
@@ -396,6 +414,10 @@
     "manageCard": "Gestionar tarjeta",
     "logout": "Cerrar sesión",
     "subtitle": "Tu cuenta y espacio de trabajo.",
+    "tzSaved": "Zona horaria actualizada",
+    "tzSuggest": "La zona horaria de tu dispositivo es {{tz}}. ¿Actualizar tu zona horaria?",
+    "tzApply": "Actualizar",
+    "tzDismiss": "Ahora no",
     "comingSoon": "La edición de perfil, el cambio de contraseña y las preferencias de notificación llegarán en una fase posterior."
   },
   "signatures": {
@@ -420,7 +442,34 @@
     "locked": "Bloqueado por la empresa",
     "preview": "Vista previa",
     "noCards": "Crea una tarjeta primero para crear una firma.",
-    "book": "Reservar reunión"
+    "book": "Reservar reunión",
+    "download": "Descargar HTML",
+    "installTitle": "Instala tu firma",
+    "installNote": "Tu firma es texto para copiar y pegar: pégala en los ajustes de firma de tu app de correo. No la guardes como imagen; eso rompería los enlaces.",
+    "gmail": "Gmail",
+    "outlook": "Outlook",
+    "appleMail": "Apple Mail",
+    "gmailSteps": [
+      "Haz clic en Copiar firma arriba.",
+      "En Gmail, abre Configuración (icono de engranaje) → Ver toda la configuración.",
+      "Baja hasta la sección Firma y crea o selecciona una firma.",
+      "Pega (Cmd/Ctrl+V) en el cuadro de firma.",
+      "Baja y haz clic en Guardar cambios."
+    ],
+    "outlookSteps": [
+      "Haz clic en Copiar firma arriba.",
+      "En Outlook, ve a Configuración → Correo → Redactar y responder (o Firmas).",
+      "Crea una nueva firma y pega (Cmd/Ctrl+V) en el editor.",
+      "Ponla como predeterminada para nuevos correos y respuestas.",
+      "Haz clic en Guardar."
+    ],
+    "appleMailSteps": [
+      "Haz clic en Copiar firma arriba.",
+      "En Apple Mail, abre Mail → Configuración → Firmas.",
+      "Selecciona tu cuenta y haz clic en + para añadir una firma.",
+      "Desmarca 'Usar siempre el tipo de letra predeterminado' y pega (Cmd+V).",
+      "Cierra la configuración: la firma se guarda automáticamente."
+    ]
   },
   "billing": {
     "title": "Facturación y plan",

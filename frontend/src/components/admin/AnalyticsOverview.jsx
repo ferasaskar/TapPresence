@@ -1,6 +1,7 @@
 import { TrendingUp, Eye, MousePointerClick, Inbox, CalendarDays, CheckCircle2, QrCode, Nfc, Link2, Tag, Megaphone, Users, CreditCard, ScanLine, Download, Trophy } from "lucide-react";
 import { useLocale } from "@/i18n/useLocale";
 import { api } from "@/lib/api";
+import { DateFilter } from "./DateFilter";
 
 const STEP_KEYS = [
   { key: "views", tkey: "funnel.views", icon: Eye },
@@ -41,7 +42,7 @@ const Sparkline = ({ series }) => {
   );
 };
 
-export const AnalyticsOverview = ({ data, range = 30, onRange }) => {
+export const AnalyticsOverview = ({ data, range, onRange }) => {
   const { t, formatNumber } = useLocale();
   if (!data) return null;
   const f = data.funnel || {};
@@ -51,10 +52,11 @@ export const AnalyticsOverview = ({ data, range = 30, onRange }) => {
 
   const exportCsv = async () => {
     try {
-      const res = await api.get("/admin/analytics/export.csv", { params: { days: range }, responseType: "blob" });
+      const params = range?.start ? { start: range.start, end: range.end } : { days: 30 };
+      const res = await api.get("/admin/analytics/export.csv", { params, responseType: "blob" });
       const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
-      a.href = url; a.download = `tappresence-analytics-${range}d.csv`; a.click();
+      a.href = url; a.download = `tappresence-analytics-${range?.preset || "30d"}.csv`; a.click();
       URL.revokeObjectURL(url);
     } catch (_) {}
   };
@@ -65,16 +67,9 @@ export const AnalyticsOverview = ({ data, range = 30, onRange }) => {
         <h3 className="flex items-center gap-2 text-sm font-medium text-white">
           <TrendingUp className="h-4 w-4 text-[#D6A653]" /> {t("funnel.title")}
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {onRange ? (
-            <div className="flex rounded-lg border border-white/10 p-0.5" data-testid="analytics-range">
-              {[7, 30, 90].map((d) => (
-                <button key={d} onClick={() => onRange(d)} data-testid={`range-${d}`}
-                  className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${range === d ? "bg-[#D6A653] text-[#050607] font-semibold" : "text-white/55 hover:text-white"}`}>
-                  {t("analytics.rangeDays", { days: d, defaultValue: `${d}d` })}
-                </button>
-              ))}
-            </div>
+            <DateFilter value={range} onChange={onRange} testId="analytics-range" />
           ) : (
             <span className="text-[11px] uppercase tracking-wide text-white/40">{t("funnel.range", { days: data.range_days })}</span>
           )}

@@ -547,3 +547,33 @@ User directive: ONE authoritative pricing config across Super Admin → Billing 
 
 
 
+
+
+---
+
+## 2026-06 — Message 469: Account-scoping audit + UX correction phase
+
+### P0 tenant/data-scoping audit — RESOLVED (verified iteration_27, tenant-isolation in iteration_26)
+- **Root cause = legitimate ownership + a frontend role-label bug. NO backend leak.**
+- Evidence: card `edrina-cepele` has `owner_user_id` + `created_by` = `work@gmail.com` user id and `workspace_id` = his workspace "Mohammed". He created it himself; its content name is "Edrina Cepele". Mohammed's `/admin/cards` returns ONLY that card; SUPER_ADMIN sees all 3 by design. Analytics are correctly scoped (his 49 events, no cross-tenant leak).
+- The confusion came from `Settings.jsx` hardcoding "Member" for every non-admin. Fixed: role now derived from workspace memberships.
+- testing_agent iteration_26: 100% backend (7/7) + frontend; tenant isolation confirmed.
+
+### Implemented in this phase (all testing_agent-verified, iterations 26 & 27)
+1. **Account Context UX** — sidebar/topbar show: "Personal Account" (individual), workspace name (team), or "TapPresence Admin Console" (super admin) + role badge (Owner/Admin/Manager/Member/Super Admin). `AuthContext` now stores `memberships`. "My Card(s)" nav label replaced with "Cards".
+2. **Navigation redesign** — removed horizontal pill nav. New app shell (`OwnerNav.jsx`): fixed left sidebar (desktop, via `body.tp-shell` padding + `.tp-sidebar`), hamburger + slide-out drawer (mobile), sticky top bar with context + notifications + profile. Super Admin tools separated under an "Admin Tools" group. Nav now includes Home, Cards, Leads, Scanner, Meetings, Analytics, Signatures, NFC, Billing, Referral, Team/Integrations (entitled), Settings, Command Center (admin). RTL-safe via logical CSS properties.
+3. **Analytics integrity** — confirmed metrics are correctly scoped per authorized card; no counter resets.
+4. **Reusable Date Filter** — `components/admin/DateFilter.jsx` (Today | This Week | This Month | Custom + optional All time). Backend `/admin/analytics/overview` + `export.csv` and `_compute_overview` accept `start`/`end` ISO (days kept as fallback). Applied to Analytics overview (Home) and Leads list. Team leaderboard = analytics `by_member` which already respects the Home range.
+5. **Email Signature install UX** — Signatures page: Copy Signature (primary), Copy HTML (advanced), Download HTML (optional) + install instructions tabs for Gmail/Outlook/Apple Mail and a note clarifying it's pasted into mail settings, not saved as an image.
+6. **Timezone** — registration auto-detects browser tz (`Intl...timeZone`) and stores it (`timezone_source: auto`). New `PATCH /api/account/preferences` allows manual override (`timezone_source: manual`, validates IANA, syncs individual workspace region.timezone). Settings has a timezone dropdown + a one-time device-timezone suggestion banner (dismissal persisted in localStorage per user).
+
+### i18n
+- Added keys in en/ar/es: `nav.cards/leads/scanner/nfc/personalAccount/adminConsole/adminTools/owner/admin/manager/menu`, `dateFilter.*`, `settings.tz*`, `signatures.install*` + client step arrays.
+
+### Test users
+- `work@gmail.com` / `mohammed` — personal WORKSPACE_OWNER, owns `edrina-cepele` (see test_credentials.md). tz reset to America/New_York so the suggestion flow stays demonstrable.
+
+### Still deferred (external credentials / out of scope)
+- Real Stripe payments and transactional email delivery (auth/verification/reset flows built; delivery blocked until provider configured).
+- Meetings date-filter (uses temporal tabs today/upcoming/past already); could adopt DateFilter later if desired.
+

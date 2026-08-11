@@ -4,7 +4,7 @@ import { useLocale } from "@/i18n/useLocale";
 import { OwnerNav } from "@/components/admin/OwnerNav";
 import { buildSignatureHtml } from "@/lib/signature";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Mail, Copy, Code, Lock, Loader2 } from "lucide-react";
+import { Mail, Copy, Code, Lock, Loader2, Download, Info } from "lucide-react";
 import { toast } from "sonner";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -45,6 +45,15 @@ export default function Signatures() {
   const toggle = (f) => { if (isLocked(f)) return; setOpts((o) => ({ ...o, [f.key]: !o[f.key] })); };
 
   const copyHtml = async () => { try { await navigator.clipboard.writeText(html); toast.success(t("signatures.copied")); } catch { toast.error("Copy failed"); } };
+  const downloadHtml = () => {
+    const blob = new Blob([`<!DOCTYPE html><html><body>${html}</body></html>`], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${card?.slug || "signature"}-signature.html`; a.click();
+    URL.revokeObjectURL(url);
+  };
+  const [client, setClient] = useState("gmail");
+  const CLIENTS = ["gmail", "outlook", "appleMail"];
   const copyRich = async () => {
     try {
       const blob = new Blob([html], { type: "text/html" });
@@ -102,9 +111,27 @@ export default function Signatures() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button onClick={copyRich} data-testid="sig-copy-rich" className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#D6A653] py-2.5 text-sm font-medium text-[#050607] hover:bg-[#E8B764]"><Copy className="h-4 w-4" /> {t("signatures.copyRich")}</button>
                 <button onClick={copyHtml} data-testid="sig-copy-html" className="flex items-center justify-center gap-2 rounded-lg border border-white/12 px-4 py-2.5 text-sm text-white/70 hover:text-white"><Code className="h-4 w-4" /> {t("signatures.copyHtml")}</button>
+                <button onClick={downloadHtml} data-testid="sig-download-html" className="flex items-center justify-center gap-2 rounded-lg border border-white/12 px-4 py-2.5 text-sm text-white/70 hover:text-white"><Download className="h-4 w-4" /> {t("signatures.download")}</button>
+              </div>
+
+              {/* Install instructions */}
+              <div className="rounded-2xl border border-white/10 bg-[#0A0B0D] p-4" data-testid="sig-install">
+                <p className="flex items-center gap-2 text-sm font-medium text-white"><Info className="h-4 w-4 text-[#D6A653]" /> {t("signatures.installTitle")}</p>
+                <p className="mt-1 text-xs text-white/50">{t("signatures.installNote")}</p>
+                <div className="mt-3 flex gap-2" data-testid="sig-install-tabs">
+                  {CLIENTS.map((c) => (
+                    <button key={c} onClick={() => setClient(c)} data-testid={`sig-client-${c}`}
+                      className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${client === c ? "border-[#D6A653] bg-[#D6A653]/10 text-[#D6A653]" : "border-white/12 text-white/60 hover:text-white"}`}>
+                      {t(`signatures.${c}`)}
+                    </button>
+                  ))}
+                </div>
+                <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs text-white/70" data-testid="sig-install-steps">
+                  {(t(`signatures.${client}Steps`, { returnObjects: true }) || []).map((s, i) => <li key={i}>{s}</li>)}
+                </ol>
               </div>
             </div>
 

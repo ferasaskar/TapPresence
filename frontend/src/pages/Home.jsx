@@ -6,6 +6,7 @@ import { OwnerNav } from "@/components/admin/OwnerNav";
 import { AnalyticsOverview } from "@/components/admin/AnalyticsOverview";
 import { OnboardingChecklist } from "@/components/admin/OnboardingChecklist";
 import { ReferralNudge } from "@/components/admin/ReferralNudge";
+import { buildRange } from "@/components/admin/DateFilter";
 import { useLocale } from "@/i18n/useLocale";
 import { Loader2, Eye, QrCode, MousePointerClick, Inbox, Pencil, ExternalLink, Share2, CalendarDays, Plus, Clock, User, CheckCircle2, CircleDot, Bell, Phone, MessageCircle, Mail } from "lucide-react";
 import { toast } from "sonner";
@@ -34,10 +35,10 @@ export default function Home() {
   const [meetings, setMeetings] = useState([]);
   const [overview, setOverview] = useState(null);
   const [dueLeads, setDueLeads] = useState([]);
-  const [range, setRange] = useState(30);
+  const [range, setRange] = useState(() => buildRange("month"));
 
   useEffect(() => {
-    api.get("/admin/analytics/overview", { params: { days: range } }).then(({ data }) => setOverview(data)).catch(() => {});
+    api.get("/admin/analytics/overview", { params: { start: range.start, end: range.end } }).then(({ data }) => setOverview(data)).catch(() => {});
   }, [range]);
 
   useEffect(() => {

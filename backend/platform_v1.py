@@ -806,7 +806,7 @@ async def _auth_payload(user, request):
         "user": {"id": user["id"], "email": user["email"], "name": user.get("name", ""),
                  "role": user.get("role", "MEMBER"), "email_verified": user.get("email_verified", False),
                  "language": user.get("language", "en"), "locale": user.get("locale", "en-US"),
-                 "timezone": user.get("timezone", "UTC")},
+                 "timezone": user.get("timezone", "UTC"), "timezone_source": user.get("timezone_source", "auto")},
         "workspace": ws, "memberships": ms, "entitlements": ent,
     }
 
@@ -830,6 +830,7 @@ async def register(body: RegisterIn, request: Request):
         "id": uid, "email": email, "password_hash": hash_pw(body.password),
         "name": body.name.strip(), "role": "WORKSPACE_OWNER", "email_verified": False,
         "language": lang, "locale": region["locale"], "timezone": region["timezone"],
+        "timezone_source": "auto",
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
@@ -966,6 +967,36 @@ async def revoke_session(session_id: str, user: dict = Depends(current_user)):
 async def logout(body: RefreshIn):
     await db.sessions.update_one({"refresh": body.refresh_token}, {"$set": {"revoked": True}})
     return {"ok": True}
+
+
+class ProfilePrefsIn(BaseModel):
+    timezone: Optional[str] = None
+    language: Optional[str] = None
+
+
+@platform_router.patch("/account/preferences")
+async def update_preferences(body: ProfilePrefsIn, user: dict = Depends(current_user)):
+    """Update the user's own account preferences. A manual timezone choice persists and overrides
+    device auto-detection (timezone_source=manual)."""
+    upd = {}
+    if body.timezone:
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(body.timezone)
+        except Exception:
+            raise HTTPException(400, "Invalid timezone")
+        upd["timezone"] = body.timezone
+        upd["timezone_source"] = "manual"
+    if body.language and body.language in SUPPORTED_LANGUAGES:
+        upd["language"] = body.language
+    if not upd:
+        return {"ok": True}
+    await db.users.update_one({"id": user["id"]}, {"$set": upd})
+    if "timezone" in upd:
+        ws = await db.workspaces.find_one({"owner_id": user["id"], "type": "individual"}, {"_id": 0, "id": 1})
+        if ws:
+            await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"region.timezone": upd["timezone"]}})
+    return {"ok": True, **upd}
 
 
 @platform_router.delete("/account")
