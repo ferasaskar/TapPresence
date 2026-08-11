@@ -46,14 +46,21 @@ const Panel = ({ title, actions, children, testId }) => (
 );
 
 const Kpi = ({ label, value, sub, unavailable, testId }) => (
-  <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4" data-testid={testId}>
-    <p className="text-[11px] uppercase tracking-wider text-white/40">{label}</p>
+  <div className="rounded-xl border border-white/8 bg-white/[0.02] p-3" data-testid={testId}>
+    <p className="text-[10px] uppercase tracking-wider text-white/40">{label}</p>
     {unavailable ? (
-      <p className="mt-1.5 text-[11px] font-medium text-[#D6A653]/80">Not available until billing connected</p>
+      <p className="mt-1 text-[11px] font-medium text-[#D6A653]/80">n/a until billing</p>
     ) : (
-      <p className="mt-1 text-2xl font-light tabular-nums text-white">{value}</p>
+      <p className="mt-0.5 text-xl font-light tabular-nums text-white">{value}</p>
     )}
-    {sub ? <p className="mt-0.5 text-[11px] text-white/40">{sub}</p> : null}
+    {sub ? <p className="mt-0.5 text-[10px] text-emerald-300/80">{sub}</p> : null}
+  </div>
+);
+
+const MoneyUnavailable = ({ testId = "money-unavailable" }) => (
+  <div className="flex items-center gap-3 rounded-xl border border-[#D6A653]/25 bg-[#D6A653]/[0.06] px-4 py-3" data-testid={testId}>
+    <CreditCard className="h-4 w-4 shrink-0 text-[#D6A653]" />
+    <p className="text-xs text-[#F2E0C9]">MRR, ARR, revenue & churn are <b>not available until Stripe is connected</b>.</p>
   </div>
 );
 
@@ -64,63 +71,80 @@ const StatePill = ({ ok, labelOk = "Connected", labelBad = "Not configured", war
   </span>
 );
 
-const Grid = ({ children, cols = "sm:grid-cols-2 lg:grid-cols-4" }) => (
-  <div className={`grid grid-cols-1 gap-3 ${cols}`}>{children}</div>
+const Grid = ({ children, cols = "grid-cols-2 lg:grid-cols-4" }) => (
+  <div className={`grid gap-2.5 ${cols}`}>{children}</div>
+);
+
+const IncludeInternal = ({ on, onClick }) => (
+  <label className="flex items-center gap-2 text-[11px] text-white/50" data-testid="include-internal">
+    <Toggle on={on} onClick={onClick} testId="include-internal-toggle" /> Include internal / test data
+  </label>
 );
 
 // ================================================================= sections
 const Overview = () => {
   const [range, setRange] = useState(() => buildRange("month"));
+  const [incInternal, setIncInternal] = useState(false);
   const [d, setD] = useState(null);
-  useEffect(() => { cget("/overview", { start: range.start, end: range.end }).then(setD).catch(() => {}); }, [range]);
+  const [showDist, setShowDist] = useState(false);
+  useEffect(() => { cget("/overview", { start: range.start, end: range.end, include_internal: incInternal }).then(setD).catch(() => {}); }, [range, incInternal]);
   if (!d) return <Loader />;
-  const a = d.accounts, u = d.usage;
+  const a = d.accounts, u = d.usage, s = d.subscriptions;
   return (
     <div className="space-y-5" data-testid="ctrl-overview">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-light text-white">Platform Overview</h2>
-        <DateFilter value={range} onChange={setRange} testId="ctrl-overview-range" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-light text-white">Platform Overview</h2>
+          <p className="text-[11px] text-white/40" data-testid="users-line">{d.users.total} total users · {d.users.customers} customers · {d.users.internal} internal</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <IncludeInternal on={incInternal} onClick={() => setIncInternal(!incInternal)} />
+          <DateFilter value={range} onChange={setRange} testId="ctrl-overview-range" />
+        </div>
       </div>
-      <Panel title="Accounts" testId="ctrl-accounts">
+
+      <Panel title="Business Summary" testId="ctrl-summary">
         <Grid>
-          <Kpi label="Total Accounts" value={a.total} testId="kpi-total" />
-          <Kpi label="Individual" value={a.individual} testId="kpi-individual" />
-          <Kpi label="Company / Team" value={a.team} testId="kpi-team" />
-          <Kpi label="Team Seats" value={a.team_seats} testId="kpi-seats" />
-          <Kpi label="Active Trials" value={a.active_trials} testId="kpi-trials" />
-          <Kpi label="Active Paid" value={a.active_paid} testId="kpi-paid" />
-          <Kpi label="New Customers" value={a.new_customers} sub="in range" testId="kpi-new" />
-          <Kpi label="Cancellations" value={a.cancellations} testId="kpi-cancel" />
+          <Kpi label="Customer Accounts" value={a.total} sub={a.new_in_period ? `+${a.new_in_period} in period` : null} testId="kpi-total" />
+          <Kpi label="Active Trials" value={s.active_trials} testId="kpi-trials" />
+          <Kpi label="Paid Subscribers" value={s.active_paid} testId="kpi-paid" />
+          <Kpi label="Companies" value={a.company + a.enterprise} testId="kpi-team" />
+        </Grid>
+        <p className="mt-2 text-[10px] text-white/35" data-testid="accounts-reconcile">{a.total} accounts = {a.individual} individual + {a.company} company + {a.enterprise} enterprise</p>
+      </Panel>
+
+      <Panel title="Growth (selected period)" testId="ctrl-growth">
+        <Grid cols="grid-cols-2 lg:grid-cols-3">
+          <Kpi label="New Accounts" value={a.new_in_period} testId="kpi-new" />
+          <Kpi label="Trial → Paid" unavailable testId="kpi-t2p" />
+          <Kpi label="Cancellations" value={s.cancellations_in_period} testId="kpi-cancel" />
         </Grid>
       </Panel>
-      <Panel title="Revenue" testId="ctrl-money"
-        actions={<span className="text-[11px] text-white/40">Billing: demo — connect Stripe for revenue</span>}>
-        <Grid>
-          <Kpi label="MRR" unavailable testId="kpi-mrr" />
-          <Kpi label="ARR" unavailable testId="kpi-arr" />
-          <Kpi label="Revenue This Month" unavailable testId="kpi-rev" />
-          <Kpi label="Trial → Paid / Churn" unavailable testId="kpi-churn" />
-        </Grid>
-      </Panel>
-      <Panel title="Product Usage" testId="ctrl-usage">
-        <Grid>
+
+      <Panel title="Product Usage (selected period)" testId="ctrl-usage">
+        <Grid cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           <Kpi label="Published Cards" value={u.published_cards} testId="kpi-published" />
           <Kpi label="Card Views" value={u.views} testId="kpi-views" />
           <Kpi label="QR Scans" value={u.scans} testId="kpi-scans" />
           <Kpi label="NFC Taps" value={u.nfc_taps} testId="kpi-nfc" />
-          <Kpi label="Leads Captured" value={u.leads} testId="kpi-leads" />
+          <Kpi label="Leads" value={u.leads} testId="kpi-leads" />
           <Kpi label="Scanner Uses" value={u.scanner_uses} testId="kpi-scanuse" />
-          <Kpi label="Meetings Booked" value={u.meetings_booked} testId="kpi-meetings" />
-          <Kpi label="Campaigns" value={u.campaigns} testId="kpi-campaigns" />
-          <Kpi label="Paid Referrals" value={u.paid_referrals} testId="kpi-refs" />
+          <Kpi label="Meetings" value={u.meetings_booked} testId="kpi-meetings" />
+          <Kpi label="Referrals (paid)" value={u.paid_referrals} testId="kpi-refs" />
         </Grid>
       </Panel>
-      <Panel title="Plan Distribution" testId="ctrl-plandist">
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(d.plan_distribution).map(([p, n]) => (
-            <span key={p} className="rounded-full border border-white/12 bg-white/5 px-3 py-1 text-xs text-white/70">{p}: <b className="text-white">{n}</b></span>
-          ))}
-        </div>
+
+      <Panel title="Revenue" testId="ctrl-money"><MoneyUnavailable /></Panel>
+
+      <Panel title="Plan Distribution" testId="ctrl-plandist"
+        actions={<button onClick={() => setShowDist(!showDist)} className="text-[11px] text-[#D6A653]" data-testid="plandist-toggle">{showDist ? "Hide" : "View details"}</button>}>
+        {showDist ? (
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(d.plan_distribution).map(([p, n]) => (
+              <span key={p} className="rounded-full border border-white/12 bg-white/5 px-3 py-1 text-xs text-white/70">{p}: <b className="text-white">{n}</b></span>
+            ))}
+          </div>
+        ) : <p className="text-[11px] text-white/40">Real customers only (internal/demo/test excluded).</p>}
       </Panel>
     </div>
   );
@@ -266,18 +290,41 @@ const Companies = () => {
 };
 
 const Subscriptions = () => {
-  const [rows, setRows] = useState([]);
-  useEffect(() => { api.get("/admin/platform/workspaces").then((r) => setRows(r.data.items || [])).catch(() => {}); }, []);
-  const groups = useMemo(() => { const g = {}; rows.forEach((w) => { const k = w.status || "unknown"; (g[k] = g[k] || []).push(w); }); return g; }, [rows]);
+  const [d, setD] = useState(null);
+  const [incInternal, setIncInternal] = useState(false);
+  const [q, setQ] = useState("");
+  useEffect(() => { cget("/subscriptions", { include_internal: incInternal }).then(setD).catch(() => {}); }, [incInternal]);
+  if (!d) return <Loader />;
+  const buckets = [["active", "Active"], ["trialing", "Trialing"], ["past_due", "Past Due"], ["canceled", "Canceled"], ["inactive", "Inactive"]];
+  const items = (d.items || []).filter((i) => !q.trim() || (i.name || "").toLowerCase().includes(q.toLowerCase()));
+  const badge = (b) => b === "active" ? "text-emerald-300" : b === "trialing" ? "text-[#D6A653]" : b === "past_due" ? "text-amber-300" : "text-white/40";
   return (
     <div className="space-y-4" data-testid="ctrl-subscriptions">
-      <h2 className="text-xl font-light text-white">Subscriptions</h2>
-      <p className="text-sm text-white/45">Real subscription states derived from workspace records. Money figures appear once Stripe is connected.</p>
-      {Object.entries(groups).map(([status, ws]) => (
-        <Panel key={status} title={`${status} (${ws.length})`} testId={`subs-${status}`}>
-          <div className="flex flex-wrap gap-2">{ws.map((w) => <span key={w.id} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70">{w.name} · <b className="text-white">{w.plan}</b></span>)}</div>
-        </Panel>
-      ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xl font-light text-white">Subscriptions</h2>
+        <IncludeInternal on={incInternal} onClick={() => setIncInternal(!incInternal)} />
+      </div>
+      <Panel title="Summary" testId="subs-summary">
+        <Grid cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+          {buckets.map(([k, lbl]) => <Kpi key={k} label={lbl} value={d.summary?.[k] || 0} testId={`subs-count-${k}`} />)}
+        </Grid>
+        {!d.money_available ? <p className="mt-3 text-[11px] text-white/40">Billing values (renewal amounts, MRR) appear once Stripe is connected.</p> : null}
+      </Panel>
+      <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer…" className="border-white/12 bg-white/[0.03] pl-9 text-white" data-testid="subs-search" /></div>
+      <Panel>
+        <div className="divide-y divide-white/6">
+          {items.map((i) => (
+            <div key={i.id} className="flex items-center justify-between py-2.5" data-testid={`subs-row-${i.id}`}>
+              <div><p className="text-sm text-white">{i.name}</p><p className="text-[11px] text-white/40">{i.type} · {i.plan}</p></div>
+              <div className="text-right">
+                <p className={`text-xs font-medium ${badge(i.bucket)}`}>{i.bucket}</p>
+                <p className="text-[10px] text-white/35">{i.trial_ends_at ? `Trial ends ${i.trial_ends_at.slice(0, 10)}` : i.renewal ? `Renews ${i.renewal.slice(0, 10)}` : "—"}</p>
+              </div>
+            </div>
+          ))}
+          {!items.length ? <p className="py-6 text-center text-sm text-white/40">No subscriptions.</p> : null}
+        </div>
+      </Panel>
     </div>
   );
 };
@@ -289,9 +336,7 @@ const Revenue = () => {
   return (
     <div className="space-y-5" data-testid="ctrl-revenue">
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-light text-white">Revenue & Analytics</h2><DateFilter value={range} onChange={setRange} testId="ctrl-rev-range" /></div>
-      <Panel title="Revenue" actions={<span className="text-[11px] text-white/40">Connect Stripe to unlock revenue reporting</span>}>
-        <Grid><Kpi label="MRR" unavailable /><Kpi label="ARR" unavailable /><Kpi label="Revenue This Month" unavailable /><Kpi label="Churn" unavailable /></Grid>
-      </Panel>
+      <Panel title="Revenue"><MoneyUnavailable /></Panel>
       {d ? <Panel title="Product analytics (real)"><Grid>
         <Kpi label="Views" value={d.usage.views} /><Kpi label="Scans" value={d.usage.scans} /><Kpi label="NFC Taps" value={d.usage.nfc_taps} /><Kpi label="Leads" value={d.usage.leads} />
       </Grid></Panel> : <Loader />}
@@ -606,7 +651,7 @@ export default function ControlCenter() {
             <button onClick={() => setDrawer(true)} className="p-1.5 text-white/70 lg:hidden" data-testid="control-hamburger"><Menu className="h-5 w-5" /></button>
             <span className="flex items-center gap-2 text-sm font-medium text-white"><ShieldCheck className="h-4 w-4 text-[#D6A653]" /> TapPresence Admin Console</span>
           </div>
-          <span className="text-xs text-white/50">{user?.email}</span>
+          <span className="text-xs text-white/50" data-testid="control-admin-identity">Super Admin</span>
         </header>
         <main className="mx-auto max-w-6xl px-4 py-8 lg:px-8">{Body ? <Body /> : null}</main>
       </div>

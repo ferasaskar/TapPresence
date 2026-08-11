@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 29 - Control Center P0 data-integrity + IA fix verified end-to-end. Backend (21/22 pytest tests pass): (a) Authorization sweep - customer token gets 403, admin gets 200 across 8 /admin/control/* endpoints; (b) Overview contract matches exactly: users {total:8, customers:2, internal:6}, accounts {total:2, individual:2, company:0, enterprise:0}, subscriptions {active_trials:2, active_paid:0}, plan_distribution={trial:2} with NO 'free' key, money.* all None, money_available=false, reconciliation holds; (c) include_internal=true correctly bumps accounts.total to 3; (d) Subscriptions endpoint returns summary {trialing:2, active:0}, items have plan label 'Trial' (never 'free'), TapPresence HQ appears only with include_internal (no 'ARIADNI HQ' leak); (e) Customer tenant isolation intact (sees only edrina-cepele). Frontend: admin@ariadni.id lands on /control; header shows 'TapPresence Admin Console' + 'Super Admin' (not email); users-line='8 total users · 2 customers · 6 internal'; accounts-reconcile='2 accounts = 2 individual + 0 company + 0 enterprise'; all KPI testids populated correctly (kpi-total 2, kpi-trials 2, kpi-paid 0, kpi-team 0, kpi-new 2, kpi-cancel 0); include-internal toggle OFF by default and flipping changes kpi-total 2->3; Subscriptions page shows 2 trialing rows labeled 'individual · Trial · Trial ends 2026-08-23' (never 'free'), subs-search filters to 1 row for 'Mohammed'; all 13 other sections (customers, companies, product, referrals, templates, flags, integrations, health, security, audit, revenue, settings, plans) load without ARIADNI HQ leak; normal customer work@gmail.com is redirected from /control, /control/subscriptions, /control/customers, /control/plans back to /dashboard; mobile 390x844 has no horizontal overflow and uses compact 2-column KPI grid with plandist-toggle collapsed behind 'View details'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/control/overview?include_internal=true", "issue": "Product Usage numbers (views/leads/nfc_taps/published_cards) do NOT change between include_internal=false and true. Root cause: internal cards 'feras-askar' and 'dr-leo' have workspace_id=None (feras-askar) or workspace_id pointing to a non-existent workspace (dr-leo -> c02ed6d7-2e39-4162-82a4-e34996fea6ee). The customer_ws_filter query returns TapPresence HQ workspace, but no cards are attributed to it, so include_internal adds no additional usage. Review request explicitly required 'internal feras-askar card adds leads/nfc/views' when include_internal=true. Fix: run migration to set feras-askar/dr-leo workspace_id = TapPresence HQ id."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter29_metric_contract.py",
+    "/app/test_reports/pytest/iter29.xml"
+  ],
+  "action_items": [
+    "(data-integrity) Attribute internal demo cards (feras-askar has workspace_id=None; dr-leo points to a non-existent workspace) to the 'TapPresence HQ' internal workspace so that include_internal=true correctly bumps Product Usage numbers. Add a one-line migration in run_migration() to set workspace_id on legacy internal cards."
+  ],
+  "critical_code_review_comments": [
+    "customer_ws_filter / is_real_paid / display_plan / effective_status helpers cleanly encapsulate 'real customer' semantics — good separation.",
+    "Overview reconciliation math (total == individual + company + enterprise) holds because each workspace is placed in exactly one bucket via if/elif/else — verified in code and via HTTP.",
+    "plan_distribution never emits 'free' (trialing goes to 'trial', non-paid non-trial goes to 'inactive' or effective status) — verified.",
+    "Money fields are Nones and money_available is derived from _configured('STRIPE_SECRET_KEY') — correct 'not available until Stripe' semantics.",
+    "Product Usage bug: cards with workspace_id=None or pointing to a deleted workspace fall through both customer-only AND include_internal buckets. Consider a fallback in run_migration() that reassigns orphaned internal cards to TapPresence HQ."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter29_metric_contract.py"
+  ],
+  "success_rate": {
+    "backend": "95% (21/22)",
+    "frontend": "100% (all critical flows + testids verified)"
+  },
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN); work@gmail.com / mohammed (individual customer)",
+  "seed_data_creation": "None — no persistent state created. Include-internal toggle was flipped and reverted during test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Only outstanding item is the Product Usage data-attribution bug (internal cards orphaned from TapPresence HQ). Metric contract, IA, no-free / no-ARIADNI-HQ, authorization, subscriptions and mobile density all verified. Test file: /app/backend/tests/test_iter29_metric_contract.py (run with `pytest backend/tests/test_iter29_metric_contract.py -o addopts=''`). If retest needed, note that kpi-total default vs include_internal contract (2 vs 3) depends on the current 2 customer workspaces + 1 internal enterprise workspace remaining unchanged.",
+  "rca of the issue": "Product Usage identical with/without include_internal: In backend/platform_v1.py control_overview builds ws_ids from workspaces matching customer_ws_filter, then queries cards where workspace_id ∈ ws_ids. Internal cards feras-askar (workspace_id=None) and dr-leo (workspace_id=c02ed6d7... which does not correspond to TapPresence HQ) are NEVER selected — not in customers-only mode (correct) and not in include_internal mode (BUG). Reproduction: GET /api/admin/control/overview -> usage.published_cards=2 (edrina-cepele + one Loiy card); GET ...?include_internal=true -> usage.published_cards=2 (should be 4 or 3). Mitigation: add to run_migration a step 'assign orphaned internal digital_cards to TapPresence HQ workspace_id', e.g. db.digital_cards.update_many({slug: {$in: ['feras-askar','dr-leo']}}, {$set: {workspace_id: <tappresence_hq_id>}})."
+}

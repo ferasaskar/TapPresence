@@ -186,6 +186,41 @@ def effective_status(ws: dict) -> str:
     return st
 
 
+# ---- Account classification for truthful platform KPIs (P0 data-integrity) ----
+PAID_TIERS = {"pro", "team", "enterprise", "white_label"}
+
+
+def customer_ws_filter(include_internal: bool = False) -> dict:
+    """Mongo filter for real customer workspaces. Excludes internal/demo/test by default."""
+    return {} if include_internal else {"environment": "production_customer"}
+
+
+def is_real_paid(sub: dict) -> bool:
+    """A subscription counts as real paid revenue ONLY with a real billing provider reference (Stripe).
+    Manually-seeded plan/status is never counted as paid revenue."""
+    if not sub:
+        return False
+    if sub.get("status") not in ("active", "cancel_at_period_end"):
+        return False
+    if (sub.get("plan") or "") not in PAID_TIERS:
+        return False
+    return bool(sub.get("stripe_subscription_id") or sub.get("provider") == "stripe")
+
+
+def display_plan(ws: dict) -> str:
+    """Never surface the legacy 'free' label. Returns a truthful current plan label."""
+    sub = (ws or {}).get("subscription") or {}
+    plan = sub.get("plan") or (ws or {}).get("plan") or "trial"
+    if plan == "free":
+        plan = "trial"
+    st = effective_status(ws)
+    if st in ("trialing",):
+        return "Trial"
+    if st == "trial_expired":
+        return "Trial (expired)"
+    return plan.capitalize()
+
+
 async def resolve_entitlements(workspace_id: str) -> dict:
     ws = await db.workspaces.find_one({"id": workspace_id}, {"_id": 0})
     sub = (ws or {}).get("subscription") or {}
@@ -839,6 +874,7 @@ async def register(body: RegisterIn, request: Request):
         "name": body.name.strip(), "role": "WORKSPACE_OWNER", "email_verified": False,
         "language": lang, "locale": region["locale"], "timezone": region["timezone"],
         "timezone_source": "auto",
+        "environment": "production_customer",
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
@@ -857,7 +893,7 @@ async def register(body: RegisterIn, request: Request):
     await db.workspaces.insert_one({
         "id": ws_id, "name": body.workspace_name.strip() or (body.name.strip() or "My Workspace"),
         "type": "individual", "plan": _plan, "owner_id": uid,
-        "subscription": _sub,
+        "subscription": _sub, "environment": "production_customer",
         "referral_code": await _gen_referral_code(),
         "region": region, "tax": {"tax_country": region["country_code"], "tax_inclusive": False,
                                    "tax_id": "", "status": "unregistered"},
@@ -1552,45 +1588,74 @@ def _win(start, end):
 
 
 @platform_router.get("/admin/control/overview")
-async def control_overview(start: str = None, end: str = None, user: dict = Depends(current_user)):
-    """Global platform overview. Real counts only. Money metrics are None until real billing (Stripe) is connected."""
+async def control_overview(start: str = None, end: str = None, include_internal: bool = False, user: dict = Depends(current_user)):
+    """Global platform overview. Real CUSTOMER data only by default (internal/demo/test excluded).
+    Money metrics stay None until real billing (Stripe) is connected. Current-state metrics are lifetime
+    totals; period metrics respect the date window."""
     _require_super(user)
     from collections import Counter
     tw, lo, hi = _win(start, end)
-    workspaces = await db.workspaces.find({}, {"_id": 0}).to_list(20000)
-    individual = sum(1 for w in workspaces if w.get("type") == "individual")
-    team = sum(1 for w in workspaces if w.get("type") == "team")
+    cf = customer_ws_filter(include_internal)
+
+    # ---- USERS (distinct from customer accounts) ----
+    users_total = await db.users.count_documents({})
+    users_customers = await db.users.count_documents({"environment": "production_customer"})
+    users_internal = users_total - users_customers
+
+    # ---- CUSTOMER ACCOUNTS (workspaces), mutually exclusive categories ----
+    wss = await db.workspaces.find(cf, {"_id": 0}).to_list(20000)
+    individual = company = enterprise = 0
+    active_trials = active_paid = seats = 0
     plan_dist = Counter()
-    active_trials = active_paid = cancellations = seats = 0
-    for w in workspaces:
-        st = effective_status(w)
+    for w in wss:
         sub = w.get("subscription") or {}
-        plan = sub.get("plan") or w.get("plan", "free")
-        plan_dist[plan] += 1
+        st = effective_status(w)
+        plan = sub.get("plan") or w.get("plan") or "trial"
+        if plan == "enterprise":
+            enterprise += 1
+        elif w.get("type") in ("company", "team"):
+            company += 1
+        else:
+            individual += 1
         if st == "trialing":
             active_trials += 1
-        if st in ("active", "cancel_at_period_end") and plan in ("pro", "team", "enterprise", "individual"):
+            plan_dist["trial"] += 1
+        elif is_real_paid(sub):
             active_paid += 1
-        if st == "cancel_at_period_end":
-            cancellations += 1
-        seats += int(sub.get("seats") or 0)
-    users_total = await db.users.count_documents({})
-    new_customers = await db.users.count_documents({"created_at": tw})
-    published = await db.digital_cards.count_documents({"status": "published"})
-    views = await db.analytics_events.count_documents({"type": "view", "created_at": tw})
-    scans = await db.analytics_events.count_documents({"type": "scan", "created_at": tw})
-    nfctaps = await db.analytics_events.count_documents({"type": "nfctap", "created_at": tw})
-    leads = await db.leads.count_documents({"created_at": tw})
-    scanner_uses = await db.leads.count_documents({"source": {"$in": ["business_card_scan", "badge_scan", "qr_scan"]}, "created_at": tw})
-    meetings_booked = await db.meetings.count_documents({"created_at": tw})
-    campaigns = await db.campaigns.count_documents({})
-    paid_referrals = await db.referrals.count_documents({"status": "qualified"})
+            seats += int(sub.get("seats") or 0)
+            plan_dist[plan] += 1
+        else:
+            plan_dist[st if st != "active" else "inactive"] += 1
+    total_customers = len(wss)
+    new_accounts = await db.workspaces.count_documents({**cf, "created_at": tw})
+    cancellations = await db.workspaces.count_documents({**cf, "subscription.status": "canceled", "subscription.canceled_at": tw})
+
+    # ---- PRODUCT USAGE (attributed to customer workspaces, windowed) ----
+    ws_ids = [w["id"] for w in wss]
+    cards = await db.digital_cards.find({"workspace_id": {"$in": ws_ids}}, {"_id": 0, "id": 1, "slug": 1, "status": 1}).to_list(50000)
+    slugs = [c["slug"] for c in cards]
+    card_ids = [c["id"] for c in cards]
+    published = sum(1 for c in cards if c.get("status") == "published")
+    views = await db.analytics_events.count_documents({"type": "view", "cardSlug": {"$in": slugs}, "created_at": tw})
+    scans = await db.analytics_events.count_documents({"type": "scan", "cardSlug": {"$in": slugs}, "created_at": tw})
+    nfctaps = await db.analytics_events.count_documents({"type": "nfctap", "cardSlug": {"$in": slugs}, "created_at": tw})
+    leads = await db.leads.count_documents({"workspace_id": {"$in": ws_ids}, "created_at": tw})
+    scanner_uses = await db.leads.count_documents({"workspace_id": {"$in": ws_ids}, "source": {"$in": ["business_card_scan", "badge_scan", "qr_scan"]}, "created_at": tw})
+    meetings_booked = await db.meetings.count_documents({"card_id": {"$in": card_ids}, "created_at": tw})
+    campaigns = await db.campaigns.count_documents({"workspace_id": {"$in": ws_ids}})
+    paid_referrals = await db.referrals.count_documents({"referrer_ws_id": {"$in": ws_ids}, "status": "qualified"})
+
     return {
         "money_available": bool(_configured("STRIPE_SECRET_KEY")),
+        "include_internal": include_internal,
+        "users": {"total": users_total, "customers": users_customers, "internal": users_internal},
         "accounts": {
-            "total": users_total, "individual": individual, "team": team, "team_seats": seats,
-            "active_trials": active_trials, "active_paid": active_paid, "cancellations": cancellations,
-            "new_customers": new_customers,
+            "total": total_customers, "individual": individual, "company": company, "enterprise": enterprise,
+            "team_seats": seats, "new_in_period": new_accounts,
+        },
+        "subscriptions": {
+            "active_trials": active_trials, "active_paid": active_paid,
+            "cancellations_in_period": cancellations, "trial_to_paid": None,
         },
         "money": {"mrr": None, "arr": None, "revenue_month": None, "trial_to_paid": None, "churn": None},
         "usage": {
@@ -1601,6 +1666,29 @@ async def control_overview(start: str = None, end: str = None, user: dict = Depe
         "plan_distribution": dict(plan_dist),
         "range": {"start": lo, "end": hi},
     }
+
+
+@platform_router.get("/admin/control/subscriptions")
+async def control_subscriptions(include_internal: bool = False, user: dict = Depends(current_user)):
+    """Truthful subscription list: real customers only, never a 'free' label. Money values appear once Stripe is connected."""
+    _require_super(user)
+    from collections import Counter
+    wss = await db.workspaces.find(customer_ws_filter(include_internal), {"_id": 0}).sort("created_at", -1).to_list(20000)
+    summary = Counter()
+    items = []
+    for w in wss:
+        sub = w.get("subscription") or {}
+        st = effective_status(w)
+        bucket = "trialing" if st == "trialing" else "active" if is_real_paid(sub) else "past_due" if st == "past_due" else "canceled" if st in ("canceled", "cancel_at_period_end") else "inactive"
+        summary[bucket] += 1
+        items.append({
+            "id": w["id"], "name": w.get("name"), "type": w.get("type"),
+            "plan": display_plan(w), "status": st, "bucket": bucket,
+            "seats": sub.get("seats"),
+            "renewal": sub.get("current_period_end"),
+            "trial_ends_at": sub.get("trial_ends_at"),
+        })
+    return {"summary": dict(summary), "items": items, "money_available": bool(_configured("STRIPE_SECRET_KEY"))}
 
 
 @platform_router.get("/admin/control/customers/{user_id}")
@@ -2708,4 +2796,44 @@ async def run_migration():
         # Backfill CRM defaults on legacy leads
         await db.leads.update_many({"status": {"$exists": False}},
                                    {"$set": {"status": "NEW", "tags": [], "source": "inquiry"}})
+
+    # ---- P0: classify accounts so KPIs default to real customers only (idempotent) ----
+    INTERNAL_DOMAINS = ("@ariadni.ai", "@ariadni.id", "@tappresence.com")
+    async for u in db.users.find({"environment": {"$exists": False}}, {"_id": 0, "id": 1, "email": 1, "role": 1}):
+        em = (u.get("email") or "").lower()
+        if u.get("role") == "SUPER_ADMIN" or any(em.endswith(d) for d in INTERNAL_DOMAINS):
+            env = "internal"
+        elif em.endswith("@demo.com") or em.endswith("@example.com"):
+            env = "demo"
+        elif em.startswith("test") or "+test" in em:
+            env = "test"
+        else:
+            env = "production_customer"
+        await db.users.update_one({"id": u["id"]}, {"$set": {"environment": env}})
+    async for w in db.workspaces.find({"environment": {"$exists": False}}, {"_id": 0, "id": 1, "owner_id": 1}):
+        owner = await db.users.find_one({"id": w.get("owner_id")}, {"_id": 0, "environment": 1}) if w.get("owner_id") else None
+        await db.workspaces.update_one({"id": w["id"]}, {"$set": {"environment": (owner or {}).get("environment") or "internal"}})
+    # No user-visible legacy branding in the Control Center
+    await db.workspaces.update_many({"name": "ARIADNI HQ"}, {"$set": {"name": "TapPresence HQ"}})
+    # Migrate legacy plan='free' real customers to their intended 14-day trial (TapPresence has NO Free plan)
+    _tdays = await trial_days()
+    async for w in db.workspaces.find({"plan": "free", "environment": "production_customer", "subscription": None}, {"_id": 0, "id": 1, "created_at": 1}):
+        try:
+            base = datetime.fromisoformat((w.get("created_at") or now_iso()).replace("Z", "+00:00"))
+        except Exception:
+            base = datetime.now(timezone.utc)
+        sub = {"plan": "trial", "status": "trialing",
+               "trial_ends_at": (base + timedelta(days=max(1, _tdays))).isoformat(),
+               "current_period_end": None, "seats": 1, "interval": None}
+        await db.workspaces.update_one({"id": w["id"]}, {"$set": {"plan": "trial", "subscription": sub}})
+    # Any other stray legacy 'free' label (internal/demo) -> 'trial' so 'free' never surfaces anywhere
+    await db.workspaces.update_many({"plan": "free"}, {"$set": {"plan": "trial"}})
+    # Attach orphan/dangling legacy cards (null or non-existent workspace_id) to the internal HQ workspace,
+    # so they stay OUT of customer KPIs and only appear when include_internal is enabled.
+    hq = await db.workspaces.find_one({"environment": "internal"}, {"_id": 0, "id": 1})
+    if hq:
+        valid_ws_ids = {w["id"] async for w in db.workspaces.find({}, {"_id": 0, "id": 1})}
+        async for c in db.digital_cards.find({}, {"_id": 0, "id": 1, "workspace_id": 1}):
+            if not c.get("workspace_id") or c["workspace_id"] not in valid_ws_ids:
+                await db.digital_cards.update_one({"id": c["id"]}, {"$set": {"workspace_id": hq["id"]}})
     logger.info("platform migration complete")
