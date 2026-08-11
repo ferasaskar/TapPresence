@@ -697,3 +697,17 @@ Distinct platform-operator experience at `/control/*`, separate from the custome
 - All 12 `ind-exchange-*` + `ind-book-*` present (DOM check). All 3 locale JSONs valid.
 
 **Untouched (as required):** `ExecutiveBlackGold.jsx` (real published profile already has both working CTAs), `BeigeLuxuryExecutive.jsx`, `FutureProfessional.jsx` (legacy/hidden), Google Sign-In, Google Calendar OAuth, booking APIs.
+
+---
+
+## Enable native booking on existing published profiles (2026-06-11) — DONE, verified in preview
+
+**Request:** Existing published profiles showed "SEND A MESSAGE" as the 2nd CTA instead of "BOOK A MEETING". Root cause: `ExecutiveBlackGold` intentionally falls back to "Send a Message" when booking is off. User chose: enable native booking on **all** published cards with default availability.
+
+**Migration:** `scripts/enable_native_booking.py` (idempotent) — sets `booking.nativeEnabled=true` on all `status:"published"` cards (preserving timezone/bookingUrl) and pre-seeds default availability (Mon–Fri, 09:00–18:00, 30-min slots, 2h notice, 60-day window) + 3 meeting types (15/30/45 min). Backend already lazy-seeds these, so this is belt-and-suspenders.
+
+**Result:** 3 published cards → 2 enabled + seeded, 1 already on. All now `native_enabled:true` (edrina-cepele, dr-leo, feras-askar).
+
+**Verification (preview):** edrina-cepele profile now shows **BOOK A MEETING** side-by-side with Exchange Contact; dialog opens with 3 meeting types; `/api/cards/edrina-cepele/slots` returns 18 bookable slots on the next weekday. Fully functional.
+
+**Note:** This changed live preview DB data only. Not deployed to production. feras-askar previously had a cal.com URL — native now takes precedence (URL retained as fallback).
