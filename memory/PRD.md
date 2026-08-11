@@ -746,3 +746,24 @@ Additive-only. For Google OAuth verification.
 - NO changes to booking/calendar/OAuth/auth/routing-of-existing-features/DB/backend.
 - Verified in preview: /privacy renders publicly (localStorage cleared), all required Google content present; `/:slug` public profiles still resolve; footer link href=/privacy; frontend compiled.
 - DEPLOY NOTE: tappresence.com/privacy returns 200 (SPA shell) but shows the OLD bundle until user redeploys. After redeploy it renders the real page. Agent cannot deploy to production.
+
+---
+
+## Separate preview/production Google OAuth (2026-06-11) — preview switched & verified; production untouched
+
+Reason: production Brand Verification blocked because the shared OAuth client's Authorized Domains included the Emergent preview domain (unverifiable by user).
+
+Decision: existing client `1014661110922-vqq91nu...` stays PRODUCTION (tappresence.com). New isolated client created in separate GCP project `tappresence-preview` for PREVIEW.
+
+Done (PREVIEW only — no code changes; all OAuth is env-driven):
+- Updated `/app/backend/.env`: GOOGLE_OAUTH_CLIENT_ID -> `1053031140717-3pv721c5bhm76s1m22bhgje4lcgbsnhh.apps.googleusercontent.com` (project tappresence-preview); GOOGLE_OAUTH_CLIENT_SECRET -> new preview secret (masked). Removed stray empty duplicate `GOOGLE_OAUTH_CLIENT_ID=""`. Redirect URIs already preview. Backend restarted.
+- Deleted the 1 stale calendar connection (belonged to old client) -> status now {configured:true, connected:false}, clean for reconnect.
+
+Verified (automated, preview):
+- Sign-In consent URL uses new client_id + preview sign-in redirect + scope `openid email profile`.
+- Calendar consent URL uses new client_id + preview calendar redirect + scope `openid email .../auth/calendar.events`, access_type offline, prompt consent.
+- Dummy-code token exchange for BOTH redirect URIs => `invalid_grant` (client id/secret valid + redirects registered on the new client). No `invalid_client`.
+
+Still needs USER manual confirm in preview (headless Google can't be automated): actually Sign in with Google, then Settings->Integrations->Connect Google Calendar (grant calendar.events), then book/reschedule/cancel a test meeting to confirm real event sync on the new client.
+
+PRODUCTION untouched. After preview is human-confirmed, user removes preview redirect URIs + preview Authorized Domain + any preview JS origin from the PRODUCTION client (leaving only tappresence.com) -> brand verification unblocked. Agent did NOT and must NOT touch production credentials/config.
