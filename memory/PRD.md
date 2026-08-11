@@ -1,5 +1,14 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## CORRECTION (2026-06): Template CTA task — reverted edits to OLD/HIDDEN templates
+Earlier in this session I mistakenly added Exchange Contact + Book a Meeting to `BeigeLuxuryExecutive.jsx` and `FutureProfessional.jsx`. Those are OLD/HIDDEN/DEPRECATED templates (no user-facing picker exposes them; kept only for backward-compat rendering of legacy cards). Per user, hidden templates must NOT be modified. Both files were reverted via `git checkout d281f2a -- ...` to their exact original state (verified: additions removed, app compiles).
+Template active/hidden truth (verified from code):
+- NEW/CURRENT ACTIVE template offered to all new cards: **Executive Black Gold** (`executive-black-gold`) — set as the sole default in `components/admin/CardInfoTabs.jsx` `emptyCard.templateId`; the `/templates` studio (`pages/CreateCard.jsx`) has NO template-name picker (only Industry + accent), so users cannot select other templates. Executive Black Gold ALREADY has Exchange Contact + Book a Meeting → nothing to add.
+- OLD/HIDDEN/DEPRECATED (backward-compat only, not selectable): **Beige Luxury Executive** (`beige-luxury`), **Future Professional** (`future-professional`).
+- `components/templates/TemplateRenderer.jsx` still maps all 3 templateIds for rendering legacy cards; its `TEMPLATES` array is used ONLY as a name-label lookup in `pages/Admin.jsx` (`tplName`), NOT as a picker.
+
+
+
 ## EXCHANGE CONTACT + BOOK A MEETING CTAs ON ALL TEMPLATES (2026-06, preview only — NOT deployed) — IMPLEMENTED & screenshot-verified (desktop + mobile, all 3 templates)
 Previously only ExecutiveBlackGold had the two large CTAs. Added the SAME shared functionality to the other two templates, styled to each:
 - `BeigeLuxuryExecutive.jsx` and `FutureProfessional.jsx` now render **Exchange Contact** (opens shared `ExchangeContactDialog`) + **Book a Meeting** (opens shared `BookMeetingDialog` when `booking.nativeEnabled`, else external `bookingUrl` link). Reuses existing components/APIs — no new booking/exchange logic. Book a Meeting is gated by `nativeEnabled || bookingUrl` (hidden when booking not configured; Exchange spans full width then). Uses `useProfile().track` for tap analytics like the reference template.
