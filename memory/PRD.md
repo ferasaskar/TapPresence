@@ -767,3 +767,13 @@ Verified (automated, preview):
 Still needs USER manual confirm in preview (headless Google can't be automated): actually Sign in with Google, then Settings->Integrations->Connect Google Calendar (grant calendar.events), then book/reschedule/cancel a test meeting to confirm real event sync on the new client.
 
 PRODUCTION untouched. After preview is human-confirmed, user removes preview redirect URIs + preview Authorized Domain + any preview JS origin from the PRODUCTION client (leaving only tappresence.com) -> brand verification unblocked. Agent did NOT and must NOT touch production credentials/config.
+
+---
+
+## Preview calendar_permission_denied diagnosis (2026-06-11) — NO changes made
+User tested Calendar Connect on preview (new tappresence-preview client) with Test User Feras.M.askar@gmail.com -> app showed calendar_permission_denied.
+Evidence (callback log 23:20:54): token exchange SUCCEEDED (200) but granted scope = `https://www.googleapis.com/auth/userinfo.email openid` — NO calendar.events.
+Requested scope (verified): `openid email https://www.googleapis.com/auth/calendar.events`.
+Conclusion: NOT a callback/code bug — the substring check `"calendar.events" not in granted_scope` correctly rejects because Google truly returned no calendar scope. Callback validation is correct; would accept `.../auth/calendar.events`.
+Root cause: on the NEW tappresence-preview GCP project, calendar.events is not added to the OAuth consent screen scope list (and/or Google Calendar API not enabled), so Google filters the sensitive scope and grants only email/openid. Test-User status alone is insufficient.
+Fix (USER, Google Cloud, no code change): enable Google Calendar API + add scope .../auth/calendar.events to the tappresence-preview OAuth consent screen, then retry Connect. No production/credential/code changes made.
