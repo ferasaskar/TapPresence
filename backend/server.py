@@ -1340,7 +1340,7 @@ async def sync_meeting_calendar(meeting_id: str):
         eid = m.get("google_event_id")
         base = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
         async with _httpx.AsyncClient(timeout=15) as cx:
-            if m.get("status") == "cancelled":
+            if m.get("status") in ("cancelled", "declined"):
                 if eid:
                     await cx.delete(f"{base}/{eid}", headers=headers)
                     await db.meetings.update_one({"id": meeting_id}, {"$set": {"google_event_id": None}})
@@ -1605,6 +1605,7 @@ async def admin_meeting_status(meeting_id: str, body: Dict[str, Any], user: dict
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_confirmed", "detail": m.get("meeting_type_title", "")}}})
     if status in ("cancelled", "declined") and m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
+    await sync_meeting_calendar(meeting_id)
     return {"ok": True}
 
 
