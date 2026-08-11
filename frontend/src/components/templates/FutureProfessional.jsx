@@ -1,5 +1,9 @@
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, UserPlus, CalendarClock } from "lucide-react";
+import { useProfile } from "@/context/ProfileContext";
+import { ExchangeContactDialog } from "@/components/profile/ExchangeContactDialog";
+import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
 import { resolveImg } from "@/lib/api";
 import { buildActions, getIcon, orderedServices, orderedProjects } from "@/lib/cardHelpers";
 import { AvailabilityBadge } from "@/components/profile/AvailabilityBadge";
@@ -36,6 +40,10 @@ export const FutureProfessional = ({ data }) => {
   const panel = [actions.message || actions.whatsapp, actions.email, actions.call, actions.meet].filter(Boolean);
 
   const { p, s } = accentValue("future-professional", data.accent, data.custom_accent_color);
+  const { track } = useProfile();
+  const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [bookOpen, setBookOpen] = useState(false);
+  const bookingActive = b.nativeEnabled || b.bookingUrl;
 
   return (
     <div className="relative min-h-screen font-sans text-slate-200 overflow-hidden" style={{ backgroundColor: "#070A16", "--ac": p, ...industryRootStyle(data, BASE_RGB["future-professional"], p) }}>
@@ -94,6 +102,38 @@ export const FutureProfessional = ({ data }) => {
             />
           ))}
         </motion.div>
+
+        {/* PRIMARY CTAs — Exchange Contact + Book a Meeting (shared functionality; booking gated by config) */}
+        <motion.section {...fade(1)} className={`mt-3 grid gap-3 ${bookingActive ? "grid-cols-2" : "grid-cols-1"}`} data-testid="cta-bar-primary">
+          <button
+            onClick={() => { track?.("tap", "cta_exchange"); setExchangeOpen(true); }}
+            data-testid="cta-exchange-button"
+            className="flex items-center justify-center gap-2 rounded-full px-4 py-4 text-sm font-semibold uppercase tracking-wide text-white transition-transform duration-300 hover:scale-[1.02]"
+            style={{ background: `linear-gradient(90deg,${s},${p})`, boxShadow: `0 8px 30px ${hexToRgba(s, 0.4)}` }}
+          >
+            <UserPlus className="h-4 w-4" /> Exchange Contact
+          </button>
+          {bookingActive && (b.nativeEnabled ? (
+            <button
+              onClick={() => { track?.("tap", "cta_book"); setBookOpen(true); }}
+              data-testid="cta-book-button"
+              className={`flex items-center justify-center gap-2 rounded-full px-4 py-4 text-sm font-semibold uppercase tracking-wide text-slate-200 transition-colors duration-300 hover:bg-white/[0.06] ${glass}`}
+            >
+              <CalendarClock className="h-4 w-4 text-[color:var(--ac)]" /> Book a Meeting
+            </button>
+          ) : (
+            <a
+              href={b.bookingUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => track?.("tap", "cta_book")}
+              data-testid="cta-book-button"
+              className={`flex items-center justify-center gap-2 rounded-full px-4 py-4 text-sm font-semibold uppercase tracking-wide text-slate-200 transition-colors duration-300 hover:bg-white/[0.06] ${glass}`}
+            >
+              <CalendarClock className="h-4 w-4 text-[color:var(--ac)]" /> Book a Meeting
+            </a>
+          ))}
+        </motion.section>
 
         {/* SERVICES — neon underglow */}
         {services.length > 0 && (
@@ -173,13 +213,13 @@ export const FutureProfessional = ({ data }) => {
             <div className="absolute inset-0 rounded-full blur-2xl opacity-50" style={{ background: `linear-gradient(90deg,${s},${p})` }} />
             <ActionButton
               action={actions.book || actions.call}
-              testId="cta-book-button"
+              testId="cta-consult-button"
               className="relative flex w-full items-center justify-center gap-3 rounded-full px-8 py-5 text-sm font-semibold uppercase tracking-widest text-white transition-transform duration-300 hover:scale-[1.02]"
               iconClassName="w-5 h-5"
             />
           </motion.section>
         )}
-        <style>{`[data-testid="cta-book-button"]{background:linear-gradient(90deg,${s},${p});box-shadow:0 8px 40px ${hexToRgba(s, 0.45)};}`}</style>
+        <style>{`[data-testid="cta-consult-button"]{background:linear-gradient(90deg,${s},${p});box-shadow:0 8px 40px ${hexToRgba(s, 0.45)};}`}</style>
 
         {/* LEAD CAPTURE */}
         <InquiryForm slug={slug} variant="future" accentColor={p} />
@@ -218,6 +258,9 @@ export const FutureProfessional = ({ data }) => {
           </p>
         </footer>
       </div>
+
+      <ExchangeContactDialog open={exchangeOpen} onOpenChange={setExchangeOpen} slug={slug} accent={p} ownerName={id.fullName} />
+      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={p} ownerName={id.fullName} />
     </div>
   );
 };

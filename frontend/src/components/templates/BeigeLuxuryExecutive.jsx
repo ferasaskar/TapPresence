@@ -1,5 +1,9 @@
 import { motion } from "framer-motion";
-import { ArrowUpRight } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, UserPlus, CalendarClock } from "lucide-react";
+import { useProfile } from "@/context/ProfileContext";
+import { ExchangeContactDialog } from "@/components/profile/ExchangeContactDialog";
+import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
 import { resolveImg } from "@/lib/api";
 import { buildActions, getIcon, orderedServices, orderedProjects } from "@/lib/cardHelpers";
 import { AvailabilityBadge } from "@/components/profile/AvailabilityBadge";
@@ -31,6 +35,10 @@ export const BeigeLuxuryExecutive = ({ data }) => {
   const projects = orderedProjects(data.projects);
   const location = [id.city, id.country].filter(Boolean).join(", ");
   const ac = accentHex("beige-luxury", data.accent, data.custom_accent_color);
+  const { track } = useProfile();
+  const [exchangeOpen, setExchangeOpen] = useState(false);
+  const [bookOpen, setBookOpen] = useState(false);
+  const bookingActive = b.nativeEnabled || b.bookingUrl;
 
   return (
     <div className="relative min-h-screen bg-ivory-bg text-ink font-sans overflow-hidden" style={{ ...accentVars(ac), ...industryRootStyle(data, BASE_RGB["beige-luxury"], ac) }}>
@@ -82,6 +90,37 @@ export const BeigeLuxuryExecutive = ({ data }) => {
             iconClassName="w-[18px] h-[18px]"
           />
         </motion.div>
+
+        {/* PRIMARY CTAs — Exchange Contact + Book a Meeting (shared functionality; booking gated by config) */}
+        <motion.section {...fade(1)} className={`mt-3 grid gap-3 ${bookingActive ? "grid-cols-2" : "grid-cols-1"}`} data-testid="cta-bar-primary">
+          <button
+            onClick={() => { track?.("tap", "cta_exchange"); setExchangeOpen(true); }}
+            data-testid="cta-exchange-button"
+            className="flex items-center justify-center gap-2 rounded-md bg-ink px-4 py-4 text-sm tracking-wide text-ivory-bg transition-colors duration-300 hover:bg-ink-soft"
+          >
+            <UserPlus className="h-[18px] w-[18px]" /> Exchange Contact
+          </button>
+          {bookingActive && (b.nativeEnabled ? (
+            <button
+              onClick={() => { track?.("tap", "cta_book"); setBookOpen(true); }}
+              data-testid="cta-book-button"
+              className="flex items-center justify-center gap-2 rounded-md border border-ink/20 bg-transparent px-4 py-4 text-sm tracking-wide text-ink transition-colors duration-300 hover:bg-ivory-hover"
+            >
+              <CalendarClock className="h-[18px] w-[18px]" style={{ color: ac }} /> Book a Meeting
+            </button>
+          ) : (
+            <a
+              href={b.bookingUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => track?.("tap", "cta_book")}
+              data-testid="cta-book-button"
+              className="flex items-center justify-center gap-2 rounded-md border border-ink/20 bg-transparent px-4 py-4 text-sm tracking-wide text-ink transition-colors duration-300 hover:bg-ivory-hover"
+            >
+              <CalendarClock className="h-[18px] w-[18px]" style={{ color: ac }} /> Book a Meeting
+            </a>
+          ))}
+        </motion.section>
 
         {/* SERVICES */}
         {services.length > 0 && (
@@ -153,7 +192,7 @@ export const BeigeLuxuryExecutive = ({ data }) => {
             <p className="text-sm text-ink-soft mb-6 max-w-xs mx-auto">A focused conversation about what you're looking for — no obligation.</p>
             <ActionButton
               action={actions.book || actions.call}
-              testId="cta-book-button"
+              testId="cta-consult-button"
               className="inline-flex items-center justify-center gap-2 rounded-md bg-ink px-8 py-3.5 text-sm tracking-wide text-ivory-bg transition-colors duration-300 hover:bg-ink-soft"
               iconClassName="w-[18px] h-[18px]"
             />
@@ -201,6 +240,9 @@ export const BeigeLuxuryExecutive = ({ data }) => {
           </p>
         </footer>
       </div>
+
+      <ExchangeContactDialog open={exchangeOpen} onOpenChange={setExchangeOpen} slug={slug} accent={ac} ownerName={id.fullName} />
+      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={ac} ownerName={id.fullName} />
     </div>
   );
 };

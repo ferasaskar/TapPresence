@@ -1,5 +1,14 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## EXCHANGE CONTACT + BOOK A MEETING CTAs ON ALL TEMPLATES (2026-06, preview only — NOT deployed) — IMPLEMENTED & screenshot-verified (desktop + mobile, all 3 templates)
+Previously only ExecutiveBlackGold had the two large CTAs. Added the SAME shared functionality to the other two templates, styled to each:
+- `BeigeLuxuryExecutive.jsx` and `FutureProfessional.jsx` now render **Exchange Contact** (opens shared `ExchangeContactDialog`) + **Book a Meeting** (opens shared `BookMeetingDialog` when `booking.nativeEnabled`, else external `bookingUrl` link). Reuses existing components/APIs — no new booking/exchange logic. Book a Meeting is gated by `nativeEnabled || bookingUrl` (hidden when booking not configured; Exchange spans full width then). Uses `useProfile().track` for tap analytics like the reference template.
+- Styled per template (Beige: ink/ivory outline; Future: gradient + glass). Renamed each template's pre-existing framed booking CTA testid to `cta-consult-button` to avoid duplicate `cta-book-button`; new primary CTA row testid `cta-bar-primary`.
+- Verified: feras-askar (beige, booking ON) → both buttons + book dialog opens; edrina-cepele (executive, booking OFF) → Exchange shown, Book correctly hidden (existing "Send a message" fallback); future-professional (temporarily applied to feras, then reverted to beige-luxury) → both buttons + both dialogs open; desktop 1280 + mobile 390.
+- Google Sign-In / Calendar OAuth untouched. Not deployed to production.
+
+
+
 ## GOOGLE CALENDAR INTEGRATION (2026-06, preview/staging only — NOT deployed to prod) — IMPLEMENTED, backend curl-verified + UI smoke-verified; live OAuth round-trip requires manual test
 Separate OAuth flow from Sign-In (own callback/scope) so the working Sign-In is untouched. Scope: `openid email https://www.googleapis.com/auth/calendar.events` (minimum), access_type=offline, prompt=consent. Reuses GOOGLE_OAUTH_CLIENT_ID/SECRET; new env `GOOGLE_CALENDAR_REDIRECT_URI`.
 - Endpoints (server.py, /api): `GET /integrations/google/calendar/status`, `GET /integrations/google/calendar/connect` (XHR → {authorization_url}), `GET /integrations/google/calendar/callback`, `POST /integrations/google/calendar/disconnect` (revokes at Google + deletes record).
