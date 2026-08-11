@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { useLocale } from "@/i18n/useLocale";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
@@ -42,9 +42,13 @@ export default function Login() {
     <div className="aria-dark relative flex min-h-screen items-center justify-center overflow-hidden bg-[#050607] px-6" style={{ fontFamily: "'Outfit', sans-serif" }}>
       <div className="grain-overlay" style={{ opacity: 0.05 }} />
       <div className="aria-gold-radial pointer-events-none absolute inset-0" />
+      <Link to="/" className="absolute left-4 top-4 z-10 flex items-center gap-1.5 text-sm text-white/60 transition-colors hover:text-[#D6A653]" data-testid="back-to-home"><ArrowLeft className="h-4 w-4" /> {t("auth.backToHome")}</Link>
       <div className="absolute right-4 top-4 z-10"><LanguageSwitcher /></div>
       <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
-        <Link to="/" className="text-lg font-semibold tracking-tight text-white">TapPresence</Link>
+        <Link to="/" className="flex items-center gap-2.5" data-testid="brand-lockup">
+          <img src="/tp-mark.png" alt="TapPresence" className="h-9 w-9 object-contain" />
+          <span className="text-lg font-semibold tracking-tight text-white">TapPresence</span>
+        </Link>
         <h1 className="mt-6 text-2xl font-medium tracking-tight text-white">{t("auth.welcomeBack")}</h1>
         <p className="mt-1 text-sm text-white/50">{t("auth.signInSub")}</p>
         <form onSubmit={submit} className="mt-7 space-y-4">
@@ -62,7 +66,7 @@ export default function Login() {
           </Button>
         </form>
         <p className="mt-4 text-center text-sm"><Link to="/forgot" className="text-white/50 hover:text-[#D6A653]" data-testid="login-forgot">{t("auth.forgotLink")}</Link></p>
-        <p className="mt-5 text-sm text-white/50">{t("auth.newHere")} <Link to="/register" className="text-[#D6A653] hover:underline">{t("auth.createYourId")}</Link></p>
+        <p className="mt-5 text-sm text-white/50">{t("auth.newHere")} <Link to="/register" className="text-[#D6A653] hover:underline">{t("auth.createAccount")}</Link></p>
       </div>
     </div>
   );

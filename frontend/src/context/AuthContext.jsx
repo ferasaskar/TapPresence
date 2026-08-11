@@ -44,6 +44,17 @@ export const AuthProvider = ({ children }) => {
     return _apply(data);
   };
 
+  const refreshSession = async () => {
+    try {
+      const res = await api.get("/auth/session");
+      setUser(res.data.user);
+      setEntitlements(res.data.entitlements);
+      setWorkspace(res.data.workspace);
+      setMemberships(res.data.memberships || []);
+      return res.data;
+    } catch { return null; }
+  };
+
   const logout = () => {
     const refresh = localStorage.getItem("ariadni_refresh");
     if (refresh) api.post("/auth/logout", { refresh_token: refresh }).catch(() => {});
@@ -53,7 +64,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, entitlements, workspace, memberships, ready, login, register, logout }}>
+    <AuthContext.Provider value={{ user, entitlements, workspace, memberships, ready, login, register, logout, refreshSession }}>
       {children}
     </AuthContext.Provider>
   );

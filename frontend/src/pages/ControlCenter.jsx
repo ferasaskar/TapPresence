@@ -366,20 +366,27 @@ const Plans = () => {
   useEffect(() => { load(); cget("/pricing/versions").then((r) => setVersions(r.items || [])).catch(() => {}); }, []);
   if (!draft) return <Loader />;
   const setP = (path, val) => { const d = { ...draft }; let o = d; const keys = path.split("."); for (let i = 0; i < keys.length - 1; i++) { o[keys[i]] = { ...(o[keys[i]] || {}) }; o = o[keys[i]]; } o[keys[keys.length - 1]] = val; setDraft(d); };
-  const patch = () => ({ trial: draft.trial, plans: draft.plans });
+  const patch = () => ({
+    trial: { days: draft.trial?.days, enabled: draft.trial?.enabled },
+    plans: { team: { min_seats: draft.plans?.team?.min_seats } },
+    regional_pricing: { [draft.default_market || "USD"]: draft.regional_pricing?.[draft.default_market || "USD"] },
+  });
   const doPreview = async () => { try { setPreview(await api.post("/admin/control/pricing/preview", { patch: patch(), apply_to: applyTo }).then((r) => r.data)); setStep(1); } catch (e) { toast.error("Preview failed"); } };
-  const doPublish = async () => { try { await api.post("/admin/control/pricing/publish", { patch: patch(), apply_to: applyTo, reason }); toast.success("Pricing published & versioned"); setStep(2); load(); cget("/pricing/versions").then((r) => setVersions(r.items || [])); } catch (e) { toast.error("Publish failed"); } };
+  const doPublish = async () => { try { await api.post("/admin/control/pricing/publish", { patch: patch(), apply_to: applyTo, reason }); toast.success("Pricing published & live on public site"); setStep(2); load(); cget("/pricing/versions").then((r) => setVersions(r.items || [])); } catch (e) { toast.error("Publish failed"); } };
+  const mk = draft.default_market || "USD";
   return (
     <div className="space-y-5" data-testid="ctrl-plans">
       <h2 className="text-xl font-light text-white">Plans & Pricing</h2>
+      <p className="text-[11px] text-white/40">Published values drive the public Pricing page, checkout and entitlements — one source of truth. Editing base market: <b className="text-white/70">{mk}</b>.</p>
       <Panel title="Draft changes" testId="plans-editor">
         <div className="grid gap-4 sm:grid-cols-2">
           <NumField label="Trial days" value={draft.trial?.days} onChange={(v) => setP("trial.days", v)} testId="plan-trial-days" />
           <BoolField label="Trial enabled" value={draft.trial?.enabled} onChange={(v) => setP("trial.enabled", v)} testId="plan-trial-enabled" />
-          <NumField label="Pro / month" value={draft.plans?.pro?.price_month} onChange={(v) => setP("plans.pro.price_month", v)} testId="plan-pro-month" />
-          <NumField label="Pro / year" value={draft.plans?.pro?.price_year} onChange={(v) => setP("plans.pro.price_year", v)} testId="plan-pro-year" />
-          <NumField label="Team seat / month" value={draft.plans?.team?.price_seat_month} onChange={(v) => setP("plans.team.price_seat_month", v)} testId="plan-team-month" />
-          <NumField label="Team min seats" value={draft.plans?.team?.min_seats} onChange={(v) => setP("plans.team.min_seats", v)} testId="plan-team-minseats" />
+          <NumField label={`Pro / month (${mk})`} value={draft.regional_pricing?.[mk]?.pro_month} onChange={(v) => setP(`regional_pricing.${mk}.pro_month`, v)} testId="plan-pro-month" />
+          <NumField label={`Pro / year (${mk})`} value={draft.regional_pricing?.[mk]?.pro_year} onChange={(v) => setP(`regional_pricing.${mk}.pro_year`, v)} testId="plan-pro-year" />
+          <NumField label={`Team seat / month (${mk})`} value={draft.regional_pricing?.[mk]?.team_seat_month} onChange={(v) => setP(`regional_pricing.${mk}.team_seat_month`, v)} testId="plan-team-month" />
+          <NumField label={`Team seat / year (${mk})`} value={draft.regional_pricing?.[mk]?.team_seat_year} onChange={(v) => setP(`regional_pricing.${mk}.team_seat_year`, v)} testId="plan-team-year" />
+          <NumField label="Team minimum seats" value={draft.plans?.team?.min_seats} onChange={(v) => setP("plans.team.min_seats", v)} testId="plan-team-minseats" />
         </div>
         <div className="mt-4 flex items-center gap-2">
           <button onClick={doPreview} className="rounded-lg bg-[#D6A653] px-4 py-2 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="plans-preview-btn">Preview Impact</button>
@@ -398,7 +405,10 @@ const Plans = () => {
             <div className="space-y-3 text-sm">
               <p className="text-white/60">{preview.note}</p>
               <div className="rounded-lg border border-white/8 p-3 text-xs">
-                {preview.impact.length ? preview.impact.map((i) => <div key={i.plan} className="flex justify-between py-0.5"><span className="text-white/70">{i.plan}</span><span className="text-white/50">{i.active_subscriptions} active subs affected</span></div>) : <span className="text-white/40">No plan-level price changes.</span>}
+                {Object.keys(preview.diff || {}).length ? Object.entries(preview.diff).map(([k, v]) => (
+                  <div key={k} className="flex justify-between py-0.5"><span className="text-white/70">{k}</span><span className="text-white/50">{String(v.before)} → <b className="text-[#D6A653]">{String(v.after)}</b></span></div>
+                )) : <span className="text-white/40">No changes.</span>}
+                <div className="mt-2 border-t border-white/8 pt-2 text-white/40">{(preview.impact?.[0]?.active_subscriptions) || 0} active paid customer(s) affected</div>
               </div>
               <div>
                 <p className="mb-1 text-[11px] uppercase tracking-wider text-white/40">Apply to</p>

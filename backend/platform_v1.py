@@ -42,6 +42,12 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALG = "HS256"
 PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
 
+import stripe
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY") or ""
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
 _client = AsyncIOMotorClient(MONGO_URL)
 db = _client[DB_NAME]
 
@@ -603,6 +609,198 @@ async def cancel_subscription(user: dict = Depends(current_user)):
     return {"ok": True, "status": "cancel_at_period_end"}
 
 
+# ------------------------------------------------------------------ Stripe checkout (real payment provider)
+_CURRENCY_FOR_MARKET = {"USD": "usd", "AED": "aed", "EUR": "eur", "GBP": "gbp", "SAR": "sar"}
+
+
+class CheckoutIn(BaseModel):
+    plan: str                       # pro | team
+    interval: str = "month"         # month | year
+    seats: int = 1
+    market: Optional[str] = None
+    origin_url: str
+
+
+def _resolve_checkout_amount(cfg: dict, plan: str, interval: str, seats: int):
+    """Amount ALWAYS resolves from the published commercial config — never from the client."""
+    market = (cfg.get("default_market") or "USD").upper()
+    pricing = resolve_market_pricing(cfg, market)
+    currency = _CURRENCY_FOR_MARKET.get(market, "usd")
+    if plan == "pro":
+        amount = pricing["pro_year"] if interval == "year" else pricing["pro_month"]
+        return market, currency, float(amount), 1, "TapPresence Pro"
+    min_seats = int((cfg["plans"].get("team") or {}).get("min_seats", 3))
+    qty = max(int(seats or min_seats), min_seats)
+    amount = pricing["team_seat_year"] if interval == "year" else pricing["team_seat_month"]
+    return market, currency, float(amount), qty, "TapPresence Team (per seat)"
+
+
+@platform_router.post("/billing/checkout")
+async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user)):
+    """Create a Stripe subscription Checkout session. Amount resolves server-side from the
+    published commercial config; the client never sends prices."""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Payments are not configured yet.")
+    if body.plan not in ("pro", "team"):
+        raise HTTPException(400, "Invalid plan")
+    if body.interval not in ("month", "year"):
+        raise HTTPException(400, "Invalid interval")
+    ws_id = await _primary_ws_id(user)
+    await require_ws_admin(user, ws_id)
+    cfg = await get_commercial_config()
+    market, currency, amount, seats, product_name = _resolve_checkout_amount(cfg, body.plan, body.interval, body.seats)
+    unit_amount = int(round(amount * 100))
+    if unit_amount <= 0:
+        raise HTTPException(400, "This plan is not available for self-service checkout")
+    # honour any remaining free-trial days from the workspace subscription
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = (ws or {}).get("subscription") or {}
+    trial_days_left = 0
+    te = sub.get("trial_ends_at")
+    if sub.get("status") == "trialing" and te and te > now_iso():
+        import math
+        secs = (datetime.fromisoformat(te) - datetime.now(timezone.utc)).total_seconds()
+        trial_days_left = max(0, min(30, int(math.ceil(secs / 86400))))
+    line_items = [{
+        "price_data": {
+            "currency": currency,
+            "product_data": {"name": product_name},
+            "unit_amount": unit_amount,
+            "recurring": {"interval": body.interval},
+            "tax_behavior": "exclusive",
+        },
+        "quantity": seats,
+    }]
+    sub_data = {"metadata": {"ws_id": ws_id, "plan": body.plan}}
+    if trial_days_left > 0:
+        sub_data["trial_period_days"] = trial_days_left
+    meta = {"ws_id": ws_id, "plan": body.plan, "interval": body.interval, "seats": str(seats), "market": market}
+    base_kwargs = dict(
+        mode="subscription",
+        line_items=line_items,
+        success_url=f"{body.origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{body.origin_url}/payment/cancel",
+        customer_email=user.get("email"),
+        subscription_data=sub_data,
+        metadata=meta,
+        allow_promotion_codes=True,
+    )
+    try:
+        session = stripe.checkout.Session.create(
+            **base_kwargs, automatic_tax={"enabled": True}, billing_address_collection="required")
+    except stripe.error.StripeError:
+        # Stripe Tax not enabled on the account (sandbox) — create without automatic tax
+        try:
+            session = stripe.checkout.Session.create(**base_kwargs)
+        except stripe.error.StripeError as e:
+            raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+    await db.payment_transactions.insert_one({
+        "id": str(uuid.uuid4()), "session_id": session.id, "user_id": user["id"], "ws_id": ws_id,
+        "plan": body.plan, "interval": body.interval, "seats": seats, "market": market,
+        "amount": unit_amount * seats, "currency": currency,
+        "status": "initiated", "payment_status": "pending",
+        "created_at": now_iso(), "updated_at": now_iso(),
+    })
+    return {"checkout_url": session.url, "session_id": session.id}
+
+
+async def _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, market, source, event_id):
+    st = (stripe_sub or {}).get("status")
+    status_map = {"trialing": "trialing", "active": "active", "past_due": "past_due",
+                  "canceled": "cancelled", "unpaid": "past_due", "incomplete": "past_due"}
+    status = status_map.get(st, "active")
+    cpe = stripe_sub.get("current_period_end")
+    trial_end = stripe_sub.get("trial_end")
+    prior = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = {
+        "plan": plan, "status": status, "interval": interval, "seats": seats, "market": market,
+        "provider": "stripe", "stripe_subscription_id": stripe_sub.get("id"),
+        "stripe_customer_id": stripe_sub.get("customer"),
+        "current_period_end": datetime.fromtimestamp(cpe, timezone.utc).isoformat() if cpe else None,
+        "trial_ends_at": datetime.fromtimestamp(trial_end, timezone.utc).isoformat() if trial_end else None,
+        "updated_at": now_iso(),
+    }
+    _rf = ((prior or {}).get("subscription") or {}).get("referral")
+    if _rf:
+        sub["referral"] = _rf
+    await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription": sub, "plan": plan}})
+    if status == "active" and plan in ("pro", "team"):
+        await record_paid_subscription_event(ws_id, source=source, event_id=event_id)
+
+
+async def _handle_completed_session(session_obj, event_id):
+    meta = session_obj.get("metadata") or {}
+    ws_id = meta.get("ws_id")
+    if not ws_id:
+        return
+    plan = meta.get("plan", "pro")
+    interval = meta.get("interval", "month")
+    seats = int(meta.get("seats") or 1)
+    market = meta.get("market", "USD")
+    sub_id = session_obj.get("subscription")
+    stripe_sub = {}
+    if sub_id:
+        try:
+            stripe_sub = stripe.Subscription.retrieve(sub_id)
+        except stripe.error.StripeError:
+            stripe_sub = {"id": sub_id, "status": "active", "customer": session_obj.get("customer")}
+    await _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, market, source="stripe", event_id=event_id)
+    await db.payment_transactions.update_one(
+        {"session_id": session_obj.get("id"), "payment_status": {"$ne": "paid"}},
+        {"$set": {"status": "completed", "payment_status": "paid",
+                  "stripe_subscription_id": sub_id, "updated_at": now_iso()}})
+
+
+@platform_router.get("/payments/status/{session_id}")
+async def payment_status(session_id: str):
+    """Unauthenticated poll target. Returns only status fields; syncs from Stripe as a webhook fallback."""
+    record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not record:
+        raise HTTPException(404, "Transaction not found")
+    if record.get("payment_status") != "paid" and STRIPE_SECRET_KEY:
+        try:
+            s = stripe.checkout.Session.retrieve(session_id)
+            if s.get("status") == "complete" or s.get("payment_status") == "paid":
+                await _handle_completed_session(s, event_id=f"poll:{session_id}")
+                record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+        except stripe.error.StripeError:
+            pass
+    return {"session_id": record["session_id"], "status": record["status"],
+            "payment_status": record["payment_status"], "plan": record.get("plan")}
+
+
+@platform_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception:
+        raise HTTPException(400, "Invalid signature")
+    obj, t, eid = event["data"]["object"], event["type"], event.get("id")
+    if t == "checkout.session.completed":
+        await _handle_completed_session(obj, event_id=eid)
+    elif t in ("invoice.paid", "invoice.payment_succeeded"):
+        sub_id = obj.get("subscription")
+        if sub_id:
+            ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": sub_id}, {"_id": 0})
+            if ws:
+                sub = ws.get("subscription") or {}
+                try:
+                    stripe_sub = stripe.Subscription.retrieve(sub_id)
+                except stripe.error.StripeError:
+                    stripe_sub = {"id": sub_id, "status": "active", "customer": obj.get("customer")}
+                await _sync_ws_from_stripe_sub(ws["id"], stripe_sub, sub.get("plan", "pro"),
+                    sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
+                    source="stripe", event_id=eid)
+    elif t == "customer.subscription.deleted":
+        ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": obj.get("id")}, {"_id": 0, "id": 1})
+        if ws:
+            await db.workspaces.update_one({"id": ws["id"]},
+                {"$set": {"subscription.status": "cancelled", "subscription.updated_at": now_iso()}})
+    return {"status": "ok"}
+
+
 async def audit(workspace_id, actor_id, action, meta=None):
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": workspace_id, "actor_id": actor_id,
@@ -661,6 +859,10 @@ class RegisterIn(BaseModel):
     timezone: str = ""
     currency: str = ""
     referral_code: Optional[str] = None
+    account_type: Optional[str] = "individual"   # individual | team
+    company_name: Optional[str] = ""
+    seats: Optional[int] = 1
+    billing_interval: Optional[str] = "month"     # month | year
 
 
 class RefreshIn(BaseModel):
@@ -880,19 +1082,30 @@ async def register(body: RegisterIn, request: Request):
     await db.users.insert_one(user)
     ws_id = str(uuid.uuid4())
     _tdays = await trial_days()
+    is_team = (body.account_type == "team")
+    cfg = await get_commercial_config()
+    min_seats = int(((cfg.get("plans") or {}).get("team") or {}).get("min_seats") or 3)
+    seats = 1
+    interval = None
+    if is_team:
+        seats = int(body.seats or min_seats)
+        if seats < min_seats:
+            raise HTTPException(400, f"Team plan requires at least {min_seats} seats")
+        interval = "year" if body.billing_interval == "year" else "month"
+    _pending = "team" if is_team else "pro"
     if _tdays > 0:
-        _sub = {"plan": "trial", "status": "trialing",
+        _sub = {"plan": "trial", "pending_plan": _pending, "status": "trialing",
                 "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=_tdays)).isoformat(),
-                "current_period_end": None, "seats": 1, "interval": None}
+                "current_period_end": None, "seats": seats, "interval": interval}
         _plan = "trial"
     else:
-        # trials disabled by Super Admin — start locked until subscribed
-        _sub = {"plan": "trial", "status": "trial_expired",
-                "trial_ends_at": now_iso(), "current_period_end": None, "seats": 1, "interval": None}
+        _sub = {"plan": "trial", "pending_plan": _pending, "status": "trial_expired",
+                "trial_ends_at": now_iso(), "current_period_end": None, "seats": seats, "interval": interval}
         _plan = "trial"
+    _ws_name = (body.company_name.strip() if is_team else "") or body.workspace_name.strip() or (body.name.strip() or "My Workspace")
     await db.workspaces.insert_one({
-        "id": ws_id, "name": body.workspace_name.strip() or (body.name.strip() or "My Workspace"),
-        "type": "individual", "plan": _plan, "owner_id": uid,
+        "id": ws_id, "name": _ws_name,
+        "type": "company" if is_team else "individual", "plan": _plan, "owner_id": uid,
         "subscription": _sub, "environment": "production_customer",
         "referral_code": await _gen_referral_code(),
         "region": region, "tax": {"tax_country": region["country_code"], "tax_inclusive": False,
@@ -1976,18 +2189,28 @@ async def control_pricing_preview(body: PricingChangeIn, user: dict = Depends(cu
     _require_super(user)
     current = await get_commercial_config()
     proposed = _deep_merge(dict(current), body.patch)
-    affected_plans = list((body.patch.get("plans") or {}).keys())
-    impact = []
-    for plan in affected_plans:
-        subs = await db.workspaces.count_documents({"$or": [{"plan": plan}, {"subscription.plan": plan}]})
-        impact.append({"plan": plan, "active_subscriptions": subs})
+    dm = proposed.get("default_market", "USD")
+    before_p = resolve_market_pricing(current, dm)
+    after_p = resolve_market_pricing(proposed, dm)
+    price_diff = {k: {"before": before_p.get(k), "after": after_p.get(k)}
+                  for k in ("pro_month", "pro_year", "team_seat_month", "team_seat_year")
+                  if before_p.get(k) != after_p.get(k)}
+    if current.get("trial", {}).get("days") != proposed.get("trial", {}).get("days"):
+        price_diff["trial_days"] = {"before": current.get("trial", {}).get("days"), "after": proposed.get("trial", {}).get("days")}
+    b_seats = ((current.get("plans") or {}).get("team") or {}).get("min_seats")
+    a_seats = ((proposed.get("plans") or {}).get("team") or {}).get("min_seats")
+    if b_seats != a_seats:
+        price_diff["team_min_seats"] = {"before": b_seats, "after": a_seats}
+    affected = await db.workspaces.count_documents({"environment": "production_customer", "subscription.status": {"$in": ["active", "cancel_at_period_end"]}})
     return {
-        "before": {"plans": current.get("plans"), "trial": current.get("trial")},
-        "after": {"plans": proposed.get("plans"), "trial": proposed.get("trial")},
-        "affected_plans": affected_plans,
-        "impact": impact,
+        "before": {"pricing": before_p, "trial": current.get("trial")},
+        "after": {"pricing": after_p, "trial": proposed.get("trial")},
+        "diff": price_diff,
+        "affected_plans": [],
+        "impact": [{"plan": "paid customers", "active_subscriptions": affected}],
         "apply_to": body.apply_to,
-        "note": "Existing paid subscriptions keep their locked price unless explicitly migrated. Real price migration executes only when Stripe billing is connected.",
+        "market": dm,
+        "note": "Public pricing, checkout and entitlements all resolve from this published config. Existing paid subscriptions keep their locked price unless migrated; real migration runs when Stripe is connected.",
     }
 
 

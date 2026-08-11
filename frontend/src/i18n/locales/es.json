@@ -541,7 +541,7 @@
     "fullName": "Nombre completo",
     "workEmail": "Correo de trabajo",
     "workspaceOptional": "Espacio / empresa (opcional)",
-    "createAccount": "Crear cuenta",
+    "createAccount": "Crea tu cuenta",
     "haveAccount": "¿Ya tienes una cuenta?",
     "signInLink": "Iniciar sesión",
     "referralBanner": "🎁 Fuiste invitado — se aplicará un descuento por referido a tu plan.",
@@ -565,7 +565,23 @@
     "verifyFail": "Este enlace de verificación no es válido o ha caducado.",
     "verifyBanner": "Verifica tu dirección de correo.",
     "verifyResend": "Reenviar enlace",
-    "verifyResent": "Enlace de verificación enviado — revisa tu bandeja."
+    "verifyResent": "Enlace de verificación enviado — revisa tu bandeja.",
+    "backToHome": "Volver a TapPresence",
+    "chooseUse": "¿Cómo usarás TapPresence?",
+    "typeIndividual": "Individual",
+    "typeIndividualSub": "Para mí",
+    "typeTeam": "Equipo / Empresa",
+    "typeTeamSub": "Para mi empresa o equipo",
+    "companyName": "Nombre de empresa / equipo",
+    "seats": "Puestos",
+    "minSeats": "Mínimo {{n}} puestos. Los puestos son miembros del equipo, no tarjetas.",
+    "monthly": "Mensual",
+    "annual": "Anual",
+    "mo": "mes",
+    "yr": "año",
+    "teamTrialNote": "Comienza con una prueba gratis de {{days}} días. Solo se te cobrará después de la prueba.",
+    "startTrial": "Iniciar prueba gratis de {{days}} días",
+    "startTeamTrial": "Iniciar prueba de equipo de {{days}} días"
   },
   "landing": {
     "nav": [
@@ -588,10 +604,10 @@
       "ctaTeams": "Para equipos"
     },
     "stats": [
-      "Profesionales",
-      "Países",
-      "Conexiones",
-      "Disponibilidad"
+      "Toca o escanea",
+      "Seguimientos con IA",
+      "Apple y Google",
+      "Analíticas"
     ],
     "featuresTitle": "Una identidad. Todas las formas de conectar.",
     "features": [
@@ -663,7 +679,7 @@
       "title": "Para equipos y empresas",
       "desc": "Crea, gestiona y escala la identidad digital de tu equipo. Bloquea la marca, gestiona usuarios y analiza el rendimiento.",
       "cta": "Saber más",
-      "testimonialsTitle": "Amado por profesionales de todo el mundo"
+      "testimonialsTitle": "Diseñado para cómo realmente conectas"
     },
     "pricing": {
       "eyebrow": "Precios simples y transparentes",
@@ -687,7 +703,7 @@
       "perSeatYear": "/asiento / año",
       "perSeatMonth": "/asiento / mes",
       "custom": "Personalizado",
-      "startFree": "Empezar gratis",
+      "startFree": "Iniciar prueba gratis",
       "getPro": "Obtener Pro",
       "startTeam": "Empezar Equipo",
       "contactSales": "Contactar ventas",

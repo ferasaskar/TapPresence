@@ -108,15 +108,15 @@ export default function Billing() {
     setBusy(planId);
     try {
       const seats = planId === "team" ? (c.plans.team.min_seats || 3) : 1;
-      const { data: res } = await api.post("/billing/subscribe", { plan: planId, interval, seats, market });
-      toast.success(`You're on ${res.subscription.plan.toUpperCase()} — activated`);
-      load(market);
+      const { data: res } = await api.post("/billing/checkout", { plan: planId, interval, seats, market, origin_url: window.location.origin });
+      window.location.href = res.checkout_url;
     } catch (e) {
       const st = e?.response?.status;
-      if (st === 402) toast.error(e?.response?.data?.detail || "Payment provider not connected yet.");
+      if (st === 503) toast.error("Payments are not available yet. Please try again shortly.");
       else if (st === 403) toast.error("Only the workspace owner can change the plan.");
-      else toast.error("Could not update plan. Try again.");
-    } finally { setBusy(""); }
+      else toast.error(e?.response?.data?.detail || "Could not start checkout. Try again.");
+      setBusy("");
+    }
   };
 
   const cancel = async () => {

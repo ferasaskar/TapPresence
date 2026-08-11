@@ -541,7 +541,7 @@
     "fullName": "Full name",
     "workEmail": "Work email",
     "workspaceOptional": "Workspace / company (optional)",
-    "createAccount": "Create account",
+    "createAccount": "Create your account",
     "haveAccount": "Already have an account?",
     "signInLink": "Sign in",
     "referralBanner": "🎁 You were invited — a referral discount will be applied to your plan.",
@@ -565,7 +565,23 @@
     "verifyFail": "This verification link is invalid or has expired.",
     "verifyBanner": "Please verify your email address.",
     "verifyResend": "Resend link",
-    "verifyResent": "Verification link sent — check your inbox."
+    "verifyResent": "Verification link sent — check your inbox.",
+    "backToHome": "Back to TapPresence",
+    "chooseUse": "How will you use TapPresence?",
+    "typeIndividual": "Individual",
+    "typeIndividualSub": "For me",
+    "typeTeam": "Team / Company",
+    "typeTeamSub": "For my company or team",
+    "companyName": "Company / team name",
+    "seats": "Seats",
+    "minSeats": "Minimum {{n}} seats. Seats are team members, not cards.",
+    "monthly": "Monthly",
+    "annual": "Annual",
+    "mo": "mo",
+    "yr": "yr",
+    "teamTrialNote": "Starts with a {{days}}-day free trial. You will only be charged after the trial.",
+    "startTrial": "Start {{days}}-day free trial",
+    "startTeamTrial": "Start {{days}}-day team trial"
   },
   "landing": {
     "nav": [
@@ -588,10 +604,10 @@
       "ctaTeams": "For Teams"
     },
     "stats": [
-      "Professionals",
-      "Countries",
-      "Connections",
-      "Uptime"
+      "Tap or scan",
+      "Auto follow-ups",
+      "Apple & Google",
+      "Analytics"
     ],
     "featuresTitle": "One Identity. Every Way to Connect.",
     "features": [
@@ -663,7 +679,7 @@
       "title": "For Teams and Companies",
       "desc": "Create, manage and scale your team's digital identity. Lock branding, manage users and analyse performance.",
       "cta": "Learn More",
-      "testimonialsTitle": "Loved by Professionals Worldwide"
+      "testimonialsTitle": "Built for how you actually network"
     },
     "pricing": {
       "eyebrow": "Simple, transparent pricing",
@@ -687,7 +703,7 @@
       "perSeatYear": "/seat / year",
       "perSeatMonth": "/seat / month",
       "custom": "Custom",
-      "startFree": "Start free",
+      "startFree": "Start free trial",
       "getPro": "Get Pro",
       "startTeam": "Start Team",
       "contactSales": "Contact sales",

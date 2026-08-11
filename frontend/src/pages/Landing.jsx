@@ -6,7 +6,9 @@ import "@/components/landing/landing.css";
 import HeroVisual from "@/components/landing/HeroVisual";
 import GoldWaveCanvas from "@/components/landing/GoldWaveCanvas";
 import PricingSection from "@/components/landing/PricingSection";
-import { NAV_LINKS, STATS, FEATURES, JOURNEY, TEMPLATES, TESTIMONIALS, FOOTER_GROUPS, ASSETS } from "@/components/landing/data";
+import { NAV_LINKS, STATS, FEATURES, JOURNEY, TESTIMONIALS, FOOTER_GROUPS, ASSETS } from "@/components/landing/data";
+import { IndustryCard } from "@/components/landing/IndustryCard";
+import { INDUSTRY_CARDS } from "@/lib/industryCards";
 import { useLocale } from "@/i18n/useLocale";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
@@ -29,7 +31,7 @@ const goTo = (hash) => {
 
 const Brand = ({ size = "text-xl" }) => (
   <span className={`flex items-center gap-2 ${size} font-semibold tracking-tight`} data-testid="brand">
-    <AriadniMark className="h-6 w-6 text-[#D6A653]" />
+    <AriadniMark className="h-8 w-8 text-[#D6A653]" />
     TapPresence
   </span>
 );
@@ -281,28 +283,11 @@ function TemplateShowcase() {
               </Link>
             </div>
 
-            {/* center: 3 previews */}
-            <div className="flex justify-center gap-3 overflow-x-auto lp-hide-scroll sm:gap-4">
-              {TEMPLATES.map((t) => (
-                <div key={t.name} className="flex shrink-0 flex-col items-center">
-                  <div className="relative h-[300px] w-[158px] overflow-hidden rounded-[20px] border" style={{ background: t.theme.bg, borderColor: t.theme.border }} data-testid={`template-${t.name.toLowerCase().replace(/\s+/g, "-")}`}>
-                    <div className="flex flex-col items-center px-3 pt-6">
-                      <div className="h-16 w-16 overflow-hidden rounded-full ring-2" style={{ ["--tw-ring-color"]: t.theme.accent, boxShadow: `0 0 0 2px ${t.theme.accent}55` }}>
-                        <img src={t.img} alt={t.person} className="h-full w-full object-cover" />
-                      </div>
-                      <p className="mt-3 text-[12px] font-semibold tracking-wide" style={{ color: t.theme.text }}>{t.person}</p>
-                      <p className="text-[9px]" style={{ color: t.theme.accent }}>{t.role}</p>
-                      <div className="mt-4 grid grid-cols-4 gap-1.5">
-                        {[0, 1, 2, 3].map((k) => (
-                          <div key={k} className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: `${t.theme.accent}22`, border: `1px solid ${t.theme.accent}55` }}>
-                            <div className="h-2 w-2 rounded-full" style={{ background: t.theme.accent }} />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 h-6 w-full rounded-md" style={{ background: `${t.theme.accent}30`, border: `1px solid ${t.theme.accent}55` }} />
-                    </div>
-                  </div>
-                  <span className="mt-3 text-[12px] text-[#9aa0a8]">{t.name}</span>
+            {/* center: live current templates from the real card catalog — one-full-card swipe on mobile */}
+            <div className="-mx-2 flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 pb-3 lp-hide-scroll" data-testid="template-carousel">
+              {["real_estate", "technology", "healthcare", "finance"].map((id) => INDUSTRY_CARDS.find((c) => c.id === id)).filter(Boolean).map((c) => (
+                <div key={c.id} className="w-[82vw] max-w-[280px] shrink-0 snap-center sm:w-[240px]" data-testid={`template-card-${c.id}`}>
+                  <IndustryCard c={c} />
                 </div>
               ))}
             </div>
@@ -364,20 +349,14 @@ function TeamsTestimonials() {
             <h3 className="text-[22px] font-semibold text-white">{t("landing.teams.testimonialsTitle")}</h3>
           </Reveal>
           <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {TESTIMONIALS.map((t, i) => (
-              <Reveal key={t.name} delay={i * 0.07}>
-                <div className="lp-card flex h-full flex-col rounded-[16px] p-5" data-testid={`testimonial-${i}`}>
-                  <div className="flex gap-0.5">
-                    {[0, 1, 2, 3, 4].map((s) => <Star key={s} className="h-3.5 w-3.5 fill-[#D6A653] text-[#D6A653]" />)}
+            {TESTIMONIALS.map((tm, i) => (
+              <Reveal key={tm.title} delay={i * 0.07}>
+                <div className="lp-card flex h-full flex-col rounded-[16px] p-5" data-testid={`benefit-${i}`}>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#D6A653]/30 bg-[#D6A653]/[0.08]">
+                    <Sparkles className="h-4 w-4 text-[#D6A653]" />
                   </div>
-                  <p className="mt-3 flex-1 text-[13.5px] leading-relaxed text-[#C7C9CD]">"{t.quote}"</p>
-                  <div className="mt-4 flex items-center gap-3">
-                    <img src={t.img} alt={t.name} className="h-9 w-9 rounded-full object-cover" />
-                    <div>
-                      <p className="text-[13px] font-semibold text-white">{t.name}</p>
-                      <p className="text-[11px] text-[#8A8F97]">{t.role} · {t.company}</p>
-                    </div>
-                  </div>
+                  <p className="mt-3 text-[15px] font-semibold text-white">{tm.title}</p>
+                  <p className="mt-2 flex-1 text-[13.5px] leading-relaxed text-[#C7C9CD]">{tm.text}</p>
                 </div>
               </Reveal>
             ))}

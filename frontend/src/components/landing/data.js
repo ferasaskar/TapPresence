@@ -22,10 +22,10 @@ export const NAV_LINKS = [
 ];
 
 export const STATS = [
-  { icon: User, value: "50K+", label: "Professionals" },
-  { icon: Globe, value: "150+", label: "Countries" },
-  { icon: Link2, value: "1M+", label: "Connections" },
-  { icon: Activity, value: "99.9%", label: "Uptime" },
+  { icon: Nfc, value: "NFC + QR", label: "Tap or scan" },
+  { icon: BrainCircuit, value: "AI", label: "Auto follow-ups" },
+  { icon: Wallet, value: "Wallet", label: "Apple & Google" },
+  { icon: Activity, value: "Live", label: "Analytics" },
 ];
 
 export const FEATURES = [
@@ -55,12 +55,9 @@ export const TEMPLATES = [
 ];
 
 export const TESTIMONIALS = [
-  { quote: "TapPresence has completely changed how we network. It's professional, modern and incredibly powerful.",
-    name: "Sarah Johnson", role: "Marketing Director", company: "Google", img: ASSETS.avSarah },
-  { quote: "The NFC card quality is amazing and the AI follow-up saves us hours every week.",
-    name: "Michael Chen", role: "CEO", company: "TechFlow", img: ASSETS.avMichael },
-  { quote: "Finally, a digital business card that looks stunning and actually drives results.",
-    name: "Emma Rodriguez", role: "Founder", company: "Edge Consulting", img: ASSETS.avEmma },
+  { title: "Share in one tap", text: "Tap your NFC card or show your QR — your full profile opens instantly, no app needed on either side." },
+  { title: "Never lose a lead", text: "Every exchange is captured to your CRM, so follow-ups and contacts are always one place away." },
+  { title: "Follow up faster", text: "AI drafts a tailored follow-up message for each new contact — you review, personalise and send." },
 ];
 
 export const FOOTER_GROUPS = [

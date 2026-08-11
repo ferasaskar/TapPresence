@@ -1,5 +1,25 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## COMMERCIAL SOURCE-OF-TRUTH + REAL STRIPE CHECKOUT + LANDING/AUTH POLISH (2026-06, iteration 31) — IMPLEMENTED & TESTING-AGENT VERIFIED (backend 10/10, frontend 100%, zero action items)
+User choices this phase: (1a) verify E2E, (2b) connect REAL Stripe (Emergent claimable sandbox), (3c) agent picks best visitor template route (→ /industries).
+
+- **Real Stripe checkout (Flow A claimable sandbox).** `backend/.env` has STRIPE_SECRET/PUBLISHABLE/WEBHOOK_SECRET (test) + STRIPE_MODE=test. `ALLOW_DEMO_BILLING=false` → old `/billing/subscribe` demo path returns **402** (no unpaid bypass). New `POST /api/billing/checkout {plan,interval,seats,market,origin_url}` builds a subscription Checkout session with **amount resolved SERVER-SIDE from published commercial_config** (inline price_data, per-seat quantity for Team, remaining trial days honoured). `GET /api/payments/status/{session_id}` (unauth poll, webhook fallback that syncs from Stripe). `POST /api/stripe/webhook` handles checkout.session.completed / invoice.paid / subscription.deleted → `_sync_ws_from_stripe_sub` sets ws.subscription {provider:stripe, stripe_subscription_id, status, current_period_end} and calls record_paid_subscription_event only when active. Frontend: Billing "Upgrade" → Stripe hosted checkout; new `/payment/success` (polls) + `/payment/cancel` pages (pages/PaymentResult.jsx). AuthContext gained `refreshSession`.
+  - ⚠️ **Stripe account NOT yet claimed** by user (onboarding_url shared in chat). Hosted-checkout completion with the 4242 test card was **NOT machine-automated** (checkout.stripe.com anti-bot); session creation + redirect + success-poll page + webhook code path verified. Recommend user completes one manual test purchase.
+- **Pricing single source of truth (KEY gate — verified).** SUPER_ADMIN Draft→Preview→Publish (`/admin/control/pricing/preview|publish`) writes `commercial_config.regional_pricing`; public `/commercial/pricing`, landing PricingSection, Billing and `/billing/checkout` all resolve from it. Proven: publish pro_month 12.49 → public shows 12.49 → checkout payment_transactions.amount=1249 → reverted 9.99. No hard-coded public prices.
+- **Individual vs Team registration.** `/register` offers Individual ('For me') / Team ('For my company or team'). Team shows company name, monthly/annual toggle, seat stepper (min from config = 3, cannot go below), live per-seat total + team total, 14-day trial note. Backend `register()` creates individual→plan trial/pending pro, or company workspace→plan trial/pending team with seats+interval; rejects seats<min (400). Registration = 14-day trial, NO card required. Reuses existing auth/workspace architecture.
+- **Auth navigation + brand.** `/login` + `/register` have persistent "Back to TapPresence" (back-to-home) on mobile+desktop, TP mark+wordmark lockup, "Create your account" copy (no "Create your ID").
+- **Landing templates from real catalog.** #templates now renders a mobile one-card swipe carousel (template-carousel) of the ACTUAL current template catalog (`lib/industryCards.js` via `IndustryCard`): real_estate/technology/healthcare/finance — full cards, no clipping. "Explore Templates" → /industries. Removed the old fake mock previews.
+- **Removed unverified claims.** Hero stats now truthful capability labels (NFC+QR / AI / Wallet / Live) instead of fabricated 50K+/1M+ numbers; testimonials block replaced with unattributed benefit cards (no fake named people / no "Google"). Trial CTA copy → "Start free trial". TP header mark enlarged (h-8) for better hierarchy.
+- **QR center mark** enlarged to ~26% with error-correction H + white backing; decode re-verified (pyzbar) → correct profile URL.
+- i18n EN/AR/ES updated (stats, testimonialsTitle, startFree); Arabic RTL, no horizontal overflow at 390.
+
+### Remaining / backlog after iter31
+- User to **claim the Stripe sandbox** (onboarding link) + complete KYC before deploy; consider one manual 4242 test purchase to confirm webhook→active end-to-end.
+- Email provider (Resend) + enforced verification still deferred (reset/verify links only logged).
+- Legal substantive copy, custom domains, wallet issuance, native apps — unchanged deferrals.
+
+
+
 ## LAUNCH HARDENING (2026-06, iteration 25) — DONE & FULL-REGRESSION PASSED (100%, backend 18/18)
 Credential-free launch work, all extending existing systems:
 - **Branding**: removed all user-visible ARIADNI (3 locale strings, QR poster → "TapPresence", seed ws "TapPresence HQ"). Internal keys (ariadni_lang/token, AriadniMark) intentionally kept.
