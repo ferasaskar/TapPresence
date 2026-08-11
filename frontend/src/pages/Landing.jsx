@@ -395,7 +395,7 @@ function FinalCTA() {
 function Footer() {
   const { t } = useLocale();
   const linkTarget = (label) => {
-    if (label === "Privacy Policy") return "/legal/privacy";
+    if (label === "Privacy Policy") return "/privacy";
     if (["For Teams", "For Enterprise", "For Individuals", "Industries"].includes(label)) return "/register?intent=team";
     if (["Features", "Templates", "Pricing", "Updates"].includes(label)) return "/register";
     return "/register";
@@ -409,7 +409,10 @@ function Footer() {
             {t("landing.footer.tagline")}
           </p>
           <p className="mt-6 text-[12px] text-[#5b6068]">© {new Date().getFullYear()} TapPresence. {t("landing.footer.rights")}</p>
-          <Link to="/privacy-center" data-testid="footer-privacy-choices" className="mt-2 inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">{t("landing.footer.privacyChoices")}</Link>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Link to="/privacy" data-testid="footer-privacy-policy" className="inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">Privacy Policy</Link>
+            <Link to="/privacy-center" data-testid="footer-privacy-choices" className="inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">{t("landing.footer.privacyChoices")}</Link>
+          </div>
         </div>
         {FOOTER_GROUPS.map((g) => (
           <div key={g.title}>

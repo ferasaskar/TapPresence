@@ -31,6 +31,7 @@ import GoogleFinish from "@/pages/GoogleFinish";
 import LocaleToast from "@/components/LocaleToast";
 import ConsentBanner from "@/components/ConsentBanner";
 import PrivacyCenter from "@/pages/PrivacyCenter";
+import Privacy from "@/pages/Privacy";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ children }) {
@@ -78,6 +79,7 @@ function App() {
             <Route path="/payment/cancel" element={<PaymentCancel />} />
             <Route path="/auth/google/finish" element={<GoogleFinish />} />
             <Route path="/legal/:doc" element={<Legal />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/privacy-center" element={<PrivacyCenter />} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Home /></ProtectedRoute>} />

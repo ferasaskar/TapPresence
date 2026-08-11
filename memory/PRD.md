@@ -734,3 +734,15 @@ Backend was already instant-correct: slots are UTC ISO computed in owner tz; `st
 Add scope `https://www.googleapis.com/auth/calendar.events` to the Google Cloud OAuth consent screen, keep the account as a Test User, then Settings -> Integrations -> Reconnect. Then a real Create->Reschedule->Cancel with Google events can be verified in preview.
 
 Test scripts: `backend/tests/test_cancel_calendar_sync.py` (stub, PASS), `backend/tests/live_calendar_e2e.py` (real; prints no secrets).
+
+---
+
+## Public Privacy Policy page /privacy (2026-06-11) — built & verified in preview; awaiting user deploy
+
+Additive-only. For Google OAuth verification.
+- New page `frontend/src/pages/Privacy.jsx` (public, no auth). Includes a prominent "Google Calendar & Google user data" section: uses `calendar.events` ONLY to Create / Update-reschedule / Delete events for the meeting-booking feature; only manages events it creates; disconnect from Settings revokes access; "We do not sell your Google user data, and we do not use it for advertising"; Google API Services User Data Policy (Limited Use) statement. Plus general privacy sections.
+- Route `/privacy` added in `App.js` BEFORE the `/:slug` catch-all.
+- Footer: "Privacy Policy" link now targets `/privacy`; added an extra always-visible `/privacy` link near the copyright (`data-testid=footer-privacy-policy`).
+- NO changes to booking/calendar/OAuth/auth/routing-of-existing-features/DB/backend.
+- Verified in preview: /privacy renders publicly (localStorage cleared), all required Google content present; `/:slug` public profiles still resolve; footer link href=/privacy; frontend compiled.
+- DEPLOY NOTE: tappresence.com/privacy returns 200 (SPA shell) but shows the OLD bundle until user redeploys. After redeploy it renders the real page. Agent cannot deploy to production.
