@@ -102,6 +102,26 @@ async def send_email(to: str, subject: str, html: str) -> bool:
         return False
 
 
+# ------------------------------------------------------------------ Google OAuth (server-side auth-code flow)
+# REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or ""
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or ""
+GOOGLE_OAUTH_REDIRECT_URI = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI") or ""
+
+
+def _google_configured() -> bool:
+    return bool(GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET and GOOGLE_OAUTH_REDIRECT_URI)
+
+
+def _google_frontend_base() -> str:
+    """The customer-facing origin is the redirect URI minus the callback path — this keeps the
+    frontend and OAuth callback on the SAME domain the user registered (preview / tappresence.com)."""
+    suffix = "/api/auth/google/callback"
+    if GOOGLE_OAUTH_REDIRECT_URI.endswith(suffix):
+        return GOOGLE_OAUTH_REDIRECT_URI[: -len(suffix)]
+    return PUBLIC_APP_URL
+
+
 _client = AsyncIOMotorClient(MONGO_URL)
 db = _client[DB_NAME]
 
@@ -875,7 +895,7 @@ async def get_config():
             "apple_wallet": _configured("APPLE_WALLET_CERT_B64", "APPLE_WALLET_TEAM_ID"),
             "google_wallet": _configured("GOOGLE_WALLET_ISSUER_ID", "GOOGLE_WALLET_SA_JSON"),
             "apple_signin": _configured("APPLE_OAUTH_CLIENT_ID"),
-            "google_signin": _configured("GOOGLE_OAUTH_CLIENT_ID"),
+            "google_signin": _google_configured(),
             "email": _email_configured(),
             "enrichment": _configured("ENRICHMENT_API_KEY"),
             "revenuecat": _configured("REVENUECAT_API_KEY"),
@@ -1110,56 +1130,61 @@ async def _auth_payload(user, request):
     }
 
 
-@platform_router.post("/auth/register")
-async def register(body: RegisterIn, request: Request):
-    rate_limit(request, "register", 40, 3600)
-    email = body.email.strip().lower()
+async def _provision_account(*, email, name, account_type="individual", company_name="", workspace_name="",
+                             seats=1, billing_interval="month", country_code="US", language="en",
+                             tz="", currency="", referral_code=None, password=None,
+                             google_id=None, email_verified=False):
+    """Shared account provisioning for BOTH password signup and Google OAuth signup.
+    Creates the user + workspace + membership + trial subscription and returns (user, ws_id).
+    Reuses the single auth/workspace architecture — no parallel systems."""
+    email = email.strip().lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(400, "An account with this email already exists")
+    # Validate commercial constraints BEFORE any DB write (no orphaned users on failure).
+    is_team = (account_type == "team")
+    cfg = await get_commercial_config()
+    min_seats = int(((cfg.get("plans") or {}).get("team") or {}).get("min_seats") or 3)
+    seats_n = 1
+    interval = None
+    if is_team:
+        seats_n = int(seats or min_seats)
+        if seats_n < min_seats:
+            raise HTTPException(400, f"Team plan requires at least {min_seats} seats")
+        interval = "year" if billing_interval == "year" else "month"
     uid = str(uuid.uuid4())
-    verify_token = secrets.token_urlsafe(32)
-    lang = body.language if body.language in SUPPORTED_LANGUAGES else "en"
-    region = default_region(body.country_code if body.country_code else "US")
-    if body.currency in SUPPORTED_CURRENCIES:
-        region["default_currency"] = body.currency
-    if body.timezone:
-        region["timezone"] = body.timezone
+    lang = language if language in SUPPORTED_LANGUAGES else "en"
+    region = default_region(country_code if country_code else "US")
+    if currency in SUPPORTED_CURRENCIES:
+        region["default_currency"] = currency
+    if tz:
+        region["timezone"] = tz
     region["default_language"] = lang
     user = {
-        "id": uid, "email": email, "password_hash": hash_pw(body.password),
-        "name": body.name.strip(), "role": "WORKSPACE_OWNER", "email_verified": False,
+        "id": uid, "email": email,
+        "password_hash": hash_pw(password) if password else "",
+        "name": (name or "").strip(), "role": "WORKSPACE_OWNER", "email_verified": bool(email_verified),
         "language": lang, "locale": region["locale"], "timezone": region["timezone"],
-        "timezone_source": "auto",
-        "environment": "production_customer",
+        "timezone_source": "auto", "environment": "production_customer",
         "created_at": now_iso(),
     }
+    if google_id:
+        user["google_id"] = google_id
+        user["auth_provider"] = "google"
     await db.users.insert_one(user)
     ws_id = str(uuid.uuid4())
     _tdays = await trial_days()
-    is_team = (body.account_type == "team")
-    cfg = await get_commercial_config()
-    min_seats = int(((cfg.get("plans") or {}).get("team") or {}).get("min_seats") or 3)
-    seats = 1
-    interval = None
-    if is_team:
-        seats = int(body.seats or min_seats)
-        if seats < min_seats:
-            raise HTTPException(400, f"Team plan requires at least {min_seats} seats")
-        interval = "year" if body.billing_interval == "year" else "month"
     _pending = "team" if is_team else "pro"
     if _tdays > 0:
         _sub = {"plan": "trial", "pending_plan": _pending, "status": "trialing",
                 "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=_tdays)).isoformat(),
-                "current_period_end": None, "seats": seats, "interval": interval}
-        _plan = "trial"
+                "current_period_end": None, "seats": seats_n, "interval": interval}
     else:
         _sub = {"plan": "trial", "pending_plan": _pending, "status": "trial_expired",
-                "trial_ends_at": now_iso(), "current_period_end": None, "seats": seats, "interval": interval}
-        _plan = "trial"
-    _ws_name = (body.company_name.strip() if is_team else "") or body.workspace_name.strip() or (body.name.strip() or "My Workspace")
+                "trial_ends_at": now_iso(), "current_period_end": None, "seats": seats_n, "interval": interval}
+    _ws_name = (company_name.strip() if is_team else "") or (workspace_name or "").strip() or ((name or "").strip() or "My Workspace")
     await db.workspaces.insert_one({
         "id": ws_id, "name": _ws_name,
-        "type": "company" if is_team else "individual", "plan": _plan, "owner_id": uid,
+        "type": "company" if is_team else "individual", "plan": "trial", "owner_id": uid,
         "subscription": _sub, "environment": "production_customer",
         "referral_code": await _gen_referral_code(),
         "region": region, "tax": {"tax_country": region["country_code"], "tax_inclusive": False,
@@ -1170,19 +1195,134 @@ async def register(body: RegisterIn, request: Request):
         "id": str(uuid.uuid4()), "user_id": uid, "workspace_id": ws_id,
         "role": "WORKSPACE_OWNER", "status": "active", "created_at": now_iso(),
     })
-    await _apply_referral(body.referral_code, email, ws_id, uid)
+    await _apply_referral(referral_code, email, ws_id, uid)
+    await audit(ws_id, uid, "account.register")
+    return user, ws_id
+
+
+@platform_router.post("/auth/register")
+async def register(body: RegisterIn, request: Request):
+    rate_limit(request, "register", 40, 3600)
+    user, ws_id = await _provision_account(
+        email=body.email, name=body.name, account_type=body.account_type or "individual",
+        company_name=body.company_name or "", workspace_name=body.workspace_name or "",
+        seats=body.seats or 1, billing_interval=body.billing_interval or "month",
+        country_code=body.country_code, language=body.language, tz=body.timezone,
+        currency=body.currency, referral_code=body.referral_code, password=body.password,
+        email_verified=False)
+    verify_token = secrets.token_urlsafe(32)
     await db.email_verifications.insert_one({
-        "id": str(uuid.uuid4()), "user_id": uid, "token": verify_token,
+        "id": str(uuid.uuid4()), "user_id": user["id"], "token": verify_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), "used": False,
     })
     # Email: send verification via Resend if configured, else log link (dev).
     link = f"{PUBLIC_APP_URL}/verify?token={verify_token}"
     if _email_configured():
-        await send_email(email, "Verify your TapPresence email",
+        await send_email(user["email"], "Verify your TapPresence email",
                          _email_shell("Confirm your email", "Welcome to TapPresence — please confirm your email address to secure your account and unlock everything in your 14-day trial.", "Verify email", link))
     else:
-        logger.info(f"[email:NOT_CONFIGURED] verification link for {email}: {link}")
-    await audit(ws_id, uid, "account.register")
+        logger.info(f"[email:NOT_CONFIGURED] verification link for {user['email']}: {link}")
+    return await _auth_payload(user, request)
+
+
+# ---- Google OAuth endpoints (server-side authorization-code flow into the existing JWT/session) ----
+class GoogleCompleteIn(BaseModel):
+    gp: str
+    account_type: Optional[str] = "individual"
+    company_name: Optional[str] = ""
+    seats: Optional[int] = 1
+    billing_interval: Optional[str] = "month"
+
+
+@platform_router.get("/auth/google/start")
+async def google_start(request: Request, ref: Optional[str] = None):
+    # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    if not _google_configured():
+        raise HTTPException(503, "Google sign-in is not configured")
+    state = make_token("google_oauth", "oauth_state", minutes=10,
+                       extra={"nonce": secrets.token_urlsafe(8), "ref": ref or ""})
+    import urllib.parse
+    params = {
+        "client_id": GOOGLE_OAUTH_CLIENT_ID,
+        "redirect_uri": GOOGLE_OAUTH_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params))
+
+
+@platform_router.get("/auth/google/callback")
+async def google_callback(request: Request, code: Optional[str] = None,
+                          state: Optional[str] = None, error: Optional[str] = None):
+    fb = _google_frontend_base()
+    if error or not code or not state:
+        return RedirectResponse(f"{fb}/login?google_error=cancelled")
+    try:
+        st = jwt.decode(state, JWT_SECRET, algorithms=[JWT_ALG])
+        if st.get("type") != "oauth_state":
+            raise ValueError("bad state")
+    except Exception:
+        return RedirectResponse(f"{fb}/login?google_error=state")
+    ref = st.get("ref") or ""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as cx:
+            tok = await cx.post("https://oauth2.googleapis.com/token", data={
+                "code": code, "client_id": GOOGLE_OAUTH_CLIENT_ID,
+                "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
+                "redirect_uri": GOOGLE_OAUTH_REDIRECT_URI, "grant_type": "authorization_code"})
+            if tok.status_code != 200:
+                logger.error(f"[google] token exchange failed: {tok.status_code}")
+                return RedirectResponse(f"{fb}/login?google_error=exchange")
+            access_tok = tok.json().get("access_token")
+            ui = await cx.get("https://www.googleapis.com/oauth2/v3/userinfo",
+                              headers={"Authorization": f"Bearer {access_tok}"})
+            if ui.status_code != 200:
+                return RedirectResponse(f"{fb}/login?google_error=profile")
+    except Exception as e:
+        logger.error(f"[google] callback error: {e}")
+        return RedirectResponse(f"{fb}/login?google_error=network")
+    info = ui.json()
+    email = (info.get("email") or "").strip().lower()
+    if not email or not info.get("email_verified"):
+        return RedirectResponse(f"{fb}/login?google_error=unverified")
+    sub = info.get("sub")
+    name = info.get("name") or ""
+    import urllib.parse
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        # Auto-link Google to the existing account (email is Google-verified) — never duplicate.
+        upd = {"email_verified": True}
+        if not existing.get("google_id"):
+            upd["google_id"] = sub
+            upd["auth_provider"] = existing.get("auth_provider") or "google"
+        await db.users.update_one({"id": existing["id"]}, {"$set": upd})
+        access_t, refresh_t = await _issue_session(existing, request)
+        q = urllib.parse.urlencode({"token": access_t, "refresh": refresh_t})
+        return RedirectResponse(f"{fb}/auth/google/finish?{q}")
+    # New user → send to the Individual/Team selection step (short-lived signed pending token).
+    pend = make_token("google_pending", "google_pending", minutes=20,
+                      extra={"email": email, "name": name, "sub": sub, "ref": ref})
+    q = urllib.parse.urlencode({"gp": pend, "email": email, "name": name})
+    return RedirectResponse(f"{fb}/register?{q}")
+
+
+@platform_router.post("/auth/google/complete")
+async def google_complete(body: GoogleCompleteIn, request: Request):
+    try:
+        p = jwt.decode(body.gp, JWT_SECRET, algorithms=[JWT_ALG])
+        if p.get("type") != "google_pending":
+            raise ValueError("bad token")
+    except Exception:
+        raise HTTPException(400, "Your Google sign-up session expired. Please try again.")
+    user, ws_id = await _provision_account(
+        email=p["email"], name=p.get("name", ""), account_type=body.account_type or "individual",
+        company_name=body.company_name or "", seats=body.seats or 1,
+        billing_interval=body.billing_interval or "month", referral_code=p.get("ref") or None,
+        password=None, google_id=p.get("sub"), email_verified=True)
     return await _auth_payload(user, request)
 
 

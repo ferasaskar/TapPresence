@@ -8,15 +8,20 @@ import { Label } from "@/components/ui/label";
 import { Loader2, ArrowLeft, User, Building2, Minus, Plus } from "lucide-react";
 import { useLocale } from "@/i18n/useLocale";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { GoogleButton, AuthDivider } from "@/components/GoogleButton";
 
 const fmtErr = (d) => typeof d === "string" ? d : Array.isArray(d) ? d.map((e) => e?.msg || "").join(" ") : null;
 
 export default function Register() {
-  const { register } = useAuth();
+  const { register, applyData } = useAuth();
   const { t } = useLocale();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const intent = params.get("intent");
+  const gp = params.get("gp") || "";
+  const gEmail = params.get("email") || "";
+  const gName = params.get("name") || "";
+  const googleMode = !!gp;
   const refCode = params.get("ref") || "";
   const [refInfo, setRefInfo] = useState(null);
   const [pricing, setPricing] = useState(null);
@@ -40,7 +45,7 @@ export default function Register() {
   const total = useMemo(() => (Number(seatPrice) || 0) * seats, [seatPrice, seats]);
   const trialDays = pricing?.trial?.days ?? 14;
 
-  const [f, setF] = useState({ name: "", email: "", password: "", workspace_name: "", company_name: "", referral_code: refCode });
+  const [f, setF] = useState({ name: gName, email: gEmail, password: "", workspace_name: "", company_name: "", referral_code: refCode });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
@@ -49,6 +54,14 @@ export default function Register() {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
+      if (googleMode) {
+        const body = { gp, account_type: acct };
+        if (acct === "team") { body.company_name = f.company_name; body.seats = Math.max(seats, minSeats); body.billing_interval = interval; }
+        const { data } = await api.post("/auth/google/complete", body);
+        const u = applyData(data);
+        navigate(u?.role === "SUPER_ADMIN" ? "/control" : "/dashboard");
+        return;
+      }
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
       const payload = { ...f, timezone: tz, account_type: acct };
       if (acct === "team") { payload.seats = Math.max(seats, minSeats); payload.billing_interval = interval; }
@@ -60,7 +73,7 @@ export default function Register() {
   };
 
   return (
-    <div className="aria-dark relative flex min-h-screen items-center justify-center overflow-hidden bg-[#050607] px-6 py-16" style={{ fontFamily: "'Outfit', sans-serif" }}>
+    <div className="aria-dark relative flex min-h-screen items-start justify-center overflow-y-auto bg-[#050607] px-6 pt-10 pb-40 sm:items-center sm:py-16" style={{ fontFamily: "'Outfit', sans-serif" }}>
       <div className="grain-overlay" style={{ opacity: 0.05 }} />
       <div className="aria-gold-radial pointer-events-none absolute inset-0" />
       <Link to="/" className="absolute left-4 top-4 z-10 flex items-center gap-1.5 text-sm text-white/60 transition-colors hover:text-[#D6A653]" data-testid="back-to-home"><ArrowLeft className="h-4 w-4" /> {t("auth.backToHome")}</Link>
@@ -72,6 +85,14 @@ export default function Register() {
         </Link>
         <h1 className="mt-6 text-2xl font-medium tracking-tight text-white">{t("auth.createTitle")}</h1>
         <p className="mt-1 text-sm text-white/50">{t("auth.chooseUse")}</p>
+
+        {googleMode ? (
+          <div className="mt-4 rounded-xl border border-[#D6A653]/30 bg-[#D6A653]/[0.07] px-3 py-2.5 text-xs text-[#D6A653]" data-testid="google-signup-banner">
+            {t("auth.googleFinishSetup", { email: gEmail })}
+          </div>
+        ) : (
+          <><div className="mt-6"><GoogleButton label={t("auth.signUpGoogle")} /></div><AuthDivider /></>
+        )}
 
         {/* Account type */}
         <div className="mt-4 grid grid-cols-2 gap-2" data-testid="account-type">
@@ -91,8 +112,10 @@ export default function Register() {
 
         <form onSubmit={submit} className="mt-5 space-y-4">
           <div className="space-y-1.5"><Label>{t("auth.fullName")}</Label><Input value={f.name} onChange={set("name")} data-testid="register-name" required /></div>
-          <div className="space-y-1.5"><Label>{t("auth.workEmail")}</Label><Input type="email" value={f.email} onChange={set("email")} data-testid="register-email" required /></div>
-          <div className="space-y-1.5"><Label>{t("auth.password")}</Label><Input type="password" value={f.password} onChange={set("password")} data-testid="register-password" required minLength={6} /></div>
+          <div className="space-y-1.5"><Label>{t("auth.workEmail")}</Label><Input type="email" value={f.email} onChange={set("email")} data-testid="register-email" required readOnly={googleMode} className={googleMode ? "opacity-70" : ""} /></div>
+          {!googleMode && (
+            <div className="space-y-1.5"><Label>{t("auth.password")}</Label><Input type="password" value={f.password} onChange={set("password")} data-testid="register-password" required minLength={6} /></div>
+          )}
 
           {acct === "team" ? (
             <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-3" data-testid="team-setup">

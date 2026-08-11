@@ -1,0 +1,37 @@
+{
+  "summary": "Iter32 verified Google OAuth integration + regression of _provision_account refactor. Backend pytest 11/11 PASSED (test_iter32_google_oauth.py). Verified: (1) REGRESSION — POST /api/auth/register Individual returns token + user + workspace.type=individual + subscription.plan=trial/status=trialing/pending_plan=pro. Duplicate email returns 400. (2) REGRESSION — Team register with seats=2 returns 400; retrying SAME email with seats=3 succeeds (NO orphan user row — validation happens BEFORE any DB write in _provision_account). Team yearly interval also verified (seats=5, interval=year). (3) REGRESSION — SUPER_ADMIN login (admin@ariadni.id / Ariadni@2026) returns role=SUPER_ADMIN + token; regular user login after register works. (4) GET /api/auth/google/start returns 302 to accounts.google.com/o/oauth2/v2/auth with client_id ending apps.googleusercontent.com, redirect_uri=https://template-hub-184.preview.emergentagent.com/api/auth/google/callback, response_type=code, scope='openid email profile', non-empty state. (5) GET /api/auth/google/callback with no params / error=access_denied / code=x&state=badtoken each 302-redirect to /login?google_error=... on the preview domain (never 500). (6) POST /api/auth/google/complete with gp='invalid' returns HTTP 400.\n\nFrontend Playwright (mobile 390 + desktop): /login shows data-testid=google-signin ('Continue with Google') + 'or' divider; clicking it fires GET /api/auth/google/start (verified via request interception). /login?google_error=state renders data-testid=login-error ('Google sign-in didn't complete. Please try again.'). /register (normal) shows data-testid=google-signin ('Sign up with Google') + Individual/Team selector + title 'Create your account' (no 'Create your ID' string). /register?gp=FAKETOKEN&email=jane%40acme.com&name=Jane%20Doe shows data-testid=google-signup-banner, register-email prefilled 'jane@acme.com' with readonly attribute set, register-name prefilled 'Jane Doe', register-password element is NOT rendered (count=0), Individual/Team selector still present. Submitting fires POST /api/auth/google/complete → 400 → surfaces data-testid=register-error 'Your Google sign-up session expired. Please try again.' (no crash). /auth/google/finish with no token gracefully navigates to /login. SUPER_ADMIN login redirects to /control. i18n: switching to Arabic sets <html dir='rtl'>, google-signin label = 'المتابعة باستخدام Google', banner localized in AR, scrollWidth==clientWidth==390 (no horizontal overflow). Spanish labels also verified ('Continuar con Google', banner ES). Real end-to-end Google consent handshake is not machine-verifiable (Google blocks headless + consent screen in Testing mode) — reported as not-machine-verifiable per instructions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Mobile 390 (all pages)", "issues": ["Cookie consent banner (Manage/Got it) overlays the bottom of the viewport and can intercept clicks on primary CTAs like register-submit — Playwright force=true click on the mobile viewport failed to submit the form until dispatched via el.click() in JS. Real users on mobile will need to accept/dismiss the cookie banner first. Consider auto-collapsing the banner or reducing its footprint so it doesn't overlap the submit button on 390-wide screens."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_google_oauth.py",
+    "/app/test_reports/pytest/iter32.xml"
+  ],
+  "action_items": [
+    "(Low) On mobile 390, the cookie-consent banner overlays and can block clicks on register-submit; consider dismissible-by-default or repositioned banner so it doesn't cover primary CTAs.",
+    "(Info) Live end-to-end Google consent handshake, existing-user linking (email match), and production tappresence.com redirect are not machine-verifiable in this environment — requires a real browser + a Google account added as a Test User under the OAuth project."
+  ],
+  "critical_code_review_comments": [
+    "_provision_account validates team min_seats BEFORE inserting the user (line 1141–1152 platform_v1.py) — correctly prevents orphaned users on 400. Verified by test_team_below_min_seats_returns_400_no_orphan (retry same email with valid seats then succeeds).",
+    "google_start uses env-driven GOOGLE_OAUTH_REDIRECT_URI with no hardcoded fallback (comment in code explicitly warns against fallbacks) — good.",
+    "google_callback catches all exceptions and always 302-redirects to /login?google_error=... on the frontend base derived from GOOGLE_OAUTH_REDIRECT_URI — never leaks a 500 to the browser. Verified for no-params / access_denied / bad-state.",
+    "google_complete decodes the 'gp' pending token; invalid → HTTPException 400 with friendly message; happy path re-uses _provision_account with google_id + email_verified=True (single auth architecture). Good.",
+    "Duplicate-account prevention on email match currently short-circuits with 400 in _provision_account. Note: the callback handler at lines 1298–1305 handles the *existing verified email* case by linking google_id to the existing user and issuing a session token via /auth/google/finish — this path is not machine-verifiable but the code is present and looks correct.",
+    "Frontend Register.jsx submit button doesn't disable the form when googleMode's account_type=team seats < min — server-side is the source of truth (returns 400 → surfaces register-error), which is acceptable defense-in-depth, but consider disabling the button client-side too for parity with the normal register flow.",
+    "Cookie banner z-index on mobile obscures primary CTA (see design_issues). Consider raising submit-button z-index above the banner or auto-collapsing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter32_google_oauth.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all listed data-testids + i18n verified; live Google handshake explicitly out-of-scope)"},
+  "test_credentials": "SUPER_ADMIN admin@ariadni.id / Ariadni@2026 (redirects to /control). Fresh TEST_iter32_* accounts created and cleaned up in the module teardown fixture (users, memberships, workspaces, email_verifications deleted).",
+  "seed_data_creation": "None persisted. All TEST_iter32_* users/workspaces/memberships/email_verifications deleted at module teardown. feras-askar and other seeded accounts untouched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter32 fully verified for everything machine-testable. Backend test file: /app/backend/tests/test_iter32_google_oauth.py — 11 tests covering register regression (Individual + Team + no-orphan) + login regression + google/start 302 params + google/callback error redirects + google/complete invalid-token 400. Run with: `pytest backend/tests/test_iter32_google_oauth.py -o addopts=''`. NOT machine-verifiable (Google blocks headless + consent screen in Testing mode): a) full Google consent handshake for new Individual/Team via Google, b) existing-user linking by verified email, c) production tappresence.com redirect. Small UX finding worth flagging to E1: cookie-consent banner on mobile 390 overlays register-submit — Playwright .click() from Python was intercepted; had to dispatch via JS. Real users would need to dismiss the banner first."
+}

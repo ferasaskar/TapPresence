@@ -1,5 +1,22 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## GOOGLE OAUTH SIGN-IN (server-side auth-code flow) (2026-06, iteration 32) — IMPLEMENTED & TESTING-AGENT VERIFIED (backend 11/11, frontend 100%)
+User choices: backend authorization-code flow (not GIS); new Google users → Individual/Team selection step like normal signup (Individual→trial, Team→enforced min seats); existing email/password users auto-linked by Google-verified email (no duplicates); credentials via env only.
+
+- **Backend** (`platform_v1.py`): `GET /api/auth/google/start` (302→Google consent, signed JWT `state`, scope `openid email profile`), `GET /api/auth/google/callback` (exchanges code via httpx, fetches userinfo, requires `email_verified`; existing user → auto-link `google_id` + issue session → redirect `/auth/google/finish?token=&refresh=`; new user → short-lived signed `gp` pending token → redirect `/register?gp=&email=&name=`), `POST /api/auth/google/complete` (validates `gp`, provisions account with `google_id`, `email_verified=true`, no password). Redirect URI is **env-driven** (`GOOGLE_OAUTH_REDIRECT_URI`) — preview set; production must set to `https://tappresence.com/api/auth/google/callback`. Frontend base derived by stripping the callback suffix.
+- **Refactor:** normal `register()` and Google signup now share `_provision_account()` (single auth/workspace architecture, no parallel system). **Bug fixed:** team seat-minimum is now validated BEFORE any DB write, so a below-min team signup no longer leaves an orphaned user / blocks retry.
+- **Frontend:** "Continue with Google" / "Sign up with Google" button (`GoogleButton.jsx`) on `/login` + `/register`; `/auth/google/finish` page (`GoogleFinish.jsx`) applies token/refresh via `AuthContext.applyExternalSession` and routes by role; Register **google-mode** (`?gp=`) shows a banner, prefilled read-only email, hidden password, keeps Individual/Team + seat pricing; `/login?google_error=` shows an inline message. i18n EN/AR/ES + RTL. Also fixed: Register title now "Create your account" (was "Create your ID"); auth pages scroll + clear the mobile cookie-consent banner so the signup CTA is reachable.
+- **Env:** `backend/.env` has `GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI`. `/api/config` `integrations.google_signin` → true.
+- ⚠️ **Not machine-verifiable (needs manual browser test):** the live Google consent handshake (new Individual/Team via Google, existing-user linking), because Google blocks headless automation AND the OAuth consent screen is in **Testing mode** (only allowlisted Test Users can sign in). To go live for all users: publish/verify the consent screen in Google Cloud.
+
+### Google OAuth — production checklist for user
+1. Set `GOOGLE_OAUTH_REDIRECT_URI=https://tappresence.com/api/auth/google/callback` in the production environment (preview keeps the preview URL).
+2. Redeploy so the OAuth env vars + code reach production.
+3. Add your own Google account (and any testers) as **Test Users** on the OAuth consent screen, OR publish/verify the app to allow all users.
+4. Manually test: new Individual, new Team, existing-user linking, logout→login-again, and the tappresence.com redirect.
+
+
+
 ## COMMERCIAL SOURCE-OF-TRUTH + REAL STRIPE CHECKOUT + LANDING/AUTH POLISH (2026-06, iteration 31) — IMPLEMENTED & TESTING-AGENT VERIFIED (backend 10/10, frontend 100%, zero action items)
 User choices this phase: (1a) verify E2E, (2b) connect REAL Stripe (Emergent claimable sandbox), (3c) agent picks best visitor template route (→ /industries).
 

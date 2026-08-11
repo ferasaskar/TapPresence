@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { useLocale } from "@/i18n/useLocale";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { GoogleButton, AuthDivider } from "@/components/GoogleButton";
 
 const fmtErr = (detail) => {
   if (detail == null) return null;
@@ -19,10 +20,16 @@ export default function Login() {
   const { login } = useAuth();
   const { t } = useLocale();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (params.get("google_error")) setError(t("auth.googleError"));
+    // eslint-disable-next-line
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -39,7 +46,7 @@ export default function Login() {
   };
 
   return (
-    <div className="aria-dark relative flex min-h-screen items-center justify-center overflow-hidden bg-[#050607] px-6" style={{ fontFamily: "'Outfit', sans-serif" }}>
+    <div className="aria-dark relative flex min-h-screen items-center justify-center overflow-y-auto bg-[#050607] px-6 py-10 pb-32 sm:pb-10" style={{ fontFamily: "'Outfit', sans-serif" }}>
       <div className="grain-overlay" style={{ opacity: 0.05 }} />
       <div className="aria-gold-radial pointer-events-none absolute inset-0" />
       <Link to="/" className="absolute left-4 top-4 z-10 flex items-center gap-1.5 text-sm text-white/60 transition-colors hover:text-[#D6A653]" data-testid="back-to-home"><ArrowLeft className="h-4 w-4" /> {t("auth.backToHome")}</Link>
@@ -51,7 +58,9 @@ export default function Login() {
         </Link>
         <h1 className="mt-6 text-2xl font-medium tracking-tight text-white">{t("auth.welcomeBack")}</h1>
         <p className="mt-1 text-sm text-white/50">{t("auth.signInSub")}</p>
-        <form onSubmit={submit} className="mt-7 space-y-4">
+        <div className="mt-6"><GoogleButton /></div>
+        <AuthDivider />
+        <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">{t("auth.email")}</Label>
             <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="login-email" required />

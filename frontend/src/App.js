@@ -27,6 +27,7 @@ import NfcCards from "@/pages/NfcCards";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "@/pages/AuthExtra";import Legal from "@/pages/Legal";
 import ControlCenter from "@/pages/ControlCenter";
 import { PaymentSuccess, PaymentCancel } from "@/pages/PaymentResult";
+import GoogleFinish from "@/pages/GoogleFinish";
 import LocaleToast from "@/components/LocaleToast";
 import ConsentBanner from "@/components/ConsentBanner";
 import PrivacyCenter from "@/pages/PrivacyCenter";
@@ -75,6 +76,7 @@ function App() {
             <Route path="/activate" element={<Activate />} />
             <Route path="/payment/success" element={<PaymentSuccess />} />
             <Route path="/payment/cancel" element={<PaymentCancel />} />
+            <Route path="/auth/google/finish" element={<GoogleFinish />} />
             <Route path="/legal/:doc" element={<Legal />} />
             <Route path="/privacy-center" element={<PrivacyCenter />} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />

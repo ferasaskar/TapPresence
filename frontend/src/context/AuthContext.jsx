@@ -55,6 +55,14 @@ export const AuthProvider = ({ children }) => {
     } catch { return null; }
   };
 
+  // Apply a session issued out-of-band (e.g. Google OAuth callback handing back tokens).
+  const applyExternalSession = async (token, refresh) => {
+    if (!token) return null;
+    localStorage.setItem("ariadni_token", token);
+    if (refresh) localStorage.setItem("ariadni_refresh", refresh);
+    return await refreshSession();
+  };
+
   const logout = () => {
     const refresh = localStorage.getItem("ariadni_refresh");
     if (refresh) api.post("/auth/logout", { refresh_token: refresh }).catch(() => {});
@@ -64,7 +72,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, entitlements, workspace, memberships, ready, login, register, logout, refreshSession }}>
+    <AuthContext.Provider value={{ user, entitlements, workspace, memberships, ready, login, register, logout, refreshSession, applyExternalSession, applyData: _apply }}>
       {children}
     </AuthContext.Provider>
   );
