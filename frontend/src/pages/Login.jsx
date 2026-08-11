@@ -27,7 +27,10 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (params.get("google_error")) setError(t("auth.googleError"));
+    if (params.get("google_error")) {
+      const reason = params.get("reason");
+      setError(t("auth.googleError") + (reason ? ` (${reason})` : ""));
+    }
     // eslint-disable-next-line
   }, []);
 

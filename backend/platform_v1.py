@@ -1258,14 +1258,18 @@ async def google_start(request: Request, ref: Optional[str] = None):
 async def google_callback(request: Request, code: Optional[str] = None,
                           state: Optional[str] = None, error: Optional[str] = None):
     fb = _google_frontend_base()
-    if error or not code or not state:
-        return RedirectResponse(f"{fb}/login?google_error=cancelled")
+    if error:
+        logger.error(f"[google] provider returned error at callback: {error}")
+        return RedirectResponse(f"{fb}/login?google_error=cancelled&reason={error}")
+    if not code or not state:
+        return RedirectResponse(f"{fb}/login?google_error=cancelled&reason=missing_params")
     try:
         st = jwt.decode(state, JWT_SECRET, algorithms=[JWT_ALG])
         if st.get("type") != "oauth_state":
             raise ValueError("bad state")
-    except Exception:
-        return RedirectResponse(f"{fb}/login?google_error=state")
+    except Exception as e:
+        logger.error(f"[google] state validation failed: {type(e).__name__}")
+        return RedirectResponse(f"{fb}/login?google_error=state&reason=bad_state")
     ref = st.get("ref") or ""
     import httpx
     try:
@@ -1275,20 +1279,27 @@ async def google_callback(request: Request, code: Optional[str] = None,
                 "client_secret": GOOGLE_OAUTH_CLIENT_SECRET,
                 "redirect_uri": GOOGLE_OAUTH_REDIRECT_URI, "grant_type": "authorization_code"})
             if tok.status_code != 200:
-                logger.error(f"[google] token exchange failed: {tok.status_code}")
-                return RedirectResponse(f"{fb}/login?google_error=exchange")
+                try:
+                    gerr = (tok.json() or {}).get("error", "unknown")
+                except Exception:
+                    gerr = "unparseable"
+                # gerr is Google's error CODE only (e.g. invalid_client, redirect_uri_mismatch) — never a token/secret.
+                logger.error(f"[google] token exchange failed: http={tok.status_code} error={gerr} redirect_uri={GOOGLE_OAUTH_REDIRECT_URI}")
+                return RedirectResponse(f"{fb}/login?google_error=exchange&reason={gerr}")
             access_tok = tok.json().get("access_token")
             ui = await cx.get("https://www.googleapis.com/oauth2/v3/userinfo",
                               headers={"Authorization": f"Bearer {access_tok}"})
             if ui.status_code != 200:
-                return RedirectResponse(f"{fb}/login?google_error=profile")
+                logger.error(f"[google] userinfo failed: http={ui.status_code}")
+                return RedirectResponse(f"{fb}/login?google_error=profile&reason=userinfo_{ui.status_code}")
     except Exception as e:
-        logger.error(f"[google] callback error: {e}")
-        return RedirectResponse(f"{fb}/login?google_error=network")
+        logger.error(f"[google] callback network/exception: {type(e).__name__}: {e}")
+        return RedirectResponse(f"{fb}/login?google_error=network&reason={type(e).__name__}")
     info = ui.json()
     email = (info.get("email") or "").strip().lower()
     if not email or not info.get("email_verified"):
-        return RedirectResponse(f"{fb}/login?google_error=unverified")
+        logger.error(f"[google] email not verified or missing (has_email={bool(email)})")
+        return RedirectResponse(f"{fb}/login?google_error=unverified&reason=email_unverified")
     sub = info.get("sub")
     name = info.get("name") or ""
     import urllib.parse
