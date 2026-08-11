@@ -1,4 +1,4 @@
-import { Phone, Mail, MessageCircle, Download, Nfc } from "lucide-react";
+import { Phone, Mail, MessageCircle, Download, Nfc, UserPlus, CalendarClock } from "lucide-react";
 import { useLocale } from "@/i18n/useLocale";
 
 const AriadniMark = ({ className = "" }) => (
@@ -85,9 +85,24 @@ export function IndustryCard({ c, className = "" }) {
             ))}
           </div>
 
-          {/* main CTA */}
-          <div className="mt-5 w-full rounded-xl border py-3 text-center text-[13px] font-medium text-white" style={{ borderColor: `${ac}80`, backgroundColor: `${ac}12` }} data-testid={`ind-exchange-${c.id}`}>
-            {t("exchange.title")}
+          {/* main CTAs — Exchange Contact (left) + Book a Meeting (right), display-only preview */}
+          <div className="mt-5 grid w-full grid-cols-2 gap-2.5">
+            <div
+              className="flex items-center justify-center gap-1.5 rounded-xl px-2 py-3 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide text-black"
+              style={{ background: ac }}
+              data-testid={`ind-exchange-${c.id}`}
+            >
+              <UserPlus className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+              <span className="min-w-0">{t("exchange.title")}</span>
+            </div>
+            <div
+              className="flex items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide"
+              style={{ borderColor: `${ac}80`, backgroundColor: `${ac}12`, color: ac }}
+              data-testid={`ind-book-${c.id}`}
+            >
+              <CalendarClock className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+              <span className="min-w-0">{t("industryCard.book")}</span>
+            </div>
           </div>
 
           {/* tap micro-copy */}

@@ -674,3 +674,26 @@ Distinct platform-operator experience at `/control/*`, separate from the custome
 
 **Not connected (external creds needed): Stripe (all money metrics + real price migration), transactional email (delivery), Sentry (deep health).**
 
+
+---
+
+## Industry Preview Card CTAs — Book a Meeting added (2026-06-11) — DONE, verified in preview
+
+**Request:** Add a **BOOK A MEETING** CTA next to **EXCHANGE CONTACT** on the "Industry template" preview cards (the ones in the user's screenshots: Alex Morgan/Real Estate, Michael Anderson/Business, etc.).
+
+**What these "templates" actually are:** The single shared component `frontend/src/components/landing/IndustryCard.jsx`, which powers all **12** industry designs (real_estate, business, sales, technology, healthcare, legal, education, hospitality, automotive, beauty, finance, custom). Rendered on: Landing showcase, `/industries` (IndustryShowcase), and Create-card Step-1 industry picker.
+
+**Implemented (preview only, not deployed):**
+- Replaced the single "Exchange Contact" block in `IndustryCard.jsx` with a `grid grid-cols-2` row: **EXCHANGE CONTACT** (left, filled accent, `data-testid=ind-exchange-{id}`) + **BOOK A MEETING** (right, bordered accent tint, `data-testid=ind-book-{id}`), with UserPlus / CalendarClock icons.
+- Kept **display-only** (no dialogs / no booking logic wired) — these are marketing/preview mockups, per user instruction.
+- Each industry's accent/background/typography preserved (accent-driven styling via `ac`).
+- Side-by-side on desktop AND mobile (fixed 360px card, no wrap/overflow); RTL-safe (grid auto-reverses, no directional margins).
+- Added locale key `industryCard.book`: EN "Book a Meeting" / AR "احجز اجتماعاً" / ES "Reservar reunión".
+
+**Verification (preview):**
+- Desktop (/industries): all 12 cards show both CTAs, correct per-industry accents.
+- Mobile 390px: Finance/Beauty confirmed side-by-side, clean.
+- Arabic RTL: `dir=rtl`, Arabic label renders, Exchange on RIGHT / Book on LEFT (correct order, verified via bounding boxes).
+- All 12 `ind-exchange-*` + `ind-book-*` present (DOM check). All 3 locale JSONs valid.
+
+**Untouched (as required):** `ExecutiveBlackGold.jsx` (real published profile already has both working CTAs), `BeigeLuxuryExecutive.jsx`, `FutureProfessional.jsx` (legacy/hidden), Google Sign-In, Google Calendar OAuth, booking APIs.

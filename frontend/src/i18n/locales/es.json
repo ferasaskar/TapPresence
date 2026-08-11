@@ -1003,7 +1003,8 @@
     "email": "Correo",
     "whatsapp": "WhatsApp",
     "save": "Guardar",
-    "tap": "Toca tu tarjeta"
+    "tap": "Toca tu tarjeta",
+    "book": "Reservar reunión"
   },
   "nfc": {
     "title": "Tarjetas NFC",

@@ -1003,7 +1003,8 @@
     "email": "Email",
     "whatsapp": "WhatsApp",
     "save": "Save",
-    "tap": "Tap your card"
+    "tap": "Tap your card",
+    "book": "Book a Meeting"
   },
   "nfc": {
     "title": "NFC cards",
