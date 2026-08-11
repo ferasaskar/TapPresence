@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useLocale } from "@/i18n/useLocale";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { User, Mail, ShieldCheck, Globe, Clock, CreditCard, LogOut, Building2, Download, Trash2, Shield, Loader2, Nfc } from "lucide-react";
+import { User, Mail, ShieldCheck, Globe, Clock, CreditCard, LogOut, Building2, Download, Trash2, Shield, Loader2, Nfc, Calendar, CheckCircle2, AlertTriangle } from "lucide-react";
 
 const COMMON_TZS = [
   "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Sao_Paulo",
@@ -68,6 +68,41 @@ export default function Settings() {
   };
 
   useEffect(() => { api.get("/admin/cards").then(({ data }) => setCardCount(data.length)).catch(() => setCardCount(0)); }, []);
+
+  // Google Calendar integration
+  const [params, setParams] = useSearchParams();
+  const [gcal, setGcal] = useState(null);
+  const [gcalBusy, setGcalBusy] = useState(false);
+  const loadGcal = () => api.get("/integrations/google/calendar/status").then(({ data }) => setGcal(data)).catch(() => setGcal({ configured: false, connected: false }));
+  useEffect(() => { loadGcal(); }, []);
+  useEffect(() => {
+    const r = params.get("calendar");
+    if (!r) return;
+    if (r === "connected") toast.success("Google Calendar connected");
+    else toast.error(`Couldn't connect Google Calendar${params.get("reason") ? ` (${params.get("reason")})` : ""}`);
+    params.delete("calendar"); params.delete("reason"); setParams(params, { replace: true });
+    loadGcal();
+    // eslint-disable-next-line
+  }, []);
+  const connectGcal = async () => {
+    setGcalBusy(true);
+    try {
+      const { data } = await api.get("/integrations/google/calendar/connect");
+      window.location.href = data.authorization_url;
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Google Calendar is not available");
+      setGcalBusy(false);
+    }
+  };
+  const disconnectGcal = async () => {
+    setGcalBusy(true);
+    try {
+      await api.post("/integrations/google/calendar/disconnect");
+      toast.success("Google Calendar disconnected");
+      await loadGcal();
+    } catch { toast.error("Could not disconnect"); }
+    finally { setGcalBusy(false); }
+  };
 
   const exportData = async () => {
     setExporting(true);
@@ -162,6 +197,38 @@ export default function Settings() {
 
           <Link to="/privacy-center" className="mt-4 inline-block text-sm text-[#D4AF37] hover:underline" data-testid="settings-privacy-center">{t("landing.footer.privacyChoices")}</Link>
         </div>
+
+        {/* Integrations */}
+        {gcal?.configured && (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-[#11121A] p-6" data-testid="settings-integrations">
+            <p className="mb-4 flex items-center gap-2 text-xs uppercase tracking-wider text-[#D4AF37]"><Calendar className="h-3.5 w-3.5" /> Integrations</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium text-white">
+                  Google Calendar
+                  {gcal.connected && !gcal.needs_reconnect && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-300" data-testid="gcal-connected-badge"><CheckCircle2 className="h-3 w-3" /> Connected</span>}
+                  {gcal.needs_reconnect && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300" data-testid="gcal-reconnect-badge"><AlertTriangle className="h-3 w-3" /> Reconnect needed</span>}
+                </p>
+                <p className="mt-0.5 truncate text-sm text-white/50">
+                  {gcal.connected && !gcal.needs_reconnect
+                    ? `Bookings sync to ${gcal.email || "your Google Calendar"}.`
+                    : gcal.needs_reconnect
+                    ? "Access expired or was revoked. Reconnect to keep syncing bookings."
+                    : "Automatically add TapPresence bookings to your Google Calendar."}
+                </p>
+              </div>
+              {gcal.connected && !gcal.needs_reconnect ? (
+                <button onClick={disconnectGcal} disabled={gcalBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/10 disabled:opacity-60" data-testid="gcal-disconnect-btn">
+                  {gcalBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4 text-[#D4AF37]" />} Disconnect
+                </button>
+              ) : (
+                <button onClick={connectGcal} disabled={gcalBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#D4AF37] px-5 py-2.5 text-sm font-medium text-[#050607] transition-colors hover:bg-[#E8B764] disabled:opacity-60" data-testid="gcal-connect-btn">
+                  {gcalBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />} {gcal.needs_reconnect ? "Reconnect" : "Connect Google Calendar"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="mt-5 flex flex-wrap gap-3">
           <button onClick={() => navigate("/admin")} className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-5 py-2.5 text-sm text-white/80 hover:text-white" data-testid="settings-manage-card"><CreditCard className="h-4 w-4 text-[#D4AF37]" /> {t("settings.manageCard")}</button>

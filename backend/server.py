@@ -18,7 +18,7 @@ import qrcode
 import requests
 from PIL import Image, ImageDraw, ImageFont
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File, Header
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -1220,6 +1220,7 @@ async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Hea
     })
     await db.analytics_events.insert_one({"id": str(uuid.uuid4()), "cardSlug": slug, "type": "tap", "key": "booking_completed", "created_at": now})
     await dispatch_webhooks(card.get("workspace_id"), "meeting.booked", {"id": meeting["id"], "guest": body.name.strip(), "type": mt["title"], "start_utc": meeting.get("start_utc"), "cardSlug": slug})
+    await sync_meeting_calendar(meeting["id"])
     meeting.pop("_id", None)
     result = {"ok": True, "manage_token": manage_token, "meeting": meeting}
     await idempotency_store(idempotency_key, f"book:{slug}", result)
@@ -1229,6 +1230,224 @@ async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Hea
 def _sanitize_meeting(m: dict) -> dict:
     m.pop("_id", None)
     return m
+
+
+# ============================ Google Calendar integration (separate flow — does NOT touch Sign-In) ============================
+import httpx as _httpx
+import urllib.parse as _urlparse
+
+GCAL_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or ""
+GCAL_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or ""
+GCAL_REDIRECT_URI = os.environ.get("GOOGLE_CALENDAR_REDIRECT_URI") or ""
+# Minimum scope needed to create/update/delete events (+ openid/email to label the connection).
+GCAL_SCOPE = "openid email https://www.googleapis.com/auth/calendar.events"
+GCAL_ACTIVE_STATUSES = {"scheduled", "rescheduled", "confirmed"}
+
+
+def _gcal_configured() -> bool:
+    return bool(GCAL_CLIENT_ID and GCAL_CLIENT_SECRET and GCAL_REDIRECT_URI)
+
+
+def _gcal_frontend_base() -> str:
+    suffix = "/api/integrations/google/calendar/callback"
+    if GCAL_REDIRECT_URI.endswith(suffix):
+        return GCAL_REDIRECT_URI[: -len(suffix)]
+    return PUBLIC_APP_URL
+
+
+class _NeedsReconnect(Exception):
+    pass
+
+
+async def _gcal_access_token(user_id: str):
+    """Valid access token for the user (refreshing if needed). None if not connected.
+    Raises _NeedsReconnect if the stored grant was revoked/invalidated. Tokens never leave the server."""
+    conn = await db.google_calendar_connections.find_one({"user_id": user_id}, {"_id": 0})
+    if not conn or conn.get("revoked"):
+        return None
+    now = datetime.now(timezone.utc)
+    exp = conn.get("access_expiry")
+    if conn.get("access_token") and exp and datetime.fromisoformat(exp) > now + timedelta(seconds=60):
+        return conn["access_token"]
+    rt = conn.get("refresh_token")
+    if not rt:
+        return None
+    async with _httpx.AsyncClient(timeout=15) as cx:
+        r = await cx.post("https://oauth2.googleapis.com/token", data={
+            "client_id": GCAL_CLIENT_ID, "client_secret": GCAL_CLIENT_SECRET,
+            "refresh_token": rt, "grant_type": "refresh_token"})
+    if r.status_code != 200:
+        gerr = ""
+        try:
+            gerr = (r.json() or {}).get("error", "")
+        except Exception:
+            pass
+        logging.error(f"[gcal] token refresh failed user={user_id} http={r.status_code} error={gerr}")
+        if gerr in ("invalid_grant", "invalid_client"):
+            await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"revoked": True, "updated_at": now.isoformat()}})
+            raise _NeedsReconnect()
+        return None
+    tok = r.json()
+    at = tok.get("access_token")
+    new_exp = (now + timedelta(seconds=int(tok.get("expires_in", 3600)))).isoformat()
+    await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"access_token": at, "access_expiry": new_exp, "revoked": False, "updated_at": now.isoformat()}})
+    return at
+
+
+def _gcal_event_body(m: dict) -> dict:
+    loc = m.get("location_detail") or ("Video call" if m.get("location_type") == "video" else "")
+    lines = [f"Booked via TapPresence (/{m.get('cardSlug', '')})",
+             f"Guest: {m.get('visitor_name', '')}",
+             f"Email: {m.get('visitor_email', '')}" if m.get("visitor_email") else "",
+             f"Phone: {m.get('visitor_phone', '')}" if m.get("visitor_phone") else "",
+             f"Note: {m.get('note', '')}" if m.get("note") else ""]
+    body = {
+        "summary": f"{m.get('meeting_type_title', 'Meeting')} with {m.get('visitor_name', 'guest')}",
+        "description": "\n".join([l for l in lines if l]),
+        "start": {"dateTime": m["start_utc"], "timeZone": "UTC"},
+        "end": {"dateTime": m["end_utc"], "timeZone": "UTC"},
+        "extendedProperties": {"private": {"tappresence_meeting_id": m["id"]}},
+    }
+    if loc:
+        body["location"] = loc
+    ve = (m.get("visitor_email") or "").strip()
+    if ve:
+        body["attendees"] = [{"email": ve, "displayName": m.get("visitor_name", "")}]
+    return body
+
+
+async def sync_meeting_calendar(meeting_id: str):
+    """Create/update/delete the Google Calendar event on the OWNER's calendar for a TapPresence meeting.
+    No-op if the owner hasn't connected Calendar. Only touches events this app created (stored google_event_id).
+    Never raises to the caller — a Calendar hiccup must never break booking."""
+    try:
+        m = await db.meetings.find_one({"id": meeting_id}, {"_id": 0})
+        if not m or not _gcal_configured():
+            return
+        owner = m.get("owner_user_id")
+        if not owner:
+            return
+        conn = await db.google_calendar_connections.find_one({"user_id": owner}, {"_id": 0, "revoked": 1})
+        if not conn or conn.get("revoked"):
+            return
+        try:
+            at = await _gcal_access_token(owner)
+        except _NeedsReconnect:
+            return
+        if not at:
+            return
+        headers = {"Authorization": f"Bearer {at}", "Content-Type": "application/json"}
+        eid = m.get("google_event_id")
+        base = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        async with _httpx.AsyncClient(timeout=15) as cx:
+            if m.get("status") == "cancelled":
+                if eid:
+                    await cx.delete(f"{base}/{eid}", headers=headers)
+                    await db.meetings.update_one({"id": meeting_id}, {"$set": {"google_event_id": None}})
+                return
+            body = _gcal_event_body(m)
+            if eid:
+                await cx.patch(f"{base}/{eid}", headers=headers, json=body)
+            elif m.get("status") in GCAL_ACTIVE_STATUSES:
+                r = await cx.post(base, headers=headers, json=body)
+                if r.status_code in (200, 201):
+                    new_id = (r.json() or {}).get("id")
+                    if new_id:
+                        await db.meetings.update_one({"id": meeting_id}, {"$set": {"google_event_id": new_id}})
+                else:
+                    logging.error(f"[gcal] event insert failed http={r.status_code}")
+    except Exception as e:
+        logging.error(f"[gcal] sync error meeting={meeting_id}: {type(e).__name__}: {e}")
+
+
+@api_router.get("/integrations/google/calendar/status")
+async def gcal_status(user: dict = Depends(get_current_user)):
+    if not _gcal_configured():
+        return {"configured": False, "connected": False}
+    conn = await db.google_calendar_connections.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not conn:
+        return {"configured": True, "connected": False}
+    return {"configured": True, "connected": not conn.get("revoked", False),
+            "needs_reconnect": bool(conn.get("revoked")), "email": conn.get("email"),
+            "connected_at": conn.get("connected_at")}
+
+
+@api_router.get("/integrations/google/calendar/connect")
+async def gcal_connect(user: dict = Depends(get_current_user)):
+    """Returns the Google consent URL (called via XHR with the app JWT, so no token ends up in a navigable URL)."""
+    if not _gcal_configured():
+        raise HTTPException(status_code=503, detail="Google Calendar is not configured")
+    state = jwt.encode({"sub": user["id"], "type": "gcal_state",
+                        "exp": datetime.now(timezone.utc) + timedelta(minutes=10)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    params = {"client_id": GCAL_CLIENT_ID, "redirect_uri": GCAL_REDIRECT_URI, "response_type": "code",
+              "scope": GCAL_SCOPE, "access_type": "offline", "prompt": "consent",
+              "include_granted_scopes": "true", "state": state}
+    return {"authorization_url": "https://accounts.google.com/o/oauth2/v2/auth?" + _urlparse.urlencode(params)}
+
+
+@api_router.get("/integrations/google/calendar/callback")
+async def gcal_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+    fb = _gcal_frontend_base()
+    dest = f"{fb}/settings?tab=integrations"
+    if error or not code or not state:
+        return RedirectResponse(f"{dest}&calendar=error&reason={error or 'missing'}")
+    try:
+        st = jwt.decode(state, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if st.get("type") != "gcal_state":
+            raise ValueError()
+        user_id = st["sub"]
+    except Exception:
+        return RedirectResponse(f"{dest}&calendar=error&reason=state")
+    try:
+        async with _httpx.AsyncClient(timeout=15) as cx:
+            tok = await cx.post("https://oauth2.googleapis.com/token", data={
+                "code": code, "client_id": GCAL_CLIENT_ID, "client_secret": GCAL_CLIENT_SECRET,
+                "redirect_uri": GCAL_REDIRECT_URI, "grant_type": "authorization_code"})
+            if tok.status_code != 200:
+                gerr = ""
+                try:
+                    gerr = (tok.json() or {}).get("error", "")
+                except Exception:
+                    pass
+                logging.error(f"[gcal] token exchange failed http={tok.status_code} error={gerr}")
+                return RedirectResponse(f"{dest}&calendar=error&reason={gerr or 'exchange'}")
+            t = tok.json()
+            access_tok = t.get("access_token")
+            refresh_tok = t.get("refresh_token")
+            ui = await cx.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {access_tok}"})
+            email = (ui.json().get("email") if ui.status_code == 200 else "") or ""
+    except Exception as e:
+        logging.error(f"[gcal] callback exception: {type(e).__name__}: {e}")
+        return RedirectResponse(f"{dest}&calendar=error&reason=network")
+    now = datetime.now(timezone.utc)
+    existing = await db.google_calendar_connections.find_one({"user_id": user_id}, {"_id": 0, "refresh_token": 1})
+    if not refresh_tok and not (existing and existing.get("refresh_token")):
+        logging.error(f"[gcal] no refresh_token returned for user={user_id}")
+        return RedirectResponse(f"{dest}&calendar=error&reason=no_refresh_token")
+    setd = {"user_id": user_id, "email": email.lower(), "access_token": access_tok,
+            "access_expiry": (now + timedelta(seconds=int(t.get("expires_in", 3600)))).isoformat(),
+            "scope": t.get("scope", GCAL_SCOPE), "revoked": False, "updated_at": now.isoformat()}
+    if refresh_tok:
+        setd["refresh_token"] = refresh_tok  # only present on first consent / prompt=consent
+    await db.google_calendar_connections.update_one({"user_id": user_id},
+        {"$set": setd, "$setOnInsert": {"connected_at": now.isoformat()}}, upsert=True)
+    return RedirectResponse(f"{dest}&calendar=connected")
+
+
+@api_router.post("/integrations/google/calendar/disconnect")
+async def gcal_disconnect(user: dict = Depends(get_current_user)):
+    conn = await db.google_calendar_connections.find_one({"user_id": user["id"]}, {"_id": 0})
+    if conn:
+        revoke_tok = conn.get("refresh_token") or conn.get("access_token")
+        if revoke_tok:
+            try:
+                async with _httpx.AsyncClient(timeout=10) as cx:
+                    await cx.post("https://oauth2.googleapis.com/revoke", data={"token": revoke_tok},
+                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
+            except Exception:
+                pass
+        await db.google_calendar_connections.delete_one({"user_id": user["id"]})
+    return {"ok": True}
 
 
 @api_router.get("/meetings/manage/{token}")
@@ -1249,6 +1468,7 @@ async def manage_cancel(token: str):
                                  "$push": {"history": {"at": now, "event": "cancelled", "by": "guest"}}})
     if m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
+    await sync_meeting_calendar(m["id"])
     return {"ok": True}
 
 
@@ -1273,6 +1493,7 @@ async def manage_reschedule(token: str, body: Dict[str, Any]):
         "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(), "status": "rescheduled", "updated_at": now,
         "reminders": [{"offset_hours": 24, "status": "scheduled", "provider": "NOT_CONFIGURED"}, {"offset_hours": 1, "status": "scheduled", "provider": "NOT_CONFIGURED"}]},
         "$push": {"history": {"at": now, "event": "rescheduled", "by": "guest"}}})
+    await sync_meeting_calendar(m["id"])
     return {"ok": True}
 
 
@@ -1468,6 +1689,7 @@ async def manage_accept_proposal(token: str):
         "$push": {"history": {"at": now, "event": "proposal_accepted", "by": "guest"}}})
     if m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_confirmed", "detail": m.get("meeting_type_title", "")}}})
+    await sync_meeting_calendar(m["id"])
     return {"ok": True}
 
 
@@ -1496,6 +1718,7 @@ async def admin_reschedule(meeting_id: str, body: Dict[str, Any], user: dict = D
     await db.meetings.update_one({"id": meeting_id}, {"$set": {
         "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(), "status": "rescheduled", "updated_at": now},
         "$push": {"history": {"at": now, "event": "rescheduled", "by": user.get("email")}}})
+    await sync_meeting_calendar(meeting_id)
     return {"ok": True}
 
 

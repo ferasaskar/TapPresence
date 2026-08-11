@@ -1,5 +1,15 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## GOOGLE CALENDAR INTEGRATION (2026-06, preview/staging only — NOT deployed to prod) — IMPLEMENTED, backend curl-verified + UI smoke-verified; live OAuth round-trip requires manual test
+Separate OAuth flow from Sign-In (own callback/scope) so the working Sign-In is untouched. Scope: `openid email https://www.googleapis.com/auth/calendar.events` (minimum), access_type=offline, prompt=consent. Reuses GOOGLE_OAUTH_CLIENT_ID/SECRET; new env `GOOGLE_CALENDAR_REDIRECT_URI`.
+- Endpoints (server.py, /api): `GET /integrations/google/calendar/status`, `GET /integrations/google/calendar/connect` (XHR → {authorization_url}), `GET /integrations/google/calendar/callback`, `POST /integrations/google/calendar/disconnect` (revokes at Google + deletes record).
+- Refresh tokens stored server-side only in Mongo `google_calendar_connections`; never sent to client or logged. Status returns only connected/email/connected_at/needs_reconnect.
+- `sync_meeting_calendar()` hooked into booking + cancel + reschedule (guest/admin) + accept-proposal; stores `google_event_id` on the meeting; create/patch/delete on owner's primary calendar; best-effort (never breaks booking); handles revoked grant → needs_reconnect.
+- Frontend: Settings → Integrations card (Connect/Disconnect/Reconnect, status badges) at `/settings`.
+- ⚠️ Blocker for testing: register the preview calendar redirect URI in Google Cloud. calendar.events is SENSITIVE → needs Google verification before prod (Test Users work in Testing mode). Do NOT deploy to prod until verified.
+
+
+
 ## GOOGLE OAUTH SIGN-IN (server-side auth-code flow) (2026-06, iteration 32) — IMPLEMENTED & TESTING-AGENT VERIFIED (backend 11/11, frontend 100%)
 User choices: backend authorization-code flow (not GIS); new Google users → Individual/Team selection step like normal signup (Individual→trial, Team→enforced min seats); existing email/password users auto-linked by Google-verified email (no duplicates); credentials via env only.
 
