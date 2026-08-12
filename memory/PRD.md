@@ -777,3 +777,16 @@ Requested scope (verified): `openid email https://www.googleapis.com/auth/calend
 Conclusion: NOT a callback/code bug — the substring check `"calendar.events" not in granted_scope` correctly rejects because Google truly returned no calendar scope. Callback validation is correct; would accept `.../auth/calendar.events`.
 Root cause: on the NEW tappresence-preview GCP project, calendar.events is not added to the OAuth consent screen scope list (and/or Google Calendar API not enabled), so Google filters the sensitive scope and grants only email/openid. Test-User status alone is insufficient.
 Fix (USER, Google Cloud, no code change): enable Google Calendar API + add scope .../auth/calendar.events to the tappresence-preview OAuth consent screen, then retry Connect. No production/credential/code changes made.
+
+---
+
+## Homepage product-purpose copy for Google Brand Verification (2026-06-11) — preview done; awaiting deploy
+Brand Verification rejected: "home page does not explain the purpose of your app."
+Additive-only change (no OAuth/auth/routing/db/pricing/functionality touched):
+- Landing hero (above the fold, always-visible plain text, no login) now shows purpose + capabilities:
+  - purpose: "TapPresence is a digital business card and professional networking platform."
+  - capabilities: "Create and share professional digital cards using QR and NFC, capture leads, book meetings, manage contacts, and track engagement — all in one place."
+- Added i18n keys landing.hero.purpose + landing.hero.capabilities (EN/AR/ES).
+- Updated public/index.html <meta name="description"> to the purpose statement.
+Verified in preview: both texts render above fold (capabilities y~662 < 900) publicly.
+Production tappresence.com still serves OLD bundle (main.1a92b477.js) without the copy -> user must REDEPLOY. Do not resubmit Brand Verification until after redeploy + agent re-verifies live text.

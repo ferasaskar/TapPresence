@@ -91,6 +91,13 @@ function Hero() {
             {t("landing.hero.subtitle")}
           </motion.p>
 
+          <p className="mt-5 max-w-[560px] text-[16px] font-medium leading-relaxed text-[#D7DAE0]" data-testid="hero-purpose">
+            {t("landing.hero.purpose")}
+          </p>
+          <p className="mt-2.5 max-w-[560px] text-[14px] leading-relaxed text-[#9096A0]" data-testid="hero-capabilities">
+            {t("landing.hero.capabilities")}
+          </p>
+
           <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }}
             className="mt-8 flex flex-wrap gap-3">
             <Link to="/register" className="lp-btn-gold lp-press lp-sweep inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-create">
