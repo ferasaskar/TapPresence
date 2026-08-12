@@ -1,7 +1,8 @@
 import os
 import io
-import uuid
 import re
+import html
+import uuid
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -362,6 +363,103 @@ async def get_public_card(slug: str, lang: str = None):
         if not ent.get("active"):
             raise HTTPException(status_code=410, detail="This card is currently inactive.")
     return _apply_lang(card, lang)
+
+
+def _abs_url(u: str) -> str:
+    """Resolve a stored image reference to an absolute, crawler-fetchable URL."""
+    if not u:
+        return ""
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    if u.startswith("/") and PUBLIC_APP_URL:
+        return f"{PUBLIC_APP_URL}{u}"
+    return ""
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+@api_router.get("/og/{slug}")
+async def card_og(slug: str, lang: str = None):
+    """Crawler-visible per-card Open Graph / Twitter metadata.
+
+    Serves a minimal HTML document (no SPA execution required) using ONLY public
+    card fields. Respects publication + active-subscription rules; unknown, draft
+    or paused cards return 404 so no private/unpublished data is exposed. Human
+    browsers are redirected to the normal React public profile."""
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    wsid = card.get("workspace_id")
+    if wsid:
+        ent = await resolve_entitlements(wsid)
+        if not ent.get("active"):
+            raise HTTPException(status_code=404, detail="Card not found")
+    card = _apply_lang(card, lang)
+    idn = card.get("identity", {}) or {}
+
+    name = (idn.get("fullName") or slug).strip()
+    job = (idn.get("jobTitle") or "").strip()
+    company = (idn.get("company") or "").strip()
+    bio = (idn.get("bio") or "").strip()
+
+    role_line = " · ".join([p for p in (job, company) if p])
+    title = f"{name} — {role_line}" if role_line else name
+    if role_line:
+        desc = bio or f"Connect with {name}, {role_line}. Save the contact, book a meeting and exchange details — powered by TapPresence."
+    else:
+        desc = bio or f"Connect with {name}. Save the contact, book a meeting and exchange details — powered by TapPresence."
+    title = _clip(title, 90)
+    desc = _clip(desc, 200)
+
+    image = _abs_url(idn.get("profilePhoto") or "")
+    if not image:
+        image = f"{PUBLIC_APP_URL}/logo512.png" if PUBLIC_APP_URL else "/logo512.png"
+    canonical = f"{PUBLIC_APP_URL}/{slug}" if PUBLIC_APP_URL else f"/{slug}"
+
+    active_lang = card.get("_activeLang") or "en"
+    is_rtl = active_lang == "ar"
+    e = html.escape
+    doc = f"""<!doctype html>
+<html lang="{e(active_lang)}"{' dir="rtl"' if is_rtl else ''}>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{e(title)}</title>
+<meta name="description" content="{e(desc)}" />
+<link rel="canonical" href="{e(canonical)}" />
+<meta property="og:type" content="profile" />
+<meta property="og:site_name" content="TapPresence" />
+<meta property="og:title" content="{e(title)}" />
+<meta property="og:description" content="{e(desc)}" />
+<meta property="og:url" content="{e(canonical)}" />
+<meta property="og:image" content="{e(image)}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{e(title)}" />
+<meta name="twitter:description" content="{e(desc)}" />
+<meta name="twitter:image" content="{e(image)}" />
+<script>
+  // Real browsers that land here go straight to the interactive card; crawlers stay for the tags.
+  (function () {{
+    try {{
+      var ua = navigator.userAgent || "";
+      var isBot = /bot|crawl|spider|facebookexternalhit|slurp|bing|preview|whatsapp|telegram|slack|discord|embed|linkedin|twitter|pinterest|applebot/i.test(ua);
+      if (!isBot) window.location.replace("/{e(slug)}");
+    }} catch (err) {{}}
+  }})();
+</script>
+</head>
+<body>
+<h1>{e(title)}</h1>
+<p>{e(desc)}</p>
+<p><a href="{e(canonical)}">Open {e(name)}'s TapPresence card</a></p>
+</body>
+</html>"""
+    return Response(content=doc, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=300"})
+
 
 
 @api_router.get("/cards/{slug}/vcard")
