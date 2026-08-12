@@ -817,3 +817,11 @@ Google side ready: Issuer 3388000000023187647, Generic Class tappresence_busines
 Runtime check (read-only): GOOGLE_APPLICATION_CREDENTIALS unset; GCP metadata server NOT reachable; google.auth.default() times out -> NOT on GCP, no keyless ADC / workload identity. WIF not viable (no configurable OIDC identity on Emergent runtime).
 Conclusion: a JSON service-account key IS required, stored as backend secret env GOOGLE_WALLET_SA_JSON (never in repo/frontend). Backend already wired: env GOOGLE_WALLET_ISSUER_ID + GOOGLE_WALLET_SA_JSON; feature flag google_wallet gates on both (platform_v1.py:896); libs installed (google-auth, google-api-python-client, cryptography, PyJWT). Wallet passes section at platform_v1.py:1711.
 No key created, no code/config changed. Next: user provides key -> set GOOGLE_WALLET_SA_JSON + ISSUER_ID in preview .env, wire Save-to-Wallet (RS256 JWT), verify in preview; prod set secret + redeploy. Least privilege: Wallet Object Issuer role; rotate periodically.
+
+---
+
+## Google Wallet credentials configured (2026-06-11) — preview only, NO wallet code changes yet
+- Set in preview backend/.env (git-ignored, masked): GOOGLE_WALLET_ISSUER_ID=3388000000023187647, GOOGLE_WALLET_SA_JSON=<base64 of service-account JSON> (project tappresence-production, SA tappresence-wallet@tappresence-production.iam.gserviceaccount.com).
+- Format: base64-encoded SA JSON (decode + json.loads at use time). Validated: parses; google-auth service_account.Credentials loads it (scope wallet_object.issuer). /api/wallet/status now google.configured=true; no secret leak in API.
+- Save-to-Wallet flow NOT implemented yet (endpoint still stub at platform_v1.py:1728) — awaiting user approval to build JWT/pass creation.
+- SECURITY: prod key was pasted in chat -> user to ROTATE after setup. Production: set secret directly in deployment env (not chat) + redeploy. Least privilege: Wallet Object Issuer role.
