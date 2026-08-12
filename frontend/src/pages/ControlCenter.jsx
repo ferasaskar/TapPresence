@@ -363,15 +363,42 @@ const Plans = () => {
   const [reason, setReason] = useState("");
   const [versions, setVersions] = useState([]);
   const [resolved, setResolved] = useState({});
+  const [resolvedDraft, setResolvedDraft] = useState({});
   const load = () => api.get("/admin/commercial").then((r) => { setCfg(r.data.config); setDraft(JSON.parse(JSON.stringify(r.data.config))); }).catch(() => {});
   const loadResolved = () => api.get("/commercial/pricing").then((r) => setResolved(r.data.resolved_all || {})).catch(() => {});
   useEffect(() => { load(); loadResolved(); cget("/pricing/versions").then((r) => setVersions(r.items || [])).catch(() => {}); }, []);
+  const patch = () => {
+    const rp = { USD: draft?.regional_pricing?.USD };
+    (draft?.manual_price_markets || []).forEach((m) => { if (draft?.regional_pricing?.[m]) rp[m] = draft.regional_pricing[m]; });
+    return {
+      trial: { days: draft?.trial?.days, enabled: draft?.trial?.enabled },
+      plans: { team: { min_seats: draft?.plans?.team?.min_seats } },
+      regional_pricing: rp,
+      fx_rates: draft?.fx_rates,
+      manual_price_markets: draft?.manual_price_markets || [],
+    };
+  };
+  // Live server-side resolve of the (unsaved) draft — no currency math in the frontend.
+  useEffect(() => {
+    if (!draft) return;
+    const t = setTimeout(() => {
+      api.post("/admin/control/pricing/resolve", { patch: patch() }).then((r) => setResolvedDraft(r.data.resolved_all || {})).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [draft]); // eslint-disable-line
   if (!draft) return <Loader />;
   const setP = (path, val) => { const d = { ...draft }; let o = d; const keys = path.split("."); for (let i = 0; i < keys.length - 1; i++) { o[keys[i]] = { ...(o[keys[i]] || {}) }; o = o[keys[i]]; } o[keys[keys.length - 1]] = val; setDraft(d); };
-  const patch = () => ({
-    trial: { days: draft.trial?.days, enabled: draft.trial?.enabled },
-    plans: { team: { min_seats: draft.plans?.team?.min_seats } },
-    regional_pricing: { [draft.default_market || "USD"]: draft.regional_pricing?.[draft.default_market || "USD"] },
+  const isManual = (m) => (draft.manual_price_markets || []).includes(m);
+  const toggleManual = (m, makeManual) => setDraft((prev) => {
+    const d = JSON.parse(JSON.stringify(prev));
+    const set = new Set(d.manual_price_markets || []);
+    if (makeManual) {
+      set.add(m);
+      const r = resolvedDraft[m] || resolved[m] || {};
+      d.regional_pricing[m] = { symbol: r.symbol, pro_month: r.pro_month, pro_year: r.pro_year, team_seat_month: r.team_seat_month, team_seat_year: r.team_seat_year };
+    } else { set.delete(m); }
+    d.manual_price_markets = [...set];
+    return d;
   });
   const doPreview = async () => { try { setPreview(await api.post("/admin/control/pricing/preview", { patch: patch(), apply_to: applyTo }).then((r) => r.data)); setStep(1); } catch (e) { toast.error("Preview failed"); } };
   const doPublish = async () => { try { await api.post("/admin/control/pricing/publish", { patch: patch(), apply_to: applyTo, reason }); toast.success("Pricing published & live on public site"); setStep(2); load(); cget("/pricing/versions").then((r) => setVersions(r.items || [])); } catch (e) { toast.error("Publish failed"); } };
@@ -395,26 +422,53 @@ const Plans = () => {
           <button onClick={() => setDraft(JSON.parse(JSON.stringify(cfg)))} className="rounded-lg border border-white/12 px-4 py-2 text-sm text-white/60">Reset</button>
         </div>
       </Panel>
-      <Panel title="Converted currencies (live)" testId="plans-converted">
-        <p className="mb-3 text-[11px] text-white/40">USD is the base. Other currencies auto-convert from USD (change USD above and they follow). A currency shows <b className="text-sky-300">Manual</b> only if an intentional local override is set in Commercial settings.</p>
+      <Panel title="Regional currencies" testId="plans-converted">
+        <p className="mb-3 text-[11px] text-white/40">USD is the base. Non-base currencies are <b className="text-white/60">Auto</b> (convert from USD via an editable FX rate) or <b className="text-sky-300">Manual</b> (fixed local price). Switch Manual→Auto to resume converting from the current USD base. Prices below are resolved live from your unsaved draft; click <b className="text-[#D6A653]">Preview Impact</b> then Publish to go live.</p>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-xs">
+          <table className="w-full min-w-[860px] text-xs">
             <thead><tr className="text-left uppercase tracking-wide text-white/35">
-              <th className="pb-2 pr-3">Market</th><th className="pb-2 pr-3">Source</th><th className="pb-2 pr-3">Pro mo/yr</th><th className="pb-2 pr-3">Pro save</th><th className="pb-2 pr-3">Team mo/yr</th><th className="pb-2">Team save</th>
+              <th className="pb-2 pr-3">Market</th><th className="pb-2 pr-3">Source</th><th className="pb-2 pr-3">FX ×USD</th><th className="pb-2 pr-3">Pro mo / yr</th><th className="pb-2 pr-3">Pro save</th><th className="pb-2 pr-3">Team mo / yr</th><th className="pb-2">Team save</th>
             </tr></thead>
             <tbody>
-              {Object.entries(resolved).map(([m, p]) => (
-                <tr key={m} className="border-t border-white/6 text-white/70" data-testid={`converted-${m}`}>
-                  <td className="py-1.5 pr-3 font-medium text-white/85">{m}</td>
-                  <td className="py-1.5 pr-3">
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${p.pricing_source === "base" ? "bg-[#D6A653]/15 text-[#D6A653]" : p.pricing_source === "manual" ? "bg-sky-500/15 text-sky-300" : "bg-white/10 text-white/55"}`} data-testid={`converted-src-${m}`}>{p.pricing_source}</span>
-                  </td>
-                  <td className="py-1.5 pr-3">{p.symbol}{p.pro_month} / {p.symbol}{p.pro_year}</td>
-                  <td className="py-1.5 pr-3">{p.pro_annual_savings_pct}%</td>
-                  <td className="py-1.5 pr-3">{p.symbol}{p.team_seat_month} / {p.symbol}{p.team_seat_year}</td>
-                  <td className="py-1.5">{p.team_annual_savings_pct}%</td>
-                </tr>
-              ))}
+              {(draft.fx_rates ? Object.keys({ USD: 1, ...draft.fx_rates }) : ["USD"]).map((m) => {
+                const p = resolvedDraft[m] || resolved[m] || {};
+                const base = m === "USD";
+                const manual = !base && isManual(m);
+                const sym = p.symbol || "";
+                const inp = "w-16 rounded border border-white/12 bg-white/5 px-1.5 py-1 text-white outline-none focus:border-[#D6A653]/50";
+                return (
+                  <tr key={m} className="border-t border-white/6 text-white/70 align-middle" data-testid={`converted-${m}`}>
+                    <td className="py-1.5 pr-3 font-medium text-white/85">{m}</td>
+                    <td className="py-1.5 pr-3">
+                      {base ? (
+                        <span className="rounded-full bg-[#D6A653]/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-[#D6A653]" data-testid={`converted-src-${m}`}>BASE</span>
+                      ) : (
+                        <button onClick={() => toggleManual(m, !manual)} data-testid={`toggle-manual-${m}`}
+                          className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${manual ? "bg-sky-500/15 text-sky-300" : "bg-white/10 text-white/55"}`} title="Toggle Auto/Manual">
+                          <span data-testid={`converted-src-${m}`}>{manual ? "MANUAL" : "AUTO"}</span>
+                        </button>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      {base ? <span className="text-white/40">1.0</span> : (
+                        <input type="number" step="0.0001" disabled={manual} value={draft.fx_rates?.[m] ?? ""} onChange={(e) => setP(`fx_rates.${m}`, Number(e.target.value))} data-testid={`fx-${m}`} className={`w-20 rounded border border-white/12 bg-white/5 px-1.5 py-1 text-white outline-none focus:border-[#D6A653]/50 disabled:opacity-40`} />
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {manual ? (
+                        <span className="inline-flex items-center gap-1">{sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.pro_month ?? ""} onChange={(e) => setP(`regional_pricing.${m}.pro_month`, Number(e.target.value))} data-testid={`man-${m}-pro_month`} className={inp} /> / {sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.pro_year ?? ""} onChange={(e) => setP(`regional_pricing.${m}.pro_year`, Number(e.target.value))} data-testid={`man-${m}-pro_year`} className={inp} /></span>
+                      ) : <span data-testid={`res-${m}-pro`}>{sym}{p.pro_month} / {sym}{p.pro_year}</span>}
+                    </td>
+                    <td className="py-1.5 pr-3" data-testid={`save-${m}-pro`}>{p.pro_annual_savings_pct}%</td>
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {manual ? (
+                        <span className="inline-flex items-center gap-1">{sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.team_seat_month ?? ""} onChange={(e) => setP(`regional_pricing.${m}.team_seat_month`, Number(e.target.value))} data-testid={`man-${m}-team_seat_month`} className={inp} /> / {sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.team_seat_year ?? ""} onChange={(e) => setP(`regional_pricing.${m}.team_seat_year`, Number(e.target.value))} data-testid={`man-${m}-team_seat_year`} className={inp} /></span>
+                      ) : <span data-testid={`res-${m}-team`}>{sym}{p.team_seat_month} / {sym}{p.team_seat_year}</span>}
+                    </td>
+                    <td className="py-1.5" data-testid={`save-${m}-team`}>{p.team_annual_savings_pct}%</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

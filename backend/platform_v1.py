@@ -2607,6 +2607,21 @@ async def control_pricing_publish(body: PricingChangeIn, user: dict = Depends(cu
     return {"ok": True, "version_id": version["id"], "migrated_existing": migrated, "config": merged}
 
 
+@platform_router.post("/admin/control/pricing/resolve")
+async def control_pricing_resolve(body: PricingChangeIn, user: dict = Depends(current_user)):
+    """Resolve a PROPOSED (unsaved) pricing draft for every market — read-only, no writes.
+    Lets the Control Center show live converted prices/savings as the admin edits,
+    with all currency conversion done server-side (never in the frontend)."""
+    _require_super(user)
+    current = await get_commercial_config()
+    proposed = _deep_merge(dict(current), body.patch or {})
+    return {
+        "resolved_all": {m: resolve_market_pricing(proposed, m) for m in COMMERCIAL_MARKETS},
+        "fx_rates": {**DEFAULT_FX_RATES, **(proposed.get("fx_rates") or {})},
+        "manual_price_markets": proposed.get("manual_price_markets") or [],
+    }
+
+
 @platform_router.get("/admin/control/pricing/versions")
 async def control_pricing_versions(user: dict = Depends(current_user)):
     _require_super(user)
