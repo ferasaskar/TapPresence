@@ -1799,14 +1799,22 @@ async def wallet_status():
 
 
 @platform_router.get("/cards/{slug}/wallet/{platform}")
-async def card_wallet_pass(slug: str, platform: str):
-    """Return a wallet pass for the card's contact. Provider-abstracted:
-    reports Not Configured until Apple/Google Wallet credentials are supplied."""
+async def card_wallet_pass(slug: str, platform: str, user: dict = Depends(current_user)):
+    """Owner-only wallet pass for the card's contact. Provider-abstracted:
+    reports Not Configured until Apple/Google Wallet credentials are supplied.
+    Only the card owner (or an authorized workspace admin) may generate the pass."""
     if platform not in ("apple", "google"):
         raise HTTPException(400, "Unsupported wallet platform")
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
     if not card:
         raise HTTPException(404, "Card not found")
+    # Authorization: SUPER_ADMIN, workspace admin roles, or the card's own owner.
+    if user.get("role") != "SUPER_ADMIN":
+        m = await db.memberships.find_one(
+            {"user_id": user["id"], "workspace_id": card.get("workspace_id")}, {"_id": 0})
+        admin_roles = ("WORKSPACE_OWNER", "WORKSPACE_ADMIN", "MANAGER")
+        if not m or (m.get("role") not in admin_roles and card.get("owner_user_id") != user["id"]):
+            raise HTTPException(403, "Not authorized to generate a wallet pass for this card")
     cap = _wallet_capability()[platform]
     ident = card.get("identity", {})
     contact = card.get("contact", {})

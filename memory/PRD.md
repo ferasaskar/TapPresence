@@ -838,3 +838,11 @@ Built into the EXISTING wallet endpoint (no duplicate architecture). Apple Walle
 - Proof: object created+read back from Google with correct fields; button click -> GET /wallet/google -> navigates to pay.google.com/gp/v/save/<RS256 JWT> (iss=SA email, aud=google, typ=savetowallet). Leak check: no private key in API/JWT.
 - GOOGLE-SIDE BLOCKER: issuer/class publishing access — if the Google Pay & Wallet issuer is in demo/test mode, only accounts added as "Test accounts" can save (others see [TEST ONLY] / cannot save) until Google grants publishing access. Also tp-mark.png must stay publicly reachable in prod.
 - Security: SA JSON server-side only; never in frontend/logs/responses. Not deployed to production.
+
+---
+
+## Google Wallet made OWNER-ONLY (2026-06-12) — preview only, verified, NOT deployed
+Product fix: the Save-to-Wallet action is for the CARD OWNER, not public visitors.
+- Backend (platform_v1.py, card_wallet_pass): endpoint GET /api/cards/{slug}/wallet/{platform} now requires auth (Depends(current_user)) + ownership. Auth rule: SUPER_ADMIN, or a workspace admin role (WORKSPACE_OWNER/WORKSPACE_ADMIN/MANAGER) of the card's workspace, or the card's owner_user_id. Else 403; logged-out 401. Existing Generic Object upsert + save JWT logic UNCHANGED.
+- Frontend: removed the wallet button + wallet state/logic from PublicProfile.jsx entirely (visitors keep Share/Call/WhatsApp/Email/Message/Exchange Contact/Book Meeting/QR). Added "Add to Google Wallet" action into the owner dashboard card action row in Admin.jsx (data-testid wallet-{slug}), shown only when /wallet/status google.configured && card.status==="published"; uses authenticated api client, opens save_url in new tab.
+- Verified in preview (curl + screenshots): logged-out -> 401; non-owner (feras@ariadni.ai) -> 403; owner (work@gmail.com) -> 200 with save_url; repeat owner call returns SAME object_id (sync=updated, no duplicate). Public profile shows no wallet button; owner My Card shows wallet icon.

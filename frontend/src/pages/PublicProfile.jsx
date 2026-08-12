@@ -7,7 +7,7 @@ import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
 import { useLocale } from "@/i18n/useLocale";
 import { toast } from "sonner";
-import { Loader2, Globe, Share2, Wallet } from "lucide-react";
+import { Loader2, Globe, Share2 } from "lucide-react";
 
 const LANG_LABELS = { en: "EN", ar: "العربية", es: "ES", fr: "FR", de: "DE", pt: "PT" };
 const RTL = ["ar"];
@@ -20,8 +20,6 @@ export default function PublicProfile() {
   const [state, setState] = useState("loading");
   const [lang, setLang] = useState(searchParams.get("lang") || localStorage.getItem(`lang_${slug}`) || "");
   const [bookOpen, setBookOpen] = useState(false);
-  const [walletOk, setWalletOk] = useState(false);
-  const [walletLoading, setWalletLoading] = useState(false);
 
   const track = useCallback(
     (type, key = "") => {
@@ -82,21 +80,6 @@ export default function PublicProfile() {
     }
   };
 
-  useEffect(() => {
-    api.get("/wallet/status").then((r) => setWalletOk(!!r?.data?.capabilities?.google?.configured)).catch(() => {});
-  }, []);
-
-  const addToGoogleWallet = async () => {
-    setWalletLoading(true);
-    track("tap", "add_to_google_wallet");
-    try {
-      const r = await api.get(`/cards/${slug}/wallet/google`);
-      if (r?.data?.save_url) window.location.href = r.data.save_url;
-      else toast.error(t("wallet.error"));
-    } catch { toast.error(t("wallet.error")); }
-    finally { setWalletLoading(false); }
-  };
-
   if (state === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-ivory-bg" data-testid="profile-loading">
@@ -142,15 +125,6 @@ export default function PublicProfile() {
           </div>
         )}
         <TemplateRenderer data={card} />
-        {walletOk && (
-          <div className="pointer-events-none fixed bottom-20 left-0 z-[60] flex w-full justify-center px-4">
-            <button onClick={addToGoogleWallet} disabled={walletLoading} data-testid="add-to-google-wallet-btn"
-              className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white shadow-xl ring-1 ring-white/15 transition-transform hover:scale-[1.03] active:scale-95 disabled:opacity-60">
-              {walletLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4 text-[#D6A653]" />}
-              {t("wallet.addGoogle")}
-            </button>
-          </div>
-        )}
         <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} ownerName={card?.identity?.fullName || ""} />
       </div>
     </ProfileContext.Provider>

@@ -6,7 +6,7 @@ import AnalyticsDialog from "@/components/admin/AnalyticsDialog";
 import { OwnerNav } from "@/components/admin/OwnerNav";
 import { TEMPLATES } from "@/components/templates/TemplateRenderer";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, ExternalLink, Loader2, BarChart3, LayoutGrid, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, ExternalLink, Loader2, BarChart3, LayoutGrid, Copy, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Admin() {
@@ -14,6 +14,8 @@ export default function Admin() {
   const [cards, setCards] = useState(null);
   const [editing, setEditing] = useState(null);
   const [statsCard, setStatsCard] = useState(null);
+  const [walletOk, setWalletOk] = useState(false);
+  const [walletBusy, setWalletBusy] = useState(null);
 
   const load = () => {
     setCards(null);
@@ -21,6 +23,23 @@ export default function Admin() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    api.get("/wallet/status").then((r) => setWalletOk(!!r?.data?.capabilities?.google?.configured)).catch(() => {});
+  }, []);
+
+  const addToGoogleWallet = async (card) => {
+    setWalletBusy(card.id);
+    try {
+      const { data } = await api.get(`/cards/${card.slug}/wallet/google`);
+      if (data?.save_url) window.open(data.save_url, "_blank", "noopener");
+      else toast.error("Google Wallet is not available for this card");
+    } catch {
+      toast.error("Could not generate wallet pass");
+    } finally {
+      setWalletBusy(null);
+    }
+  };
 
   const remove = async (card) => {
     if (!window.confirm(`Delete ${card.slug}?`)) return;
@@ -110,6 +129,11 @@ export default function Admin() {
                   <button onClick={() => setStatsCard(c)} className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`stats-${c.slug}`}><BarChart3 className="h-3.5 w-3.5" /></button>
                   <button onClick={() => duplicate(c)} className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`duplicate-${c.slug}`}><Copy className="h-3.5 w-3.5" /></button>
                   <a href={`/${c.slug}`} target="_blank" rel="noreferrer" className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-white" data-testid={`view-${c.slug}`}><ExternalLink className="h-3.5 w-3.5" /></a>
+                  {walletOk && c.status === "published" && (
+                    <button onClick={() => addToGoogleWallet(c)} disabled={walletBusy === c.id} className="rounded-lg p-2 text-white/55 transition-colors hover:bg-white/5 hover:text-[#D6A653] disabled:opacity-50" title="Add to Google Wallet" data-testid={`wallet-${c.slug}`}>
+                    {walletBusy === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wallet className="h-3.5 w-3.5" />}
+                    </button>
+                  )}
                   <button onClick={() => remove(c)} className="ml-auto rounded-lg p-2 text-red-400/70 transition-colors hover:bg-red-500/10 hover:text-red-400" data-testid={`delete-${c.slug}`}><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               </motion.div>
