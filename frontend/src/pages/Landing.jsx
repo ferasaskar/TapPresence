@@ -454,6 +454,23 @@ function Footer() {
   );
 }
 
+/* ---------------------------------------------------------------- GOOGLE CALENDAR INFO */
+function GoogleCalendarInfo() {
+  const { t } = useLocale();
+  return (
+    <section id="google-calendar" className="mx-auto max-w-[1320px] px-5 py-12 sm:px-8 lg:px-12" data-testid="gcal-info-section">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-white/[0.03] p-7 sm:p-9">
+        <h2 className="text-xl font-semibold tracking-tight text-white" data-testid="gcal-info-title">{t("landing.gcal.title")}</h2>
+        <p className="mt-3 text-[15px] leading-relaxed text-[#A2A6AD]" data-testid="gcal-info-body">{t("landing.gcal.body")}</p>
+        <p className="mt-4 text-[14px] text-[#8B9099]">
+          {t("landing.gcal.linkLabel")}{" "}
+          <a href="https://tappresence.com/privacy" className="text-[#D6A653] underline underline-offset-2 hover:text-[#F0CD84]" data-testid="gcal-info-privacy-link">https://tappresence.com/privacy</a>
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /* ---------------------------------------------------------------- PAGE */
 export default function Landing() {
   return (
@@ -465,6 +482,7 @@ export default function Landing() {
       <TemplateShowcase />
       <TeamsTestimonials />
       <PricingSection />
+      <GoogleCalendarInfo />
       <FinalCTA />
       <Footer />
     </div>

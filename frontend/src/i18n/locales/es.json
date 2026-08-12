@@ -610,6 +610,11 @@
       "purpose": "TapPresence es una plataforma de tarjetas de presentación digitales y networking profesional.",
       "capabilities": "Crea y comparte tarjetas digitales profesionales con QR y NFC, capta leads, agenda reuniones, gestiona contactos y mide la interacción, todo en un solo lugar."
     },
+    "gcal": {
+      "title": "Integración con Google Calendar",
+      "body": "TapPresence se conecta opcionalmente a Google Calendar para permitir la reserva de reuniones. Cuando un usuario conecta su cuenta de Google, TapPresence usa el permiso de Google Calendar (calendar.events) únicamente para crear, reprogramar y eliminar eventos de calendario de las reuniones reservadas a través de TapPresence. Los usuarios pueden desconectar Google Calendar en cualquier momento.",
+      "linkLabel": "Lee nuestra Política de Privacidad:"
+    },
     "stats": [
       "Toca o escanea",
       "Seguimientos con IA",

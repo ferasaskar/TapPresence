@@ -790,3 +790,14 @@ Additive-only change (no OAuth/auth/routing/db/pricing/functionality touched):
 - Updated public/index.html <meta name="description"> to the purpose statement.
 Verified in preview: both texts render above fold (capabilities y~662 < 900) publicly.
 Production tappresence.com still serves OLD bundle (main.1a92b477.js) without the copy -> user must REDEPLOY. Do not resubmit Brand Verification until after redeploy + agent re-verifies live text.
+
+---
+
+## Homepage Google Calendar Integration disclosure section (2026-06-11) — preview done; awaiting deploy
+Brand Verification still flagged home page purpose re: Google data. Added a public crawlable section on Landing (before FinalCTA/Footer), additive-only.
+- New `GoogleCalendarInfo` section in Landing.jsx (id=google-calendar, testids gcal-info-*), plain HTML text, no login.
+- Copy: "Google Calendar Integration" + exact disclosure (calendar.events used only to create/reschedule/delete events for booked meetings; users can disconnect anytime).
+- Visible crawlable link to https://tappresence.com/privacy (anchor text = URL).
+- i18n keys landing.gcal.{title,body,linkLabel} added EN/AR/ES.
+Verified in preview publicly. Production tappresence.com needs REDEPLOY; verify live after deploy before resubmitting Brand Verification.
+No OAuth/Calendar/auth/routing/db/pricing/functionality changes.
