@@ -809,3 +809,11 @@ No OAuth/Calendar/auth/routing/db/pricing/functionality changes.
 2) QR center logo: backend _brand_qr increased center mark 26%->30% (server.py) with tighter white backing (pad=lw/8). Decoder-verified scannable with pyzbar (native + 3x upscale) — larger pad at 30% failed, lw/8 passes. Endpoint /api/cards/{slug}/qr decodes to correct URL.
 3) Pricing: investigated — NOT a bug. Old CommercialSettings editor is redirected to /control/plans; Control Center edits regional_pricing which public/billing/checkout read (one source of truth); no hardcoded prices in frontend. User confirmed pricing updates correctly. Resolved, no changes.
 Preview only; user must redeploy for production.
+
+---
+
+## Google Wallet auth method investigation (2026-06-11) — report only, NO changes
+Google side ready: Issuer 3388000000023187647, Generic Class tappresence_business_card, SA tappresence-wallet@tappresence-production.iam.gserviceaccount.com (Developer access).
+Runtime check (read-only): GOOGLE_APPLICATION_CREDENTIALS unset; GCP metadata server NOT reachable; google.auth.default() times out -> NOT on GCP, no keyless ADC / workload identity. WIF not viable (no configurable OIDC identity on Emergent runtime).
+Conclusion: a JSON service-account key IS required, stored as backend secret env GOOGLE_WALLET_SA_JSON (never in repo/frontend). Backend already wired: env GOOGLE_WALLET_ISSUER_ID + GOOGLE_WALLET_SA_JSON; feature flag google_wallet gates on both (platform_v1.py:896); libs installed (google-auth, google-api-python-client, cryptography, PyJWT). Wallet passes section at platform_v1.py:1711.
+No key created, no code/config changed. Next: user provides key -> set GOOGLE_WALLET_SA_JSON + ISSUER_ID in preview .env, wire Save-to-Wallet (RS256 JWT), verify in preview; prod set secret + redeploy. Least privilege: Wallet Object Issuer role; rotate periodically.
