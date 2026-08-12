@@ -21,7 +21,7 @@ const Reveal = ({ children, delay = 0, className = "", ...rest }) => (
 );
 
 const AriadniMark = ({ className = "" }) => (
-  <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} aria-hidden />
+  <img src="/tp-mark-tight.png" alt="TapPresence" className={`object-contain ${className}`} aria-hidden />
 );
 
 const goTo = (hash) => {
@@ -29,9 +29,9 @@ const goTo = (hash) => {
   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
-const Brand = ({ size = "text-xl" }) => (
+const Brand = ({ size = "text-base lg:text-lg" }) => (
   <span className={`flex items-center gap-2 ${size} font-semibold tracking-tight`} data-testid="brand">
-    <AriadniMark className="h-8 w-8 text-[#D6A653]" />
+    <AriadniMark className="h-9 w-9 lg:h-10 lg:w-10 text-[#D6A653]" />
     TapPresence
   </span>
 );

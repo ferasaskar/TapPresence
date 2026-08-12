@@ -801,3 +801,11 @@ Brand Verification still flagged home page purpose re: Google data. Added a publ
 - i18n keys landing.gcal.{title,body,linkLabel} added EN/AR/ES.
 Verified in preview publicly. Production tappresence.com needs REDEPLOY; verify live after deploy before resubmitting Brand Verification.
 No OAuth/Calendar/auth/routing/db/pricing/functionality changes.
+
+---
+
+## Header logo + QR center logo UI fixes (2026-06-11) — preview done, verified
+1) Header logo: tp-mark.png had huge transparent padding (glyph filled only 33%x27% of canvas) → looked tiny. Created cropped square asset frontend/public/tp-mark-tight.png (glyph fills ~89%x72%); Landing AriadniMark now uses it. Brand icon h-9 lg:h-10, wordmark reduced to text-base lg:text-lg for balance. Original tp-mark.png untouched (QR still uses it).
+2) QR center logo: backend _brand_qr increased center mark 26%->30% (server.py) with tighter white backing (pad=lw/8). Decoder-verified scannable with pyzbar (native + 3x upscale) — larger pad at 30% failed, lw/8 passes. Endpoint /api/cards/{slug}/qr decodes to correct URL.
+3) Pricing: investigated — NOT a bug. Old CommercialSettings editor is redirected to /control/plans; Control Center edits regional_pricing which public/billing/checkout read (one source of truth); no hardcoded prices in frontend. User confirmed pricing updates correctly. Resolved, no changes.
+Preview only; user must redeploy for production.
