@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -1319,6 +1319,7 @@ async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Hea
     await db.analytics_events.insert_one({"id": str(uuid.uuid4()), "cardSlug": slug, "type": "tap", "key": "booking_completed", "created_at": now})
     await dispatch_webhooks(card.get("workspace_id"), "meeting.booked", {"id": meeting["id"], "guest": body.name.strip(), "type": mt["title"], "start_utc": meeting.get("start_utc"), "cardSlug": slug})
     await sync_meeting_calendar(meeting["id"])
+    await _send_meeting_emails(meeting, "requested" if approval else "booked")
     meeting.pop("_id", None)
     result = {"ok": True, "manage_token": manage_token, "meeting": meeting}
     await idempotency_store(idempotency_key, f"book:{slug}", result)
@@ -1328,6 +1329,91 @@ async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Hea
 def _sanitize_meeting(m: dict) -> dict:
     m.pop("_id", None)
     return m
+
+
+# ---- Transactional booking emails (Resend) — completes the EXISTING meeting lifecycle ----
+def _fmt_meet_dt(iso_utc: str, tzname: str) -> str:
+    try:
+        dt = datetime.fromisoformat((iso_utc or "").replace("Z", "+00:00")).astimezone(ZoneInfo(tzname or "UTC"))
+        return dt.strftime("%a, %d %b %Y · %I:%M %p ") + (tzname or "UTC")
+    except Exception:
+        return iso_utc or ""
+
+
+async def _meeting_host_email(m: dict):
+    """Resolve the card owner / host email for a meeting (owner_user_id, else workspace owner)."""
+    uid = m.get("owner_user_id")
+    if uid:
+        u = await db.users.find_one({"id": uid}, {"_id": 0, "email": 1})
+        if u and u.get("email"):
+            return u["email"]
+    wsid = m.get("workspace_id")
+    if wsid:
+        ws = await db.workspaces.find_one({"id": wsid}, {"_id": 0, "owner_id": 1})
+        if ws and ws.get("owner_id"):
+            u = await db.users.find_one({"id": ws["owner_id"]}, {"_id": 0, "email": 1})
+            if u and u.get("email"):
+                return u["email"]
+    return None
+
+
+async def _send_meeting_emails(m: dict, kind: str):
+    """Send the correct transactional emails for the existing meeting lifecycle.
+    kind: booked | requested | confirmed | rescheduled | cancelled | proposed.
+    Non-blocking best-effort; failures are logged (never raised into the request)."""
+    try:
+        host_email = await _meeting_host_email(m)
+        guest_email = (m.get("visitor_email") or "").strip()
+        host_name = m.get("owner_name") or "your host"
+        guest_name = m.get("visitor_name") or "Guest"
+        mtype = m.get("meeting_type_title") or "Meeting"
+        dur = m.get("duration") or 30
+        loc = m.get("location_detail") or (m.get("location_type") or "video").title()
+        when_guest = _fmt_meet_dt(m.get("start_utc", ""), m.get("visitor_tz") or m.get("owner_timezone"))
+        when_host = _fmt_meet_dt(m.get("start_utc", ""), m.get("owner_timezone"))
+        manage_url = f"{PUBLIC_APP_URL}/m/{m.get('manage_token', '')}"
+        dash_url = f"{PUBLIC_APP_URL}/meetings"
+        book_url = f"{PUBLIC_APP_URL}/{m.get('cardSlug', '')}"
+        guest_line = f"<br><b>Guest:</b> {guest_name}" + (f" · {guest_email}" if guest_email else "")
+
+        def details(when):
+            return (f"<b>Meeting:</b> {mtype}<br><b>When:</b> {when}<br>"
+                    f"<b>Duration:</b> {dur} min<br><b>Where:</b> {loc}")
+
+        specs = {
+            "booked": {
+                "guest": ("Your meeting is booked", f"Hi {guest_name}, your {mtype} with {host_name} is confirmed.<br><br>{details(when_guest)}", "Manage booking", manage_url),
+                "host": ("New meeting booked", f"{guest_name} booked a {mtype} with you.<br><br>{details(when_host)}{guest_line}", "View in dashboard", dash_url),
+            },
+            "requested": {
+                "guest": ("We received your meeting request", f"Hi {guest_name}, your {mtype} request with {host_name} was received and is pending confirmation.<br><br>{details(when_guest)}", "Manage request", manage_url),
+                "host": ("New meeting request — approval needed", f"{guest_name} requested a {mtype}.<br><br>{details(when_host)}{guest_line}", "Review request", dash_url),
+            },
+            "confirmed": {
+                "guest": ("Your meeting is confirmed", f"Hi {guest_name}, your {mtype} with {host_name} is now confirmed.<br><br>{details(when_guest)}", "Manage booking", manage_url),
+                "host": ("Meeting confirmed", f"The {mtype} with {guest_name} is confirmed.<br><br>{details(when_host)}", "View in dashboard", dash_url),
+            },
+            "rescheduled": {
+                "guest": ("Your meeting was rescheduled", f"Hi {guest_name}, your {mtype} with {host_name} has a new time.<br><br>{details(when_guest)}", "Manage booking", manage_url),
+                "host": ("Meeting rescheduled", f"The {mtype} with {guest_name} was rescheduled.<br><br>{details(when_host)}", "View in dashboard", dash_url),
+            },
+            "cancelled": {
+                "guest": ("Your meeting was cancelled", f"Hi {guest_name}, your {mtype} with {host_name} scheduled for {when_guest} has been cancelled.", "Book another time", book_url),
+                "host": ("Meeting cancelled", f"The {mtype} with {guest_name} ({when_host}) was cancelled.", "View in dashboard", dash_url),
+            },
+            "proposed": {
+                "guest": ("A new time was proposed", f"Hi {guest_name}, {host_name} proposed a new time for your {mtype}.<br><br><b>Proposed:</b> {_fmt_meet_dt(m.get('proposed_start_utc') or m.get('start_utc'), m.get('visitor_tz') or m.get('owner_timezone'))}<br>Open your booking to accept or decline.", "Review & accept", manage_url),
+            },
+        }
+        spec = specs.get(kind, {})
+        if guest_email and spec.get("guest"):
+            t, i, c, u = spec["guest"]
+            await send_email(guest_email, f"{t} · TapPresence", _email_shell(t, i, c, u))
+        if host_email and spec.get("host"):
+            t, i, c, u = spec["host"]
+            await send_email(host_email, f"{t} · TapPresence", _email_shell(t, i, c, u))
+    except Exception as e:
+        logger.error(f"[email] meeting email failed (kind={kind}) for {m.get('id')}: {e}")
 
 
 # ============================ Google Calendar integration (separate flow — does NOT touch Sign-In) ============================
@@ -1588,6 +1674,7 @@ async def manage_cancel(token: str):
     if m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
     await sync_meeting_calendar(m["id"])
+    await _send_meeting_emails({**m, "status": "cancelled"}, "cancelled")
     return {"ok": True}
 
 
@@ -1613,6 +1700,7 @@ async def manage_reschedule(token: str, body: Dict[str, Any]):
         "reminders": [{"offset_hours": 24, "status": "scheduled", "provider": "NOT_CONFIGURED"}, {"offset_hours": 1, "status": "scheduled", "provider": "NOT_CONFIGURED"}]},
         "$push": {"history": {"at": now, "event": "rescheduled", "by": "guest"}}})
     await sync_meeting_calendar(m["id"])
+    await _send_meeting_emails({**m, "start_utc": start_utc.isoformat()}, "rescheduled")
     return {"ok": True}
 
 
@@ -1725,6 +1813,10 @@ async def admin_meeting_status(meeting_id: str, body: Dict[str, Any], user: dict
     if status in ("cancelled", "declined") and m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
     await sync_meeting_calendar(meeting_id)
+    if status == "confirmed":
+        await _send_meeting_emails({**m, "status": "confirmed"}, "confirmed")
+    elif status in ("cancelled", "declined"):
+        await _send_meeting_emails({**m, "status": status}, "cancelled")
     return {"ok": True}
 
 
@@ -1789,6 +1881,7 @@ async def admin_propose_time(meeting_id: str, body: Dict[str, Any], user: dict =
         "proposed_start_utc": start_utc.isoformat(), "proposed_end_utc": end_utc.isoformat(),
         "status": "time_proposed", "updated_at": now},
         "$push": {"history": {"at": now, "event": "time_proposed", "by": user.get("email")}}})
+    await _send_meeting_emails({**m, "proposed_start_utc": start_utc.isoformat()}, "proposed")
     return {"ok": True}
 
 
@@ -1810,6 +1903,7 @@ async def manage_accept_proposal(token: str):
     if m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_confirmed", "detail": m.get("meeting_type_title", "")}}})
     await sync_meeting_calendar(m["id"])
+    await _send_meeting_emails({**m, "start_utc": start_utc.isoformat(), "status": "confirmed"}, "confirmed")
     return {"ok": True}
 
 
@@ -1839,6 +1933,7 @@ async def admin_reschedule(meeting_id: str, body: Dict[str, Any], user: dict = D
         "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(), "status": "rescheduled", "updated_at": now},
         "$push": {"history": {"at": now, "event": "rescheduled", "by": user.get("email")}}})
     await sync_meeting_calendar(meeting_id)
+    await _send_meeting_emails({**m, "start_utc": start_utc.isoformat()}, "rescheduled")
     return {"ok": True}
 
 

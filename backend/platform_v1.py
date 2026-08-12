@@ -99,9 +99,10 @@ async def send_email(to: str, subject: str, html: str) -> bool:
         await asyncio.to_thread(resend.Emails.send, {
             "from": SENDER_EMAIL, "to": [to], "subject": subject, "html": html,
         })
+        logger.info(f"[email] sent '{subject}' to {to}")
         return True
     except Exception as e:
-        logger.error(f"[email] send failed to {to}: {e}")
+        logger.error(f"[email] send failed to {to} ('{subject}'): {e}")
         return False
 
 
