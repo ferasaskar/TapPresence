@@ -873,6 +873,10 @@
   "qr": {
     "scanToView": "Escanear para ver"
   },
+  "wallet": {
+    "addGoogle": "Añadir a Google Wallet",
+    "error": "No se pudo crear el pase. Inténtalo de nuevo."
+  },
   "share": {
     "whatsapp": "WhatsApp",
     "email": "Correo",

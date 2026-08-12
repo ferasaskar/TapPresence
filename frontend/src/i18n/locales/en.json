@@ -873,6 +873,10 @@
   "qr": {
     "scanToView": "Scan to view"
   },
+  "wallet": {
+    "addGoogle": "Add to Google Wallet",
+    "error": "Could not create wallet pass. Please try again."
+  },
   "share": {
     "whatsapp": "WhatsApp",
     "email": "Email",

@@ -825,3 +825,16 @@ No key created, no code/config changed. Next: user provides key -> set GOOGLE_WA
 - Format: base64-encoded SA JSON (decode + json.loads at use time). Validated: parses; google-auth service_account.Credentials loads it (scope wallet_object.issuer). /api/wallet/status now google.configured=true; no secret leak in API.
 - Save-to-Wallet flow NOT implemented yet (endpoint still stub at platform_v1.py:1728) — awaiting user approval to build JWT/pass creation.
 - SECURITY: prod key was pasted in chat -> user to ROTATE after setup. Production: set secret directly in deployment env (not chat) + redeploy. Least privilege: Wallet Object Issuer role.
+
+---
+
+## Google Wallet "Save to Google Wallet" — IMPLEMENTED in preview (2026-06-11), verified, not deployed
+Built into the EXISTING wallet endpoint (no duplicate architecture). Apple Wallet untouched.
+- Endpoint (extended): GET /api/cards/{slug}/wallet/google -> upserts Generic Object via Wallet REST + returns signed save JWT {save_url, object_id, class_id, sync, pass_data}. GET /api/wallet/status used by frontend to conditionally show button.
+- Object ID: {ISSUER_ID}.{sanitized_slug} e.g. 3388000000023187647.edrina-cepele. Class: 3388000000023187647.tappresence_business_card.
+- Pass fields: cardTitle "TapPresence"; header=full name; subheader=job title(or company); textModules Company + Job Title; logo {PUBLIC_APP_URL}/tp-mark.png; hexBackgroundColor #0B0D12; barcode QR_CODE=public profile URL; linksModuleData=profile URL.
+- Updates: deterministic id; per-request upsert (GET->PATCH if exists else INSERT) so card changes propagate, no duplicates (verified sync created then updated). JWT-inline fallback embeds full object if REST unavailable.
+- Frontend: "Add to Google Wallet" button on PublicProfile (data-testid add-to-google-wallet-btn), shown only when configured; i18n wallet.addGoogle/error EN/AR/ES. Backend: helpers _gw_* in platform_v1.py; base64 SA JSON decoded server-side only.
+- Proof: object created+read back from Google with correct fields; button click -> GET /wallet/google -> navigates to pay.google.com/gp/v/save/<RS256 JWT> (iss=SA email, aud=google, typ=savetowallet). Leak check: no private key in API/JWT.
+- GOOGLE-SIDE BLOCKER: issuer/class publishing access — if the Google Pay & Wallet issuer is in demo/test mode, only accounts added as "Test accounts" can save (others see [TEST ONLY] / cannot save) until Google grants publishing access. Also tp-mark.png must stay publicly reachable in prod.
+- Security: SA JSON server-side only; never in frontend/logs/responses. Not deployed to production.

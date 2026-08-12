@@ -22,6 +22,9 @@ import json
 import re
 import uuid
 import secrets
+import asyncio
+import base64
+import time
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
@@ -1709,6 +1712,76 @@ async def export_leads_csv(user: dict = Depends(current_user)):
                              headers={"Content-Disposition": 'attachment; filename="leads.csv"'})
 
 # ------------------------------------------------------------------ wallet passes (Phase 5, provider-abstracted)
+_GW_SCOPE = "https://www.googleapis.com/auth/wallet_object.issuer"
+
+
+def _gw_sa_info():
+    """Decode the base64 service-account JSON (server-side only). Never returned/logged."""
+    return json.loads(base64.b64decode(os.environ["GOOGLE_WALLET_SA_JSON"]))
+
+
+def _gw_object_suffix(slug):
+    return re.sub(r"[^A-Za-z0-9._-]", "-", slug)
+
+
+def _gw_build_object(card, slug):
+    issuer = os.environ["GOOGLE_WALLET_ISSUER_ID"]
+    class_id = f"{issuer}.tappresence_business_card"
+    obj_id = f"{issuer}.{_gw_object_suffix(slug)}"
+    ident = card.get("identity", {}) or {}
+    name = (ident.get("fullName") or "TapPresence").strip()
+    title = (ident.get("jobTitle") or "").strip()
+    company = (ident.get("company") or "").strip()
+    profile_url = f"{PUBLIC_APP_URL}/{slug}"
+    text_modules = []
+    if company:
+        text_modules.append({"id": "company", "header": "Company", "body": company})
+    if title:
+        text_modules.append({"id": "title", "header": "Job Title", "body": title})
+    obj = {
+        "id": obj_id,
+        "classId": class_id,
+        "state": "ACTIVE",
+        "cardTitle": {"defaultValue": {"language": "en", "value": "TapPresence"}},
+        "header": {"defaultValue": {"language": "en", "value": name}},
+        "subheader": {"defaultValue": {"language": "en", "value": title or company}},
+        "hexBackgroundColor": "#0B0D12",
+        "logo": {"sourceUri": {"uri": f"{PUBLIC_APP_URL}/tp-mark.png"},
+                 "contentDescription": {"defaultValue": {"language": "en", "value": "TapPresence"}}},
+        "textModulesData": text_modules,
+        "linksModuleData": {"uris": [{"uri": profile_url, "description": "View TapPresence card", "id": "profile"}]},
+        "barcode": {"type": "QR_CODE", "value": profile_url, "alternateText": name},
+    }
+    return obj_id, class_id, obj
+
+
+def _gw_upsert_object(obj):
+    """Insert or update the generic object via Wallet REST API (sync; call via to_thread)."""
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from google.oauth2 import service_account
+    creds = service_account.Credentials.from_service_account_info(_gw_sa_info(), scopes=[_GW_SCOPE])
+    svc = build("walletobjects", "v1", credentials=creds, cache_discovery=False)
+    try:
+        svc.genericobject().get(resourceId=obj["id"]).execute()
+        svc.genericobject().patch(resourceId=obj["id"], body=obj).execute()
+        return "updated"
+    except HttpError as e:
+        if getattr(e, "resp", None) is not None and e.resp.status == 404:
+            svc.genericobject().insert(body=obj).execute()
+            return "created"
+        raise
+
+
+def _gw_save_jwt(generic_objects):
+    info = _gw_sa_info()
+    payload = {"iss": info["client_email"], "aud": "google", "typ": "savetowallet",
+               "iat": int(time.time()), "origins": [PUBLIC_APP_URL],
+               "payload": {"genericObjects": generic_objects}}
+    token = jwt.encode(payload, info["private_key"], algorithm="RS256")
+    return token if isinstance(token, str) else token.decode()
+
+
 def _wallet_capability():
     return {
         "apple": {"configured": _configured("APPLE_WALLET_CERT_B64", "APPLE_WALLET_TEAM_ID"),
@@ -1750,8 +1823,19 @@ async def card_wallet_pass(slug: str, platform: str):
         return {"configured": False, "platform": platform,
                 "message": f"{platform.title()} Wallet is Not Configured",
                 "pass_data": pass_data}
-    # When configured, the signed .pkpass (Apple) or save-to-wallet JWT link (Google)
-    # would be produced by the provider adapter here.
+    if platform == "google":
+        obj_id, class_id, obj = _gw_build_object(card, slug)
+        try:
+            sync = await asyncio.to_thread(_gw_upsert_object, obj)
+            token = _gw_save_jwt([{"id": obj_id, "classId": class_id}])
+        except Exception as e:
+            logging.error(f"[gwallet] object upsert failed ({type(e).__name__}); embedding full object in JWT")
+            sync = "jwt_inline"
+            token = _gw_save_jwt([obj])
+        return {"configured": True, "platform": "google", "pass_data": pass_data,
+                "object_id": obj_id, "class_id": class_id, "sync": sync,
+                "save_url": f"https://pay.google.com/gp/v/save/{token}"}
+    # Apple (unchanged): the signed .pkpass would be produced by the provider adapter here.
     return {"configured": True, "platform": platform, "pass_data": pass_data,
             "pass_url": f"{PUBLIC_APP_URL}/api/cards/{slug}/wallet/{platform}/download"}
 

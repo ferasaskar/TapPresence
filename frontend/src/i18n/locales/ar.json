@@ -873,6 +873,10 @@
   "qr": {
     "scanToView": "امسح للعرض"
   },
+  "wallet": {
+    "addGoogle": "أضِف إلى Google Wallet",
+    "error": "تعذّر إنشاء بطاقة المحفظة. حاول مرة أخرى."
+  },
   "share": {
     "whatsapp": "واتساب",
     "email": "البريد",
