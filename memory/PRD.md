@@ -846,3 +846,14 @@ Product fix: the Save-to-Wallet action is for the CARD OWNER, not public visitor
 - Backend (platform_v1.py, card_wallet_pass): endpoint GET /api/cards/{slug}/wallet/{platform} now requires auth (Depends(current_user)) + ownership. Auth rule: SUPER_ADMIN, or a workspace admin role (WORKSPACE_OWNER/WORKSPACE_ADMIN/MANAGER) of the card's workspace, or the card's owner_user_id. Else 403; logged-out 401. Existing Generic Object upsert + save JWT logic UNCHANGED.
 - Frontend: removed the wallet button + wallet state/logic from PublicProfile.jsx entirely (visitors keep Share/Call/WhatsApp/Email/Message/Exchange Contact/Book Meeting/QR). Added "Add to Google Wallet" action into the owner dashboard card action row in Admin.jsx (data-testid wallet-{slug}), shown only when /wallet/status google.configured && card.status==="published"; uses authenticated api client, opens save_url in new tab.
 - Verified in preview (curl + screenshots): logged-out -> 401; non-owner (feras@ariadni.ai) -> 403; owner (work@gmail.com) -> 200 with save_url; repeat owner call returns SAME object_id (sync=updated, no duplicate). Public profile shows no wallet button; owner My Card shows wallet icon.
+
+---
+
+## Launch Closure Sprint 1 (2026-06-12) — preview only, NOT deployed
+Five scoped hardening items. No feature work; nothing outside scope touched.
+1. **Public wallet UI removed:** deleted `components/profile/WalletButtons.jsx` (Apple+Google "coming soon" stub) and its render+import from all 3 templates (BeigeLuxuryExecutive, FutureProfessional, ExecutiveBlackGold). Public visitors now show NO wallet buttons (verified in edrina-cepele DOM: wallet-buttons/wallet-apple/wallet-google absent). Owner-only Google Wallet action in My Cards (Admin.jsx) unchanged; backend wallet endpoint/JWT/upsert/authz unchanged.
+2. **/upload hardened (server.py):** 5MB max, extension whitelist {jpg,jpeg,png,gif,webp}, declared MIME check, magic-byte sniff, extension/content match. Rejects oversized(413)/bad-ext(400)/bad-mime(400)/non-image(400)/mismatch(400). Auth still required.
+3. **Admin seed fallback removed (server.py startup):** no more admin@example.com/admin123 fallback; skips seeding with a warning when ADMIN_EMAIL/ADMIN_PASSWORD unset. platform_v1.py promote block already had no fallback.
+4. **Account export whitelisted (platform_v1.py /account/export):** returns only {id,email,name,created_at,language,locale,timezone,account_type,email_verified}; no password_hash/google_id/auth_provider/_id/session internals. cards+leads preserved.
+5. **Legacy cleanup:** removed unused `SuperAdmin.jsx` page + its dead import in App.js (routes use ControlCenter). EMAIL_API_KEY/EMAIL_FROM are unused legacy .env keys — LEFT UNCHANGED (protected .env; removal out of policy).
+Tests: backend/tests/test_sprint1_closure.py — 14/14 passed. Owner wallet regression: logged-out 401, owner 200 (sync updated). Frontend compiled successfully.

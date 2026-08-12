@@ -1513,7 +1513,13 @@ async def export_account(user: dict = Depends(current_user)):
     cards = await db.digital_cards.find(q, {"_id": 0}).to_list(1000)
     slugs = [c["slug"] for c in cards]
     leads = await db.leads.find({"cardSlug": {"$in": slugs}}, {"_id": 0}).to_list(5000)
-    return {"user": user, "cards": cards, "leads": leads, "exported_at": now_iso()}
+    # Explicit safe whitelist — never export password hashes, auth identifiers
+    # (google_id/auth_provider), session/security internals or system metadata.
+    safe_user = {k: user[k] for k in (
+        "id", "email", "name", "created_at", "language", "locale", "timezone",
+        "account_type", "email_verified",
+    ) if k in user}
+    return {"user": safe_user, "cards": cards, "leads": leads, "exported_at": now_iso()}
 
 # ------------------------------------------------------------------ plans / entitlements
 @platform_router.get("/plans")

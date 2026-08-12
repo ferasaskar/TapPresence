@@ -11,7 +11,6 @@ import { SaveContactButton } from "@/components/profile/SaveContactButton";
 import { QRBlock } from "@/components/profile/QRBlock";
 import { ActionButton } from "@/components/profile/ActionButton";
 import { InquiryForm } from "@/components/profile/InquiryForm";
-import { WalletButtons } from "@/components/profile/WalletButtons";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
 import { ExchangeContactDialog } from "@/components/profile/ExchangeContactDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -290,8 +289,6 @@ export const ExecutiveBlackGold = ({ data }) => {
               <QRBlock slug={slug} className="flex flex-col items-center gap-2" imgClassName="w-32 h-32 rounded" label="Scan to open" />
             </div>
           )}
-
-          <WalletButtons slug={slug} variant="black" iconColor={GOLD} />
 
           <div className="mt-3">
             <button onClick={() => setMoreOpen((v) => !v)} data-testid="more-toggle" className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[10px] uppercase tracking-[0.2em] text-neutral-500 transition-colors hover:text-neutral-300">

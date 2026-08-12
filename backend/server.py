@@ -1746,13 +1746,46 @@ async def admin_reschedule(meeting_id: str, body: Dict[str, Any], user: dict = D
 
 # ------------------------------------------------------------------ uploads
 
+ALLOWED_UPLOAD_EXT = {"jpg", "jpeg", "png", "gif", "webp"}
+ALLOWED_UPLOAD_MIME = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _sniff_image_kind(data: bytes):
+    """Return the real image kind from magic bytes, or None if not a supported image."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
 @api_router.post("/upload")
 async def upload(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "bin"
+    ext = file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else ""
+    if ext not in ALLOWED_UPLOAD_EXT:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Allowed: JPG, PNG, GIF, WEBP.")
+    declared_type = (file.content_type or "").lower()
+    if declared_type and declared_type not in ALLOWED_UPLOAD_MIME:
+        raise HTTPException(status_code=400, detail="Unsupported content type.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5 MB.")
+    kind = _sniff_image_kind(data)
+    if kind is None:
+        raise HTTPException(status_code=400, detail="File content is not a valid image.")
+    ext_norm = "jpeg" if ext == "jpg" else ext
+    if kind != ext_norm:
+        raise HTTPException(status_code=400, detail="File content does not match its extension.")
     file_id = str(uuid.uuid4())
     path = f"{APP_NAME}/uploads/{file_id}.{ext}"
-    data = await file.read()
-    content_type = MIME_TYPES.get(ext, file.content_type or "application/octet-stream")
+    content_type = MIME_TYPES.get(ext, f"image/{kind}")
     result = put_object(path, data, content_type)
     await db.files.insert_one({
         "id": file_id, "storage_path": result["path"],
@@ -1787,19 +1820,22 @@ async def startup():
     except Exception as e:
         logger.warning(f"Index setup: {e}")
 
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-    existing = await db.users.find_one({"email": admin_email})
-    if not existing:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()), "email": admin_email,
-            "password_hash": hash_password(admin_password), "name": "Admin", "role": "admin",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        logger.info("Admin seeded")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email},
-                                  {"$set": {"password_hash": hash_password(admin_password)}})
+    admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD", "")
+    if not admin_email or not admin_password:
+        logger.warning("ADMIN_EMAIL/ADMIN_PASSWORD not set — skipping admin seed (no fallback credentials).")
+    else:
+        existing = await db.users.find_one({"email": admin_email})
+        if not existing:
+            await db.users.insert_one({
+                "id": str(uuid.uuid4()), "email": admin_email,
+                "password_hash": hash_password(admin_password), "name": "Admin", "role": "admin",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info("Admin seeded")
+        elif not verify_password(admin_password, existing["password_hash"]):
+            await db.users.update_one({"email": admin_email},
+                                      {"$set": {"password_hash": hash_password(admin_password)}})
 
     demo = await db.digital_cards.find_one({"slug": DEMO_CARD["slug"]})
     if not demo:

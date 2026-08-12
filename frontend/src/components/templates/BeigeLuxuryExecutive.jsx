@@ -9,7 +9,6 @@ import { QRBlock } from "@/components/profile/QRBlock";
 import { ActionButton } from "@/components/profile/ActionButton";
 import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
-import { WalletButtons } from "@/components/profile/WalletButtons";
 import { accentHex, accentVars } from "@/lib/accents";
 import { industryRootStyle, BASE_RGB } from "@/lib/industries";
 
@@ -182,7 +181,6 @@ export const BeigeLuxuryExecutive = ({ data }) => {
 
         {/* SHARE */}
         <ShareBar slug={slug} name={id.fullName} variant="beige" iconColor={ac} />
-        <WalletButtons slug={slug} variant="beige" iconColor={ac} />
 
         {/* FOOTER */}
         <footer className="mt-16 border-t border-ivory-border pt-8 text-center">

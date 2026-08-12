@@ -9,7 +9,6 @@ import Admin from "@/pages/Admin";
 import Home from "@/pages/Home";
 import Settings from "@/pages/Settings";
 import Team from "@/pages/Team";
-import SuperAdmin from "@/pages/SuperAdmin";
 import IndustryStudio from "@/pages/IndustryStudio";
 import Signatures from "@/pages/Signatures";
 import IntegrationHub from "@/pages/IntegrationHub";
