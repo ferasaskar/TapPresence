@@ -161,8 +161,9 @@ export const OwnerNav = ({ active }) => {
         <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2.5">
             <button onClick={() => setDrawer(true)} className="rounded-lg p-1.5 text-white/70 hover:bg-white/5 hover:text-white lg:hidden" data-testid="nav-hamburger" aria-label={t("nav.menu")}><Menu className="h-5 w-5" /></button>
-            <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 lg:hidden" data-testid="nav-brand-mobile">
-              <TpMark className="h-5 w-5" />
+            <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 lg:hidden" data-testid="nav-brand-mobile" aria-label="TapPresence">
+              <TpMark className="h-6 w-6" />
+              <span className="text-[15px] font-semibold leading-none tracking-tight text-white">Tap<span className="text-[#D6A653]">Presence</span></span>
             </button>
             <div className="hidden items-center gap-2 lg:flex" data-testid="topbar-context">
               {isAdmin ? <ShieldCheck className="h-4 w-4 text-[#D6A653]" /> : isTeam ? <Building2 className="h-4 w-4 text-white/50" /> : <User className="h-4 w-4 text-white/50" />}

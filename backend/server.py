@@ -596,9 +596,9 @@ def _brand_qr(url: str, fill: str = "#0B0D12", back: str = "#FFFFFF"):
     try:
         logo = Image.open(TP_MARK_PATH).convert("RGBA")
         qw, qh = img.size
-        lw = int(qw * 0.30)  # ~30% — clearly visible mark; H-level EC + tight white backing keeps scans reliable (decoder-verified)
+        lw = int(qw * 0.35)  # largest professionally-scannable size; H-level EC (30% recovery) + tight white backing keeps decode reliable (pyzbar-verified original + 300px + 3x, short & long slugs)
         logo = logo.resize((lw, lw), Image.LANCZOS)
-        pad = max(3, lw // 8)
+        pad = max(3, lw // 12)
         backing = Image.new("RGBA", (lw + 2 * pad, lw + 2 * pad), (255, 255, 255, 255))
         bx, by = (qw - backing.width) // 2, (qh - backing.height) // 2
         img.paste(backing, (bx, by), backing)

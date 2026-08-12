@@ -11,7 +11,7 @@ const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0
 const fmtTime = (iso, tz) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: tz });
 const fmtDay = (d) => new Date(d + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
-export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653", ownerName = "", initialGuest = null }) {
+export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653", ownerName = "", initialGuest = null, title = "Book a Meeting" }) {
   const ac = accent;
   const visitorTz = guessTz();
   const [step, setStep] = useState("type");
@@ -77,7 +77,7 @@ export function BookMeetingDialog({ open, onOpenChange, slug, accent = "#D6A653"
             {step !== "type" && step !== "done" ? (
               <button onClick={() => setStep(step === "date" ? "type" : step === "details" ? "date" : "type")} data-testid="book-back"><ArrowLeft className="h-4 w-4" style={{ color: ac }} /></button>
             ) : null}
-            <CalendarCheck className="h-5 w-5" style={{ color: ac }} /> Book a Meeting
+            <CalendarCheck className="h-5 w-5" style={{ color: ac }} /> {title}
           </DialogTitle>
         </DialogHeader>
 

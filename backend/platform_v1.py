@@ -2642,6 +2642,107 @@ async def control_pricing_versions(user: dict = Depends(current_user)):
     return {"items": await db.commercial_config_versions.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)}
 
 
+# ------------------------------------------------------------------ Promotions / Promo Codes (real Stripe Coupons + Promotion Codes)
+# The sandbox account's default API version renames PromotionCode params; pin a stable
+# version for promo calls so `coupon` is accepted (does not affect existing checkout).
+STRIPE_PROMO_API_VERSION = "2024-06-20"
+
+
+class PromotionIn(BaseModel):
+    code: str
+    discount_type: str = "percent"          # percent | amount
+    percent_off: Optional[float] = None
+    amount_off: Optional[float] = None      # major currency units (e.g. 10.00)
+    currency: str = "usd"
+    duration: str = "once"                  # once | repeating | forever
+    duration_in_months: Optional[int] = None
+    max_redemptions: Optional[int] = None
+    name: Optional[str] = None
+
+
+def _promo_out(pc: dict) -> dict:
+    cp = pc.get("coupon") or {}
+    return {
+        "id": pc.get("id"), "code": pc.get("code"), "active": pc.get("active"),
+        "times_redeemed": pc.get("times_redeemed", 0), "max_redemptions": pc.get("max_redemptions"),
+        "created": pc.get("created"),
+        "coupon": {
+            "id": cp.get("id"), "name": cp.get("name"),
+            "percent_off": cp.get("percent_off"), "amount_off": cp.get("amount_off"),
+            "currency": cp.get("currency"), "duration": cp.get("duration"),
+            "duration_in_months": cp.get("duration_in_months"), "valid": cp.get("valid"),
+        },
+    }
+
+
+@platform_router.get("/admin/control/promotions")
+async def control_promotions_list(user: dict = Depends(current_user)):
+    """List all Stripe promotion codes (with their coupon detail). Applied at Stripe-hosted checkout."""
+    _require_super(user)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe is not configured")
+    try:
+        res = await asyncio.to_thread(lambda: stripe.PromotionCode.list(limit=100, stripe_version=STRIPE_PROMO_API_VERSION))
+    except stripe.error.StripeError as e:
+        raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+    return {"items": [_promo_out(pc) for pc in (res.get("data") or [])]}
+
+
+@platform_router.post("/admin/control/promotions")
+async def control_promotions_create(body: PromotionIn, user: dict = Depends(current_user)):
+    """Create a real Stripe Coupon + Promotion Code. The code is entered by customers on the
+    existing Stripe-hosted Checkout page (allow_promotion_codes is already enabled there)."""
+    _require_super(user)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe is not configured")
+    code = (body.code or "").strip().upper()
+    if not code:
+        raise HTTPException(400, "A promo code is required")
+    duration = body.duration if body.duration in ("once", "repeating", "forever") else "once"
+    coupon_kwargs = {"duration": duration}
+    if duration == "repeating":
+        coupon_kwargs["duration_in_months"] = max(1, int(body.duration_in_months or 1))
+    if body.discount_type == "amount":
+        if not body.amount_off or float(body.amount_off) <= 0:
+            raise HTTPException(400, "A positive amount is required")
+        coupon_kwargs["amount_off"] = int(round(float(body.amount_off) * 100))
+        coupon_kwargs["currency"] = (body.currency or "usd").lower()
+    else:
+        if not body.percent_off or not (0 < float(body.percent_off) <= 100):
+            raise HTTPException(400, "Percent off must be between 0 and 100")
+        coupon_kwargs["percent_off"] = float(body.percent_off)
+    if body.name:
+        coupon_kwargs["name"] = body.name.strip()
+    try:
+        coupon = await asyncio.to_thread(lambda: stripe.Coupon.create(**coupon_kwargs, stripe_version=STRIPE_PROMO_API_VERSION))
+        pc_kwargs = {"coupon": coupon["id"], "code": code}
+        if body.max_redemptions:
+            pc_kwargs["max_redemptions"] = int(body.max_redemptions)
+        pc = await asyncio.to_thread(lambda: stripe.PromotionCode.create(**pc_kwargs, stripe_version=STRIPE_PROMO_API_VERSION))
+    except stripe.error.StripeError as e:
+        raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+    await audit(None, user["id"], "admin.promotion.create", {"code": code, "coupon_id": coupon["id"]})
+    return {"ok": True, **_promo_out(pc)}
+
+
+class PromotionToggleIn(BaseModel):
+    active: bool
+
+
+@platform_router.post("/admin/control/promotions/{promo_id}/toggle")
+async def control_promotions_toggle(promo_id: str, body: PromotionToggleIn, user: dict = Depends(current_user)):
+    """Activate / deactivate a Stripe promotion code (coupons themselves cannot be edited once created)."""
+    _require_super(user)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe is not configured")
+    try:
+        pc = await asyncio.to_thread(lambda: stripe.PromotionCode.modify(promo_id, active=bool(body.active), stripe_version=STRIPE_PROMO_API_VERSION))
+    except stripe.error.StripeError as e:
+        raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+    await audit(None, user["id"], "admin.promotion.toggle", {"id": promo_id, "active": bool(body.active)})
+    return {"ok": True, **_promo_out(pc)}
+
+
 
 
 

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import {
   LayoutDashboard, Users, Building2, CreditCard, TrendingUp, Tags, SlidersHorizontal, Gift,
   LayoutTemplate, Flag, Plug, Activity, ShieldAlert, ScrollText, Settings as SettingsIcon,
-  ExternalLink, LogOut, ShieldCheck, Menu, X, Search, Loader2, CheckCircle2, XCircle, AlertTriangle,
+  ExternalLink, LogOut, ShieldCheck, Menu, X, Search, Loader2, CheckCircle2, XCircle, AlertTriangle, Ticket,
 } from "lucide-react";
 
 const cget = (p, params) => api.get(`/admin/control${p}`, { params }).then((r) => r.data);
@@ -21,6 +21,7 @@ const SECTIONS = [
   { key: "subscriptions", label: "Subscriptions", icon: CreditCard },
   { key: "revenue", label: "Revenue & Analytics", icon: TrendingUp },
   { key: "plans", label: "Plans & Pricing", icon: Tags },
+  { key: "promotions", label: "Promotions", icon: Ticket },
   { key: "product", label: "Product & Entitlements", icon: SlidersHorizontal },
   { key: "referrals", label: "Referral Program", icon: Gift },
   { key: "templates", label: "Templates & Industries", icon: LayoutTemplate },
@@ -727,6 +728,105 @@ const Audit = () => {
   );
 };
 
+const Promotions = () => {
+  const [items, setItems] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({ code: "", discount_type: "percent", percent_off: 20, amount_off: 10, currency: "usd", duration: "once", duration_in_months: 3, max_redemptions: "" });
+  const set = (k, v) => setForm((s) => ({ ...s, [k]: v }));
+
+  const load = () => {
+    setErr("");
+    cget("/promotions").then((r) => setItems(r.items || [])).catch((e) => { setItems([]); setErr(e?.response?.data?.detail || "Could not load promotions"); });
+  };
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!form.code.trim()) { toast.error("Enter a promo code"); return; }
+    setBusy(true);
+    try {
+      const payload = { code: form.code.trim().toUpperCase(), discount_type: form.discount_type, duration: form.duration };
+      if (form.discount_type === "percent") payload.percent_off = Number(form.percent_off);
+      else { payload.amount_off = Number(form.amount_off); payload.currency = form.currency; }
+      if (form.duration === "repeating") payload.duration_in_months = Number(form.duration_in_months);
+      if (form.max_redemptions) payload.max_redemptions = Number(form.max_redemptions);
+      await api.post("/admin/control/promotions", payload);
+      toast.success(`Promo code ${payload.code} created`);
+      setForm((s) => ({ ...s, code: "", max_redemptions: "" }));
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Create failed"); }
+    finally { setBusy(false); }
+  };
+
+  const toggle = async (pc) => {
+    try { await api.post(`/admin/control/promotions/${pc.id}/toggle`, { active: !pc.active }); load(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Update failed"); }
+  };
+
+  const fmtDiscount = (c) => c.percent_off ? `${c.percent_off}% off` : c.amount_off ? `${(c.amount_off / 100).toFixed(2)} ${(c.currency || "").toUpperCase()} off` : "—";
+
+  return (
+    <div className="space-y-5" data-testid="ctrl-promotions">
+      <h2 className="text-xl font-light text-white">Promotions</h2>
+      <p className="text-[11px] text-white/40">Create real Stripe promo codes. Customers enter them on the Stripe-hosted checkout page — pricing, trials and referrals are unaffected.</p>
+      {err ? <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" data-testid="promo-error">{err}</div> : null}
+
+      <Panel title="Create promo code" testId="promo-editor">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TextField label="Code (what customers type)" value={form.code} onChange={(v) => set("code", v.toUpperCase())} testId="promo-code" />
+          <label className="block"><span className="mb-1 block text-[11px] uppercase tracking-wider text-white/40">Discount type</span>
+            <div className="flex gap-2">
+              <RadioPill on={form.discount_type === "percent"} onClick={() => set("discount_type", "percent")} testId="promo-type-percent">Percent</RadioPill>
+              <RadioPill on={form.discount_type === "amount"} onClick={() => set("discount_type", "amount")} testId="promo-type-amount">Fixed amount</RadioPill>
+            </div>
+          </label>
+          {form.discount_type === "percent" ? (
+            <NumField label="Percent off (%)" value={form.percent_off} onChange={(v) => set("percent_off", v)} testId="promo-percent" />
+          ) : (
+            <>
+              <NumField label="Amount off" value={form.amount_off} onChange={(v) => set("amount_off", v)} testId="promo-amount" />
+              <TextField label="Currency" value={form.currency} onChange={(v) => set("currency", v.toLowerCase())} testId="promo-currency" />
+            </>
+          )}
+          <label className="block"><span className="mb-1 block text-[11px] uppercase tracking-wider text-white/40">Duration</span>
+            <div className="flex flex-wrap gap-2">
+              {["once", "repeating", "forever"].map((d) => <RadioPill key={d} on={form.duration === d} onClick={() => set("duration", d)} testId={`promo-duration-${d}`}>{d}</RadioPill>)}
+            </div>
+          </label>
+          {form.duration === "repeating" ? <NumField label="Months" value={form.duration_in_months} onChange={(v) => set("duration_in_months", v)} testId="promo-months" /> : <span />}
+          <NumField label="Max redemptions (optional)" value={form.max_redemptions} onChange={(v) => set("max_redemptions", v)} testId="promo-max" />
+        </div>
+        <div className="mt-4">
+          <button onClick={create} disabled={busy} className="rounded-lg bg-[#D6A653] px-4 py-2 text-sm font-medium text-[#050607] hover:bg-[#E8B764] disabled:opacity-50" data-testid="promo-create-btn">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create promo code"}</button>
+        </div>
+      </Panel>
+
+      <Panel title="Active & past promo codes" testId="promo-list">
+        {items === null ? <Loader /> : items.length === 0 ? (
+          <p className="py-6 text-center text-sm text-white/40" data-testid="promo-empty">No promo codes yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map((pc) => (
+              <div key={pc.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/8 px-4 py-3" data-testid={`promo-row-${pc.code}`}>
+                <div className="min-w-0">
+                  <span className="font-mono text-sm font-medium text-white">{pc.code}</span>
+                  <span className="ml-3 text-xs text-[#D6A653]">{fmtDiscount(pc.coupon)}</span>
+                  <span className="ml-3 text-[11px] text-white/40">{pc.coupon.duration}{pc.coupon.duration === "repeating" ? ` · ${pc.coupon.duration_in_months}mo` : ""} · {pc.times_redeemed} used{pc.max_redemptions ? ` / ${pc.max_redemptions}` : ""}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatePill ok={pc.active} labelOk="Active" labelBad="Inactive" />
+                  <ActBtn onClick={() => toggle(pc)} tone={pc.active ? "danger" : "ok"} testId={`promo-toggle-${pc.code}`}>{pc.active ? "Deactivate" : "Activate"}</ActBtn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+};
+
+
 const ControlSettings = () => (
   <div className="space-y-4" data-testid="ctrl-settings">
     <h2 className="text-xl font-light text-white">Settings</h2>
@@ -747,7 +847,7 @@ const RadioPill = ({ on, onClick, children, testId }) => <button onClick={onClic
 const ActBtn = ({ onClick, busy, children, tone, testId }) => <button onClick={onClick} disabled={busy} data-testid={testId} className={`rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 ${tone === "danger" ? "border-red-500/40 text-red-300 hover:bg-red-500/10" : tone === "ok" ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10" : "border-white/15 text-white/70 hover:bg-white/5"}`}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}</button>;
 const HRow = ({ k, v, ok, warn }) => <div className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2.5"><span className="text-sm text-white/70">{k}</span><StatePill ok={ok} warn={warn} labelOk={v} labelBad={v} /></div>;
 
-const RENDER = { overview: Overview, customers: Customers, companies: Companies, subscriptions: Subscriptions, revenue: Revenue, plans: Plans, product: Product, referrals: Referrals, templates: Templates, flags: Flags, integrations: Integrations, health: Health, security: Security, audit: Audit, settings: ControlSettings };
+const RENDER = { overview: Overview, customers: Customers, companies: Companies, subscriptions: Subscriptions, revenue: Revenue, plans: Plans, promotions: Promotions, product: Product, referrals: Referrals, templates: Templates, flags: Flags, integrations: Integrations, health: Health, security: Security, audit: Audit, settings: ControlSettings };
 
 export default function ControlCenter() {
   const { section = "overview" } = useParams();

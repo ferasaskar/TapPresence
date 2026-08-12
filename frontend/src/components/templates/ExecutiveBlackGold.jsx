@@ -4,7 +4,7 @@ import { useProfile } from "@/context/ProfileContext";
 import { ArrowRight, UserPlus, CalendarClock, MessageCircle, Share2, Printer, QrCode, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { resolveImg, posterUrl } from "@/lib/api";
-import { buildActions, getIcon, orderedServices, orderedProjects } from "@/lib/cardHelpers";
+import { buildActions, getIcon, orderedServices, orderedProjects, bookingLabel } from "@/lib/cardHelpers";
 import { AvailabilityBadge } from "@/components/profile/AvailabilityBadge";
 import { SocialIcons } from "@/components/profile/SocialIcons";
 import { SaveContactButton } from "@/components/profile/SaveContactButton";
@@ -162,7 +162,7 @@ export const ExecutiveBlackGold = ({ data }) => {
                 className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]"
                 style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
               >
-                <CalendarClock className="h-4 w-4 shrink-0" /> Book a Meeting
+                <CalendarClock className="h-4 w-4 shrink-0" /> {bookingLabel(data)}
               </button>
             ) : (
               <a
@@ -174,7 +174,7 @@ export const ExecutiveBlackGold = ({ data }) => {
                 className="flex items-center justify-center gap-2 rounded-2xl border px-3 py-4 text-center text-[11px] font-semibold uppercase leading-tight tracking-wide transition-transform duration-300 hover:scale-[1.02] active:scale-[0.98]"
                 style={{ borderColor: gBorder, color: GOLD, background: panelTint }}
               >
-                <CalendarClock className="h-4 w-4 shrink-0" /> Book a Meeting
+                <CalendarClock className="h-4 w-4 shrink-0" /> {bookingLabel(data)}
               </a>
             )
           ) : (
@@ -368,7 +368,7 @@ export const ExecutiveBlackGold = ({ data }) => {
         [data-testid="social-icons"] a:hover{ color:${GOLD}; border-color:${GOLD}; }
       `}</style>
 
-      <ExchangeContactDialog open={exchangeOpen} onOpenChange={setExchangeOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />
+      <ExchangeContactDialog open={exchangeOpen} onOpenChange={setExchangeOpen} slug={slug} accent={GOLD} ownerName={id.fullName} />      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={GOLD} ownerName={id.fullName} title={bookingLabel(data)} />
 
       {/* MESSAGE modal */}
       <Dialog open={msgOpen} onOpenChange={setMsgOpen}>

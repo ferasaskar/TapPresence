@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
+import { useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { resolveImg } from "@/lib/api";
-import { buildActions, getIcon, orderedServices, orderedProjects } from "@/lib/cardHelpers";
+import { buildActions, getIcon, orderedServices, orderedProjects, bookingLabel, hasBooking } from "@/lib/cardHelpers";
 import { AvailabilityBadge } from "@/components/profile/AvailabilityBadge";
 import { SocialIcons } from "@/components/profile/SocialIcons";
 import { SaveContactButton } from "@/components/profile/SaveContactButton";
@@ -9,6 +10,7 @@ import { QRBlock } from "@/components/profile/QRBlock";
 import { ActionButton } from "@/components/profile/ActionButton";
 import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
+import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
 import { accentHex, accentVars } from "@/lib/accents";
 import { industryRootStyle, BASE_RGB } from "@/lib/industries";
 
@@ -30,6 +32,12 @@ export const BeigeLuxuryExecutive = ({ data }) => {
   const projects = orderedProjects(data.projects);
   const location = [id.city, id.country].filter(Boolean).join(", ");
   const ac = accentHex("beige-luxury", data.accent, data.custom_accent_color);
+  const [bookOpen, setBookOpen] = useState(false);
+  const portraitTransform = `translate(${id.imageOffsetX || 0}%, ${id.imageOffsetY || 0}%) scale(${id.imageScale || 1})`;
+  // ONE booking source of truth: native booking opens the in-app dialog; otherwise a valid external URL.
+  const bookAction = b.nativeEnabled
+    ? { key: "book", label: bookingLabel(data), icon: "CalendarClock", onClick: () => setBookOpen(true) }
+    : (actions.book || null);
 
   return (
     <div className="relative min-h-screen bg-ivory-bg text-ink font-sans overflow-hidden" style={{ ...accentVars(ac), ...industryRootStyle(data, BASE_RGB["beige-luxury"], ac) }}>
@@ -41,12 +49,15 @@ export const BeigeLuxuryExecutive = ({ data }) => {
           <div className="relative mb-8">
             <div className="absolute -inset-3 rounded-t-[1000px] rounded-b-3xl border border-[color:var(--ac-40)]" />
             {id.profilePhoto ? (
-              <img
-                src={resolveImg(id.profilePhoto)}
-                alt={id.fullName}
-                data-testid="hero-portrait"
-                className="relative w-52 h-72 object-cover rounded-t-[1000px] rounded-b-3xl shadow-sm"
-              />
+              <div className="relative w-52 h-72 overflow-hidden rounded-t-[1000px] rounded-b-3xl shadow-sm">
+                <img
+                  src={resolveImg(id.profilePhoto)}
+                  alt={id.fullName}
+                  data-testid="hero-portrait"
+                  className="h-full w-full object-cover"
+                  style={{ transform: portraitTransform, transformOrigin: "center" }}
+                />
+              </div>
             ) : (
               <div data-testid="hero-portrait" className="relative w-52 h-72 rounded-t-[1000px] rounded-b-3xl bg-ivory-hover" />
             )}
@@ -75,7 +86,7 @@ export const BeigeLuxuryExecutive = ({ data }) => {
             iconClassName="w-[18px] h-[18px]"
           />
           <ActionButton
-            action={actions.book || actions.call}
+            action={bookAction || actions.call}
             testId="hero-book-call-button"
             className="flex items-center justify-center gap-2 rounded-md bg-ink px-4 py-4 text-sm tracking-wide text-ivory-bg transition-colors duration-300 hover:bg-ink-soft"
             iconClassName="w-[18px] h-[18px]"
@@ -145,13 +156,13 @@ export const BeigeLuxuryExecutive = ({ data }) => {
         )}
 
         {/* MAIN CTA — framed */}
-        {(b.bookingUrl || c.phone) && (
+        {(hasBooking(data) || c.phone) && (
           <motion.section {...fade(0)} className="mt-16 rounded-lg border border-[color:var(--ac)] p-8 text-center" data-testid="cta-bar">
             <Overline>Let's talk</Overline>
-            <h2 className="font-serif text-3xl tracking-tight mb-3">Book a private consultation</h2>
+            <h2 className="font-serif text-3xl tracking-tight mb-3">{hasBooking(data) ? bookingLabel(data) : "Book a private consultation"}</h2>
             <p className="text-sm text-ink-soft mb-6 max-w-xs mx-auto">A focused conversation about what you're looking for — no obligation.</p>
             <ActionButton
-              action={actions.book || actions.call}
+              action={bookAction || actions.call}
               testId="cta-book-button"
               className="inline-flex items-center justify-center gap-2 rounded-md bg-ink px-8 py-3.5 text-sm tracking-wide text-ivory-bg transition-colors duration-300 hover:bg-ink-soft"
               iconClassName="w-[18px] h-[18px]"
@@ -199,6 +210,7 @@ export const BeigeLuxuryExecutive = ({ data }) => {
           </p>
         </footer>
       </div>
+      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={ac} ownerName={id.fullName} title={bookingLabel(data)} />
     </div>
   );
 };

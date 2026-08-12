@@ -5,6 +5,7 @@ import { ProfileContext } from "@/context/ProfileContext";
 import { getConsent } from "@/components/ConsentBanner";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
+import { bookingLabel } from "@/lib/cardHelpers";
 import { useLocale } from "@/i18n/useLocale";
 import { toast } from "sonner";
 import { Loader2, Globe, Share2 } from "lucide-react";
@@ -125,7 +126,7 @@ export default function PublicProfile() {
           </div>
         )}
         <TemplateRenderer data={card} />
-        <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} ownerName={card?.identity?.fullName || ""} />
+        <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} ownerName={card?.identity?.fullName || ""} title={bookingLabel(card)} />
       </div>
     </ProfileContext.Provider>
   );
