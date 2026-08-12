@@ -63,32 +63,128 @@ def _email_configured() -> bool:
     return bool(RESEND_API_KEY)
 
 
-def _email_shell(title: str, intro: str, cta_text: str, cta_url: str, footnote: str = "") -> str:
-    """Branded, email-safe HTML (inline CSS, table layout) for TapPresence transactional mail."""
+def _email_shell(title: str, intro: str, cta_text: str, cta_url: str, footnote: str = "", lang: str = "en") -> str:
+    """Branded, email-safe HTML (inline CSS, table layout) for TapPresence transactional mail.
+    Localized: Arabic renders RTL; English/Spanish render LTR. Single shared shell for ALL emails."""
+    rtl = (lang == "ar")
+    direction = "rtl" if rtl else "ltr"
+    align = "right" if rtl else "left"
+    ignore = {"ar": "إذا لم تطلب هذا، يمكنك تجاهل هذه الرسالة بأمان.",
+              "es": "Si no solicitaste esto, puedes ignorar este correo.",
+              "en": "If you didn't request this, you can safely ignore this email."}.get(lang, "If you didn't request this, you can safely ignore this email.")
+    orlink = {"ar": "أو انسخ هذا الرابط في متصفحك:", "es": "O pega este enlace en tu navegador:",
+              "en": "Or paste this link into your browser:"}.get(lang, "Or paste this link into your browser:")
     return f"""\
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#050607;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
+<table dir="{direction}" width="100%" cellpadding="0" cellspacing="0" style="background:#050607;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
   <tr><td align="center">
-    <table width="480" cellpadding="0" cellspacing="0" style="background:#0d0f13;border:1px solid #1e2128;border-radius:16px;overflow:hidden;">
-      <tr><td style="padding:28px 32px 8px 32px;">
+    <table dir="{direction}" width="480" cellpadding="0" cellspacing="0" style="background:#0d0f13;border:1px solid #1e2128;border-radius:16px;overflow:hidden;">
+      <tr><td style="padding:28px 32px 8px 32px;text-align:{align};">
         <span style="font-size:20px;font-weight:700;color:#ffffff;">Tap<span style="color:#D6A653;">Presence</span></span>
       </td></tr>
-      <tr><td style="padding:8px 32px 0 32px;">
+      <tr><td style="padding:8px 32px 0 32px;text-align:{align};">
         <h1 style="margin:0;font-size:20px;line-height:1.3;color:#ffffff;">{title}</h1>
         <p style="margin:14px 0 0 0;font-size:14px;line-height:1.6;color:#a2a6ad;">{intro}</p>
       </td></tr>
-      <tr><td style="padding:24px 32px 8px 32px;">
+      <tr><td style="padding:24px 32px 8px 32px;text-align:{align};">
         <a href="{cta_url}" style="display:inline-block;background:#D6A653;color:#050607;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:10px;">{cta_text}</a>
       </td></tr>
-      <tr><td style="padding:12px 32px 28px 32px;">
-        <p style="margin:0;font-size:12px;line-height:1.6;color:#70757e;">Or paste this link into your browser:<br><span style="color:#8a8f97;word-break:break-all;">{cta_url}</span></p>
+      <tr><td style="padding:12px 32px 28px 32px;text-align:{align};">
+        <p style="margin:0;font-size:12px;line-height:1.6;color:#70757e;">{orlink}<br><span style="color:#8a8f97;word-break:break-all;">{cta_url}</span></p>
         {f'<p style="margin:14px 0 0 0;font-size:12px;color:#70757e;">{footnote}</p>' if footnote else ''}
       </td></tr>
-      <tr><td style="padding:16px 32px;border-top:1px solid #1e2128;">
-        <p style="margin:0;font-size:11px;color:#5b6068;">© TapPresence. If you didn't request this, you can safely ignore this email.</p>
+      <tr><td style="padding:16px 32px;border-top:1px solid #1e2128;text-align:{align};">
+        <p style="margin:0;font-size:11px;color:#5b6068;">© TapPresence. {ignore}</p>
       </td></tr>
     </table>
   </td></tr>
 </table>"""
+
+
+def _norm_lang(lang) -> str:
+    lang = (lang or "en").split("-")[0].lower()
+    return lang if lang in ("en", "ar", "es") else "en"
+
+
+# Localized copy for platform (auth / trial / referral / team) emails. Placeholders via str.format.
+# Booking/meeting emails localize in server.py using the same _email_shell primitive (no second system).
+EMAIL_MSGS = {
+    "verify": {
+        "en": {"subject": "Verify your TapPresence email", "title": "Confirm your email", "cta": "Verify email",
+               "intro": "Welcome to TapPresence — please confirm your email address to secure your account and unlock everything in your 14-day trial."},
+        "ar": {"subject": "تأكيد بريدك الإلكتروني في TapPresence", "title": "تأكيد بريدك الإلكتروني", "cta": "تأكيد البريد",
+               "intro": "مرحبًا بك في TapPresence — يُرجى تأكيد عنوان بريدك الإلكتروني لتأمين حسابك وفتح كل الميزات خلال فترتك التجريبية لمدة 14 يومًا."},
+        "es": {"subject": "Verifica tu correo de TapPresence", "title": "Confirma tu correo", "cta": "Verificar correo",
+               "intro": "Bienvenido a TapPresence — confirma tu dirección de correo para asegurar tu cuenta y desbloquear todo en tu prueba de 14 días."},
+    },
+    "verify_resend": {
+        "en": {"subject": "Verify your TapPresence email", "title": "Confirm your email", "cta": "Verify email",
+               "intro": "Here's a fresh link to confirm your TapPresence email address."},
+        "ar": {"subject": "تأكيد بريدك الإلكتروني في TapPresence", "title": "تأكيد بريدك الإلكتروني", "cta": "تأكيد البريد",
+               "intro": "هذا رابط جديد لتأكيد عنوان بريدك الإلكتروني في TapPresence."},
+        "es": {"subject": "Verifica tu correo de TapPresence", "title": "Confirma tu correo", "cta": "Verificar correo",
+               "intro": "Aquí tienes un nuevo enlace para confirmar tu correo de TapPresence."},
+    },
+    "reset": {
+        "en": {"subject": "Reset your TapPresence password", "title": "Reset your password", "cta": "Reset password",
+               "intro": "We received a request to reset your TapPresence password. This link expires in 1 hour.",
+               "footnote": "If you didn't request a password reset, no action is needed."},
+        "ar": {"subject": "إعادة تعيين كلمة مرور TapPresence", "title": "إعادة تعيين كلمة المرور", "cta": "إعادة التعيين",
+               "intro": "تلقّينا طلبًا لإعادة تعيين كلمة مرور TapPresence. تنتهي صلاحية هذا الرابط خلال ساعة واحدة.",
+               "footnote": "إذا لم تطلب إعادة التعيين، فلا حاجة لأي إجراء."},
+        "es": {"subject": "Restablece tu contraseña de TapPresence", "title": "Restablece tu contraseña", "cta": "Restablecer",
+               "intro": "Recibimos una solicitud para restablecer tu contraseña de TapPresence. Este enlace caduca en 1 hora.",
+               "footnote": "Si no solicitaste el restablecimiento, no necesitas hacer nada."},
+    },
+    "invite": {
+        "en": {"subject": "You've been invited to a TapPresence team", "title": "Join your team on TapPresence", "cta": "Accept invite",
+               "intro": "You've been invited to join <b>{ws}</b> on TapPresence. Set up your account to get started. This invite expires in 7 days."},
+        "ar": {"subject": "تمت دعوتك إلى فريق على TapPresence", "title": "انضم إلى فريقك على TapPresence", "cta": "قبول الدعوة",
+               "intro": "تمت دعوتك للانضمام إلى <b>{ws}</b> على TapPresence. أنشئ حسابك للبدء. تنتهي صلاحية هذه الدعوة خلال 7 أيام."},
+        "es": {"subject": "Te invitaron a un equipo de TapPresence", "title": "Únete a tu equipo en TapPresence", "cta": "Aceptar invitación",
+               "intro": "Te invitaron a unirte a <b>{ws}</b> en TapPresence. Configura tu cuenta para empezar. Esta invitación caduca en 7 días."},
+    },
+    "trial_3d": {
+        "en": {"subject": "Your TapPresence trial ends in 3 days", "title": "Your trial ends soon", "cta": "Upgrade now",
+               "intro": "Your 14-day TapPresence trial ends in about 3 days. Upgrade to keep your card live, your leads, analytics and premium features without interruption."},
+        "ar": {"subject": "تنتهي فترتك التجريبية في TapPresence خلال 3 أيام", "title": "تنتهي فترتك التجريبية قريبًا", "cta": "الترقية الآن",
+               "intro": "تنتهي فترتك التجريبية في TapPresence (14 يومًا) خلال 3 أيام تقريبًا. قم بالترقية للحفاظ على بطاقتك والعملاء المحتملين والتحليلات والميزات المميزة دون انقطاع."},
+        "es": {"subject": "Tu prueba de TapPresence termina en 3 días", "title": "Tu prueba termina pronto", "cta": "Mejorar ahora",
+               "intro": "Tu prueba de 14 días de TapPresence termina en unos 3 días. Mejora tu plan para mantener tu tarjeta activa, tus contactos, analíticas y funciones premium sin interrupción."},
+    },
+    "trial_expired": {
+        "en": {"subject": "Your TapPresence trial has ended", "title": "Your trial has ended", "cta": "Reactivate",
+               "intro": "Your 14-day TapPresence trial has ended. Your data is safe — upgrade any time to bring your card back online and unlock premium features again."},
+        "ar": {"subject": "انتهت فترتك التجريبية في TapPresence", "title": "انتهت فترتك التجريبية", "cta": "إعادة التفعيل",
+               "intro": "انتهت فترتك التجريبية في TapPresence (14 يومًا). بياناتك محفوظة — يمكنك الترقية في أي وقت لإعادة تفعيل بطاقتك وفتح الميزات المميزة مجددًا."},
+        "es": {"subject": "Tu prueba de TapPresence ha terminado", "title": "Tu prueba ha terminado", "cta": "Reactivar",
+               "intro": "Tu prueba de 14 días de TapPresence ha terminado. Tus datos están a salvo — mejora tu plan cuando quieras para reactivar tu tarjeta y las funciones premium."},
+    },
+    "referral_reward": {
+        "en": {"subject": "You've earned a free month of TapPresence", "title": "Reward unlocked — 1 month free", "cta": "View my rewards",
+               "intro": "Great news! You've reached {per} successful paid referrals and earned <b>{months} month(s) free</b> on TapPresence. Your reward is ready to apply to your billing."},
+        "ar": {"subject": "لقد حصلت على شهر مجاني في TapPresence", "title": "تم فتح المكافأة — شهر مجاني", "cta": "عرض مكافآتي",
+               "intro": "أخبار رائعة! لقد وصلت إلى {per} إحالات مدفوعة ناجحة وحصلت على <b>{months} شهر مجاني</b> على TapPresence. مكافأتك جاهزة للتطبيق على فاتورتك."},
+        "es": {"subject": "Has ganado un mes gratis de TapPresence", "title": "Recompensa desbloqueada — 1 mes gratis", "cta": "Ver mis recompensas",
+               "intro": "¡Buenas noticias! Alcanzaste {per} referidos de pago exitosos y ganaste <b>{months} mes(es) gratis</b> en TapPresence. Tu recompensa está lista para aplicarse a tu facturación."},
+    },
+}
+
+
+def build_email(kind: str, lang: str, cta_url: str, **ctx):
+    """Return (subject, html) for a platform email in the requested language (fallback en)."""
+    lang = _norm_lang(lang)
+    block = (EMAIL_MSGS.get(kind) or {}).get(lang) or (EMAIL_MSGS.get(kind) or {}).get("en") or {}
+    subject = (block.get("subject") or "TapPresence").format(**ctx)
+    title = (block.get("title") or "").format(**ctx)
+    intro = (block.get("intro") or "").format(**ctx)
+    cta = (block.get("cta") or "Open").format(**ctx)
+    footnote = (block.get("footnote") or "").format(**ctx)
+    return subject, _email_shell(title, intro, cta, cta_url, footnote, lang=lang)
+
+
+async def send_localized(to: str, kind: str, lang: str, cta_url: str, **ctx) -> bool:
+    subject, html = build_email(kind, lang, cta_url, **ctx)
+    return await send_email(to, subject, html)
 
 
 async def send_email(to: str, subject: str, html: str) -> bool:
@@ -1106,6 +1202,18 @@ async def _recompute_referral_rewards(referrer_ws_id: str):
             })
         except Exception:
             pass  # unique index guards against double insert
+    # Email layer ONLY reacts to the existing confirmed reward state: a reward was newly earned
+    # this run (earned crossed a new threshold). Idempotent — a later recompute with no new
+    # qualified referral will not re-enter this branch.
+    if earned > existing and _email_configured():
+        try:
+            ws = await db.workspaces.find_one({"id": referrer_ws_id}, {"_id": 0, "owner_id": 1})
+            owner = await db.users.find_one({"id": (ws or {}).get("owner_id")}, {"_id": 0, "email": 1, "language": 1}) if ws else None
+            if owner and owner.get("email"):
+                await send_localized(owner["email"], "referral_reward", owner.get("language", "en"),
+                                     f"{PUBLIC_APP_URL}/referral", per=per, months=months)
+        except Exception as e:
+            logger.error(f"[email] referral reward email failed for {referrer_ws_id}: {e}")
     redeemed = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id, "redeemed": True, "voided": {"$ne": True}})
     ledger = {
         "qualified_count": qualified,
@@ -1290,11 +1398,10 @@ async def register(body: RegisterIn, request: Request):
         "id": str(uuid.uuid4()), "user_id": user["id"], "token": verify_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), "used": False,
     })
-    # Email: send verification via Resend if configured, else log link (dev).
+    # Email: send localized verification via Resend if configured, else log link (dev).
     link = f"{PUBLIC_APP_URL}/verify?token={verify_token}"
     if _email_configured():
-        await send_email(user["email"], "Verify your TapPresence email",
-                         _email_shell("Confirm your email", "Welcome to TapPresence — please confirm your email address to secure your account and unlock everything in your 14-day trial.", "Verify email", link))
+        await send_localized(user["email"], "verify", user.get("language", "en"), link)
     else:
         logger.info(f"[email:NOT_CONFIGURED] verification link for {user['email']}: {link}")
     return await _auth_payload(user, request)
@@ -1434,8 +1541,7 @@ async def resend_verification(request: Request, user: dict = Depends(current_use
     })
     link = f"{PUBLIC_APP_URL}/verify?token={token}"
     if _email_configured():
-        await send_email(user["email"], "Verify your TapPresence email",
-                         _email_shell("Confirm your email", "Here's a fresh link to confirm your TapPresence email address.", "Verify email", link))
+        await send_localized(user["email"], "verify_resend", user.get("language", "en"), link)
     else:
         logger.info(f"[email:NOT_CONFIGURED] verification link for {user['email']}: {link}")
     return {"ok": True}
@@ -1467,8 +1573,7 @@ async def forgot(body: ForgotIn, request: Request):
         })
         link = f"{PUBLIC_APP_URL}/reset?token={token}"
         if _email_configured():
-            await send_email(email, "Reset your TapPresence password",
-                             _email_shell("Reset your password", "We received a request to reset your TapPresence password. This link expires in 1 hour.", "Reset password", link, "If you didn't request a password reset, no action is needed."))
+            await send_localized(email, "reset", user.get("language", "en"), link)
         else:
             logger.info(f"[email:NOT_CONFIGURED] reset link for {email}: {link}")
     return {"ok": True}  # do not reveal account existence
@@ -3365,11 +3470,15 @@ async def _create_member(wid: str, email: str, name: str, role: str):
         return user, False
     token = secrets.token_urlsafe(24)
     await db.memberships.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "workspace_id": wid,
-                                     "role": role, "status": "invited", "invite_token": token, "created_at": now_iso()})
-    link = f"{PUBLIC_APP_URL}/register?invite={token}"
+                                     "role": role, "status": "invited", "invite_token": token,
+                                     "invite_expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+                                     "created_at": now_iso()})
+    link = f"{PUBLIC_APP_URL}/invite/{token}"
+    ws = await db.workspaces.find_one({"id": wid}, {"_id": 0, "name": 1, "owner_id": 1})
+    inviter = await db.users.find_one({"id": (ws or {}).get("owner_id")}, {"_id": 0, "language": 1}) if ws else None
+    lang = (inviter or {}).get("language") or "en"
     if _email_configured():
-        await send_email(email, "You've been invited to a TapPresence team",
-                         _email_shell("Join your team on TapPresence", "You've been invited to join a team workspace on TapPresence. Set up your account to get started.", "Accept invite", link))
+        await send_localized(email, "invite", lang, link, ws=(ws or {}).get("name", "your team"))
     else:
         logger.info(f"[email:NOT_CONFIGURED] team invite for {email}: {link}")
     return user, True
@@ -3386,6 +3495,55 @@ async def invite_member(wid: str, body: MemberIn, user: dict = Depends(current_u
                                        "title": f"Invited {body.email}", "body": "", "read": False, "created_at": now_iso()})
     await audit(wid, user["id"], "team.invite", {"email": body.email, "created_user": created})
     return {"ok": True, "user_id": u["id"], "created": created}
+
+
+class InviteAcceptIn(BaseModel):
+    password: str
+    name: Optional[str] = ""
+
+
+async def _invite_membership(token: str):
+    return await db.memberships.find_one({"invite_token": token, "status": "invited"}, {"_id": 0})
+
+
+@platform_router.get("/invites/{token}")
+async def invite_info(token: str):
+    """Public: resolve a team-invite token → workspace/email/role + expiry state (for the accept page)."""
+    m = await _invite_membership(token)
+    if not m:
+        raise HTTPException(404, "This invitation is no longer valid.")
+    expired = bool(m.get("invite_expires_at")) and m["invite_expires_at"] < now_iso()
+    ws = await db.workspaces.find_one({"id": m["workspace_id"]}, {"_id": 0, "name": 1})
+    u = await db.users.find_one({"id": m["user_id"]}, {"_id": 0, "email": 1, "name": 1})
+    return {"email": (u or {}).get("email", ""), "name": (u or {}).get("name", ""),
+            "workspace_name": (ws or {}).get("name", "your team"), "role": m.get("role", "MEMBER"),
+            "expired": expired}
+
+
+@platform_router.post("/invites/{token}/accept")
+async def invite_accept(token: str, body: InviteAcceptIn, request: Request):
+    """Public: consume a team-invite token → set the invited user's password, verify email, activate
+    the membership (role/seat already enforced at invite time), and sign the user in."""
+    rate_limit(request, "invite_accept", 10, 3600)
+    m = await _invite_membership(token)
+    if not m:
+        raise HTTPException(404, "This invitation is no longer valid.")
+    if m.get("invite_expires_at") and m["invite_expires_at"] < now_iso():
+        raise HTTPException(400, "This invitation has expired. Please ask your team admin to re-invite you.")
+    if not body.password or len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters.")
+    user = await db.users.find_one({"id": m["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "This invitation is no longer valid.")
+    upd = {"password_hash": hash_pw(body.password), "email_verified": True}
+    if body.name and body.name.strip():
+        upd["name"] = body.name.strip()
+    await db.users.update_one({"id": user["id"]}, {"$set": upd})
+    await db.memberships.update_one({"id": m["id"]},
+        {"$set": {"status": "active", "accepted_at": now_iso()}, "$unset": {"invite_token": "", "invite_expires_at": ""}})
+    await audit(m["workspace_id"], user["id"], "team.invite_accepted", {"role": m.get("role")})
+    user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return await _auth_payload(user, request)
 
 
 @platform_router.patch("/workspaces/{wid}/members/{uid}")

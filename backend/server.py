@@ -3,6 +3,7 @@ import io
 import re
 import html
 import uuid
+import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -27,7 +28,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -1331,42 +1332,130 @@ def _sanitize_meeting(m: dict) -> dict:
     return m
 
 
-# ---- Transactional booking emails (Resend) — completes the EXISTING meeting lifecycle ----
+# ---- Transactional booking emails (Resend) — completes the EXISTING meeting lifecycle, localized EN/AR/ES ----
+from platform_v1 import _email_shell as _shell, _norm_lang as _nlang
+
+
 def _fmt_meet_dt(iso_utc: str, tzname: str) -> str:
+    """Language-neutral date/time so AR/ES emails don't show English month names."""
     try:
         dt = datetime.fromisoformat((iso_utc or "").replace("Z", "+00:00")).astimezone(ZoneInfo(tzname or "UTC"))
-        return dt.strftime("%a, %d %b %Y · %I:%M %p ") + (tzname or "UTC")
+        return dt.strftime("%Y-%m-%d · %H:%M ") + (tzname or "UTC")
     except Exception:
         return iso_utc or ""
 
 
-async def _meeting_host_email(m: dict):
-    """Resolve the card owner / host email for a meeting (owner_user_id, else workspace owner)."""
-    uid = m.get("owner_user_id")
-    if uid:
-        u = await db.users.find_one({"id": uid}, {"_id": 0, "email": 1})
-        if u and u.get("email"):
-            return u["email"]
+_MEET_L = {
+    "en": {"meeting": "Meeting", "when": "When", "duration": "Duration", "where": "Where", "guest": "Guest",
+           "proposed": "Proposed time", "min": "min", "dash": "View in dashboard", "manage": "Manage booking",
+           "review": "Review & accept", "again": "Book another time"},
+    "ar": {"meeting": "الاجتماع", "when": "الموعد", "duration": "المدة", "where": "المكان", "guest": "الضيف",
+           "proposed": "الوقت المقترح", "min": "دقيقة", "dash": "عرض في لوحة التحكم", "manage": "إدارة الحجز",
+           "review": "مراجعة وقبول", "again": "احجز وقتًا آخر"},
+    "es": {"meeting": "Reunión", "when": "Cuándo", "duration": "Duración", "where": "Dónde", "guest": "Invitado",
+           "proposed": "Hora propuesta", "min": "min", "dash": "Ver en el panel", "manage": "Gestionar reserva",
+           "review": "Revisar y aceptar", "again": "Reservar otra hora"},
+}
+
+# per (kind, party) → {lang: (subject, title, intro_template)}; intro uses {host}{guest}{mtype}{details}{when}
+_MEET_TX = {
+    ("booked", "guest"): {
+        "en": ("Your meeting is booked", "Your meeting is booked", "Hi {guest}, your {mtype} with {host} is confirmed.<br><br>{details}"),
+        "ar": ("تم حجز اجتماعك", "تم حجز اجتماعك", "مرحبًا {guest}، تم تأكيد {mtype} مع {host}.<br><br>{details}"),
+        "es": ("Tu reunión está reservada", "Tu reunión está reservada", "Hola {guest}, tu {mtype} con {host} está confirmada.<br><br>{details}"),
+    },
+    ("booked", "host"): {
+        "en": ("New meeting booked", "New meeting booked", "{guest} booked a {mtype} with you.<br><br>{details}"),
+        "ar": ("حجز اجتماع جديد", "حجز اجتماع جديد", "قام {guest} بحجز {mtype} معك.<br><br>{details}"),
+        "es": ("Nueva reunión reservada", "Nueva reunión reservada", "{guest} reservó una {mtype} contigo.<br><br>{details}"),
+    },
+    ("requested", "guest"): {
+        "en": ("We received your meeting request", "Request received", "Hi {guest}, your {mtype} request with {host} was received and is pending confirmation.<br><br>{details}"),
+        "ar": ("تم استلام طلب اجتماعك", "تم استلام الطلب", "مرحبًا {guest}، تم استلام طلب {mtype} مع {host} وهو بانتظار التأكيد.<br><br>{details}"),
+        "es": ("Recibimos tu solicitud de reunión", "Solicitud recibida", "Hola {guest}, tu solicitud de {mtype} con {host} fue recibida y está pendiente de confirmación.<br><br>{details}"),
+    },
+    ("requested", "host"): {
+        "en": ("New meeting request — approval needed", "New meeting request", "{guest} requested a {mtype}.<br><br>{details}"),
+        "ar": ("طلب اجتماع جديد — يتطلب الموافقة", "طلب اجتماع جديد", "طلب {guest} {mtype}.<br><br>{details}"),
+        "es": ("Nueva solicitud de reunión — requiere aprobación", "Nueva solicitud de reunión", "{guest} solicitó una {mtype}.<br><br>{details}"),
+    },
+    ("confirmed", "guest"): {
+        "en": ("Your meeting is confirmed", "Your meeting is confirmed", "Hi {guest}, your {mtype} with {host} is now confirmed.<br><br>{details}"),
+        "ar": ("تم تأكيد اجتماعك", "تم تأكيد اجتماعك", "مرحبًا {guest}، تم تأكيد {mtype} مع {host}.<br><br>{details}"),
+        "es": ("Tu reunión está confirmada", "Tu reunión está confirmada", "Hola {guest}, tu {mtype} con {host} está confirmada.<br><br>{details}"),
+    },
+    ("confirmed", "host"): {
+        "en": ("Meeting confirmed", "Meeting confirmed", "The {mtype} with {guest} is confirmed.<br><br>{details}"),
+        "ar": ("تم تأكيد الاجتماع", "تم تأكيد الاجتماع", "تم تأكيد {mtype} مع {guest}.<br><br>{details}"),
+        "es": ("Reunión confirmada", "Reunión confirmada", "La {mtype} con {guest} está confirmada.<br><br>{details}"),
+    },
+    ("rescheduled", "guest"): {
+        "en": ("Your meeting was rescheduled", "Your meeting was rescheduled", "Hi {guest}, your {mtype} with {host} has a new time.<br><br>{details}"),
+        "ar": ("تمت إعادة جدولة اجتماعك", "تمت إعادة جدولة اجتماعك", "مرحبًا {guest}، تم تحديد وقت جديد لـ {mtype} مع {host}.<br><br>{details}"),
+        "es": ("Tu reunión fue reprogramada", "Tu reunión fue reprogramada", "Hola {guest}, tu {mtype} con {host} tiene un nuevo horario.<br><br>{details}"),
+    },
+    ("rescheduled", "host"): {
+        "en": ("Meeting rescheduled", "Meeting rescheduled", "The {mtype} with {guest} was rescheduled.<br><br>{details}"),
+        "ar": ("تمت إعادة جدولة الاجتماع", "تمت إعادة جدولة الاجتماع", "تمت إعادة جدولة {mtype} مع {guest}.<br><br>{details}"),
+        "es": ("Reunión reprogramada", "Reunión reprogramada", "La {mtype} con {guest} fue reprogramada.<br><br>{details}"),
+    },
+    ("cancelled", "guest"): {
+        "en": ("Your meeting was cancelled", "Your meeting was cancelled", "Hi {guest}, your {mtype} with {host} scheduled for {when} has been cancelled."),
+        "ar": ("تم إلغاء اجتماعك", "تم إلغاء اجتماعك", "مرحبًا {guest}، تم إلغاء {mtype} مع {host} المقرر في {when}."),
+        "es": ("Tu reunión fue cancelada", "Tu reunión fue cancelada", "Hola {guest}, tu {mtype} con {host} programada para {when} fue cancelada."),
+    },
+    ("cancelled", "host"): {
+        "en": ("Meeting cancelled", "Meeting cancelled", "The {mtype} with {guest} ({when}) was cancelled."),
+        "ar": ("تم إلغاء الاجتماع", "تم إلغاء الاجتماع", "تم إلغاء {mtype} مع {guest} ({when})."),
+        "es": ("Reunión cancelada", "Reunión cancelada", "La {mtype} con {guest} ({when}) fue cancelada."),
+    },
+    ("proposed", "guest"): {
+        "en": ("A new time was proposed", "A new time was proposed", "Hi {guest}, {host} proposed a new time for your {mtype}.<br><br>{details}<br>Open your booking to accept or decline."),
+        "ar": ("تم اقتراح وقت جديد", "تم اقتراح وقت جديد", "مرحبًا {guest}، اقترح {host} وقتًا جديدًا لـ {mtype}.<br><br>{details}<br>افتح حجزك للقبول أو الرفض."),
+        "es": ("Se propuso un nuevo horario", "Se propuso un nuevo horario", "Hola {guest}, {host} propuso un nuevo horario para tu {mtype}.<br><br>{details}<br>Abre tu reserva para aceptar o rechazar."),
+    },
+    ("reminder", "guest"): {
+        "en": ("Reminder: your meeting starts soon", "Your meeting starts soon", "Hi {guest}, a reminder that your {mtype} with {host} starts in about an hour.<br><br>{details}"),
+        "ar": ("تذكير: اجتماعك يبدأ قريبًا", "اجتماعك يبدأ قريبًا", "مرحبًا {guest}، تذكير بأن {mtype} مع {host} يبدأ خلال ساعة تقريبًا.<br><br>{details}"),
+        "es": ("Recordatorio: tu reunión comienza pronto", "Tu reunión comienza pronto", "Hola {guest}, recuerda que tu {mtype} con {host} comienza en aproximadamente una hora.<br><br>{details}"),
+    },
+    ("reminder", "host"): {
+        "en": ("Reminder: meeting starts soon", "Meeting starts soon", "A reminder that your {mtype} with {guest} starts in about an hour.<br><br>{details}"),
+        "ar": ("تذكير: الاجتماع يبدأ قريبًا", "الاجتماع يبدأ قريبًا", "تذكير بأن {mtype} مع {guest} يبدأ خلال ساعة تقريبًا.<br><br>{details}"),
+        "es": ("Recordatorio: la reunión comienza pronto", "La reunión comienza pronto", "Recuerda que tu {mtype} con {guest} comienza en aproximadamente una hora.<br><br>{details}"),
+    },
+}
+
+
+async def _meeting_host(m: dict):
+    """Return (host_email, host_language) for a meeting."""
+    for uid in [m.get("owner_user_id")]:
+        if uid:
+            u = await db.users.find_one({"id": uid}, {"_id": 0, "email": 1, "language": 1})
+            if u and u.get("email"):
+                return u["email"], u.get("language", "en")
     wsid = m.get("workspace_id")
     if wsid:
         ws = await db.workspaces.find_one({"id": wsid}, {"_id": 0, "owner_id": 1})
         if ws and ws.get("owner_id"):
-            u = await db.users.find_one({"id": ws["owner_id"]}, {"_id": 0, "email": 1})
+            u = await db.users.find_one({"id": ws["owner_id"]}, {"_id": 0, "email": 1, "language": 1})
             if u and u.get("email"):
-                return u["email"]
-    return None
+                return u["email"], u.get("language", "en")
+    return None, "en"
 
 
 async def _send_meeting_emails(m: dict, kind: str):
-    """Send the correct transactional emails for the existing meeting lifecycle.
-    kind: booked | requested | confirmed | rescheduled | cancelled | proposed.
-    Non-blocking best-effort; failures are logged (never raised into the request)."""
+    """Send localized transactional emails for the existing meeting lifecycle.
+    kind: booked | requested | confirmed | rescheduled | cancelled | proposed | reminder.
+    Guest + host use the card owner's account language. Best-effort; never raises into the request."""
     try:
-        host_email = await _meeting_host_email(m)
+        host_email, lang = await _meeting_host(m)
+        lang = _nlang(lang)
+        L = _MEET_L.get(lang, _MEET_L["en"])
         guest_email = (m.get("visitor_email") or "").strip()
         host_name = m.get("owner_name") or "your host"
-        guest_name = m.get("visitor_name") or "Guest"
-        mtype = m.get("meeting_type_title") or "Meeting"
+        guest_name = m.get("visitor_name") or L["guest"]
+        mtype = m.get("meeting_type_title") or L["meeting"]
         dur = m.get("duration") or 30
         loc = m.get("location_detail") or (m.get("location_type") or "video").title()
         when_guest = _fmt_meet_dt(m.get("start_utc", ""), m.get("visitor_tz") or m.get("owner_timezone"))
@@ -1374,44 +1463,28 @@ async def _send_meeting_emails(m: dict, kind: str):
         manage_url = f"{PUBLIC_APP_URL}/m/{m.get('manage_token', '')}"
         dash_url = f"{PUBLIC_APP_URL}/meetings"
         book_url = f"{PUBLIC_APP_URL}/{m.get('cardSlug', '')}"
-        guest_line = f"<br><b>Guest:</b> {guest_name}" + (f" · {guest_email}" if guest_email else "")
 
-        def details(when):
-            return (f"<b>Meeting:</b> {mtype}<br><b>When:</b> {when}<br>"
-                    f"<b>Duration:</b> {dur} min<br><b>Where:</b> {loc}")
+        def details(when, with_guest=False):
+            proposed = ""
+            if kind == "proposed":
+                pw = _fmt_meet_dt(m.get("proposed_start_utc") or m.get("start_utc"), m.get("visitor_tz") or m.get("owner_timezone"))
+                proposed = f"<b>{L['proposed']}:</b> {pw}<br>"
+            g = f"<br><b>{L['guest']}:</b> {guest_name}" + (f" · {guest_email}" if (with_guest and guest_email) else "") if with_guest else ""
+            return (f"{proposed}<b>{L['meeting']}:</b> {mtype}<br><b>{L['when']}:</b> {when}<br>"
+                    f"<b>{L['duration']}:</b> {dur} {L['min']}<br><b>{L['where']}:</b> {loc}{g}")
 
-        specs = {
-            "booked": {
-                "guest": ("Your meeting is booked", f"Hi {guest_name}, your {mtype} with {host_name} is confirmed.<br><br>{details(when_guest)}", "Manage booking", manage_url),
-                "host": ("New meeting booked", f"{guest_name} booked a {mtype} with you.<br><br>{details(when_host)}{guest_line}", "View in dashboard", dash_url),
-            },
-            "requested": {
-                "guest": ("We received your meeting request", f"Hi {guest_name}, your {mtype} request with {host_name} was received and is pending confirmation.<br><br>{details(when_guest)}", "Manage request", manage_url),
-                "host": ("New meeting request — approval needed", f"{guest_name} requested a {mtype}.<br><br>{details(when_host)}{guest_line}", "Review request", dash_url),
-            },
-            "confirmed": {
-                "guest": ("Your meeting is confirmed", f"Hi {guest_name}, your {mtype} with {host_name} is now confirmed.<br><br>{details(when_guest)}", "Manage booking", manage_url),
-                "host": ("Meeting confirmed", f"The {mtype} with {guest_name} is confirmed.<br><br>{details(when_host)}", "View in dashboard", dash_url),
-            },
-            "rescheduled": {
-                "guest": ("Your meeting was rescheduled", f"Hi {guest_name}, your {mtype} with {host_name} has a new time.<br><br>{details(when_guest)}", "Manage booking", manage_url),
-                "host": ("Meeting rescheduled", f"The {mtype} with {guest_name} was rescheduled.<br><br>{details(when_host)}", "View in dashboard", dash_url),
-            },
-            "cancelled": {
-                "guest": ("Your meeting was cancelled", f"Hi {guest_name}, your {mtype} with {host_name} scheduled for {when_guest} has been cancelled.", "Book another time", book_url),
-                "host": ("Meeting cancelled", f"The {mtype} with {guest_name} ({when_host}) was cancelled.", "View in dashboard", dash_url),
-            },
-            "proposed": {
-                "guest": ("A new time was proposed", f"Hi {guest_name}, {host_name} proposed a new time for your {mtype}.<br><br><b>Proposed:</b> {_fmt_meet_dt(m.get('proposed_start_utc') or m.get('start_utc'), m.get('visitor_tz') or m.get('owner_timezone'))}<br>Open your booking to accept or decline.", "Review & accept", manage_url),
-            },
-        }
-        spec = specs.get(kind, {})
-        if guest_email and spec.get("guest"):
-            t, i, c, u = spec["guest"]
-            await send_email(guest_email, f"{t} · TapPresence", _email_shell(t, i, c, u))
-        if host_email and spec.get("host"):
-            t, i, c, u = spec["host"]
-            await send_email(host_email, f"{t} · TapPresence", _email_shell(t, i, c, u))
+        cta_guest = L["review"] if kind == "proposed" else (L["again"] if kind == "cancelled" else L["manage"])
+        parties = []
+        if guest_email and (kind, "guest") in _MEET_TX:
+            parties.append(("guest", guest_email, when_guest, manage_url if kind != "cancelled" else book_url, cta_guest, False))
+        if host_email and (kind, "host") in _MEET_TX:
+            parties.append(("host", host_email, when_host, dash_url, L["dash"], True))
+        for party, to, when, cta_url, cta, with_guest in parties:
+            tx = _MEET_TX[(kind, party)]
+            subject, title, intro_t = tx.get(lang, tx["en"])
+            intro = intro_t.format(guest=guest_name, host=host_name, mtype=mtype, when=when,
+                                   details=details(when, with_guest))
+            await send_email(to, f"{subject} · TapPresence", _shell(title, intro, cta, cta_url, "", lang=lang))
     except Exception as e:
         logger.error(f"[email] meeting email failed (kind={kind}) for {m.get('id')}: {e}")
 
@@ -2005,6 +2078,63 @@ async def root():
 
 # ------------------------------------------------------------------ startup
 
+# ---- Transactional email scheduler (idempotent): trial lifecycle + meeting reminders ----
+async def _run_trial_emails():
+    """Trial 'ends in 3 days' + 'expired' emails. Reads the EXISTING trial dates only; sets an
+    additive email_flags marker so each reminder is sent at most once. Never mutates trial logic."""
+    now = datetime.now(timezone.utc)
+    now_i = now.isoformat()
+    soon = (now + timedelta(days=3)).isoformat()
+    cur = db.workspaces.find({"subscription.status": "trialing", "subscription.trial_ends_at": {"$ne": None}},
+                             {"_id": 0, "id": 1, "owner_id": 1, "subscription": 1})
+    async for ws in cur:
+        sub = ws.get("subscription") or {}
+        ends = sub.get("trial_ends_at")
+        flags = sub.get("email_flags") or {}
+        if not ends:
+            continue
+        owner = await db.users.find_one({"id": ws.get("owner_id")}, {"_id": 0, "email": 1, "language": 1})
+        if not owner or not owner.get("email"):
+            continue
+        lang = owner.get("language", "en")
+        if ends <= now_i and not flags.get("expired"):
+            if await send_localized(owner["email"], "trial_expired", lang, f"{PUBLIC_APP_URL}/billing"):
+                await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"subscription.email_flags.expired": now_i}})
+        elif now_i < ends <= soon and not flags.get("reminder_3d"):
+            if await send_localized(owner["email"], "trial_3d", lang, f"{PUBLIC_APP_URL}/billing"):
+                await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"subscription.email_flags.reminder_3d": now_i}})
+
+
+REMINDER_STATUSES = {"scheduled", "confirmed", "rescheduled"}
+
+
+async def _run_meeting_reminders():
+    """~1h-before reminder to guest + host for active meetings only. Idempotent via reminder_email_sent."""
+    now = datetime.now(timezone.utc)
+    window_end = (now + timedelta(minutes=75)).isoformat()
+    now_i = now.isoformat()
+    cur = db.meetings.find({"status": {"$in": list(REMINDER_STATUSES)},
+                            "start_utc": {"$gt": now_i, "$lte": window_end},
+                            "reminder_email_sent": {"$ne": True}}, {"_id": 0})
+    async for m in cur:
+        await db.meetings.update_one({"id": m["id"]}, {"$set": {"reminder_email_sent": True, "reminder_email_at": now_i}})
+        await _send_meeting_emails(m, "reminder")
+
+
+async def _email_scheduler():
+    await asyncio.sleep(20)  # let startup settle
+    while True:
+        try:
+            await _run_trial_emails()
+        except Exception as e:
+            logger.error(f"[scheduler] trial emails: {e}")
+        try:
+            await _run_meeting_reminders()
+        except Exception as e:
+            logger.error(f"[scheduler] meeting reminders: {e}")
+        await asyncio.sleep(900)  # every 15 minutes
+
+
 @app.on_event("startup")
 async def startup():
     try:
@@ -2046,6 +2176,12 @@ async def startup():
         logger.info("Storage initialized")
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
+
+    try:
+        asyncio.create_task(_email_scheduler())
+        logger.info("Email scheduler started (trial lifecycle + meeting reminders)")
+    except Exception as e:
+        logger.error(f"Email scheduler failed to start: {e}")
 
 
 app.include_router(api_router)

@@ -21,6 +21,7 @@ import CommercialSettings from "@/pages/CommercialSettings";
 import Referral from "@/pages/Referral";
 import Meetings from "@/pages/Meetings";
 import ManageMeeting from "@/pages/ManageMeeting";
+import AcceptInvite from "@/pages/AcceptInvite";
 import Activate from "@/pages/Activate";
 import NfcCards from "@/pages/NfcCards";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "@/pages/AuthExtra";import Legal from "@/pages/Legal";
@@ -98,6 +99,7 @@ function App() {
             <Route path="/admin/commercial" element={<Navigate to="/control/plans" replace />} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/m/:token" element={<ManageMeeting />} />
+            <Route path="/invite/:token" element={<AcceptInvite />} />
             <Route path="/industries" element={<IndustryShowcase />} />
             <Route path="/:slug" element={<PublicProfile />} />
           </Routes>
