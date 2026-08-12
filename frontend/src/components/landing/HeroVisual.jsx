@@ -63,7 +63,7 @@ export default function HeroVisual() {
               <div className="flex items-end justify-between">
                 <span className="text-[9px] tracking-[0.25em] text-neutral-600">DIGITAL IDENTITY</span>
                 <div className="rounded-md bg-white p-1">
-                  <img src={qrUrl("feras-askar")} alt="Scan TapPresence profile" className="h-12 w-12" style={{ filter: "sepia(1) saturate(2.2) hue-rotate(2deg) brightness(0.82)" }} />
+                  <img src={qrUrl("feras-askar")} alt="Scan TapPresence profile" className="h-16 w-16" style={{ filter: "sepia(1) saturate(2.2) hue-rotate(2deg) brightness(0.82)" }} />
                 </div>
               </div>
             </div>

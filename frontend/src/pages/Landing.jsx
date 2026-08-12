@@ -30,8 +30,8 @@ const goTo = (hash) => {
 };
 
 const Brand = ({ size = "text-base lg:text-lg" }) => (
-  <span className={`flex items-center gap-2 ${size} font-semibold tracking-tight`} data-testid="brand">
-    <AriadniMark className="h-9 w-9 lg:h-10 lg:w-10 text-[#D6A653]" />
+  <span className={`flex items-center gap-2 leading-none ${size} font-semibold tracking-tight`} data-testid="brand">
+    <AriadniMark className="h-11 w-11 lg:h-12 lg:w-12 text-[#D6A653]" />
     TapPresence
   </span>
 );
