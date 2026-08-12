@@ -362,8 +362,10 @@ const Plans = () => {
   const [applyTo, setApplyTo] = useState("new_only");
   const [reason, setReason] = useState("");
   const [versions, setVersions] = useState([]);
+  const [resolved, setResolved] = useState({});
   const load = () => api.get("/admin/commercial").then((r) => { setCfg(r.data.config); setDraft(JSON.parse(JSON.stringify(r.data.config))); }).catch(() => {});
-  useEffect(() => { load(); cget("/pricing/versions").then((r) => setVersions(r.items || [])).catch(() => {}); }, []);
+  const loadResolved = () => api.get("/commercial/pricing").then((r) => setResolved(r.data.resolved_all || {})).catch(() => {});
+  useEffect(() => { load(); loadResolved(); cget("/pricing/versions").then((r) => setVersions(r.items || [])).catch(() => {}); }, []);
   if (!draft) return <Loader />;
   const setP = (path, val) => { const d = { ...draft }; let o = d; const keys = path.split("."); for (let i = 0; i < keys.length - 1; i++) { o[keys[i]] = { ...(o[keys[i]] || {}) }; o = o[keys[i]]; } o[keys[keys.length - 1]] = val; setDraft(d); };
   const patch = () => ({
@@ -391,6 +393,30 @@ const Plans = () => {
         <div className="mt-4 flex items-center gap-2">
           <button onClick={doPreview} className="rounded-lg bg-[#D6A653] px-4 py-2 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="plans-preview-btn">Preview Impact</button>
           <button onClick={() => setDraft(JSON.parse(JSON.stringify(cfg)))} className="rounded-lg border border-white/12 px-4 py-2 text-sm text-white/60">Reset</button>
+        </div>
+      </Panel>
+      <Panel title="Converted currencies (live)" testId="plans-converted">
+        <p className="mb-3 text-[11px] text-white/40">USD is the base. Other currencies auto-convert from USD (change USD above and they follow). A currency shows <b className="text-sky-300">Manual</b> only if an intentional local override is set in Commercial settings.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-xs">
+            <thead><tr className="text-left uppercase tracking-wide text-white/35">
+              <th className="pb-2 pr-3">Market</th><th className="pb-2 pr-3">Source</th><th className="pb-2 pr-3">Pro mo/yr</th><th className="pb-2 pr-3">Pro save</th><th className="pb-2 pr-3">Team mo/yr</th><th className="pb-2">Team save</th>
+            </tr></thead>
+            <tbody>
+              {Object.entries(resolved).map(([m, p]) => (
+                <tr key={m} className="border-t border-white/6 text-white/70" data-testid={`converted-${m}`}>
+                  <td className="py-1.5 pr-3 font-medium text-white/85">{m}</td>
+                  <td className="py-1.5 pr-3">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${p.pricing_source === "base" ? "bg-[#D6A653]/15 text-[#D6A653]" : p.pricing_source === "manual" ? "bg-sky-500/15 text-sky-300" : "bg-white/10 text-white/55"}`} data-testid={`converted-src-${m}`}>{p.pricing_source}</span>
+                  </td>
+                  <td className="py-1.5 pr-3">{p.symbol}{p.pro_month} / {p.symbol}{p.pro_year}</td>
+                  <td className="py-1.5 pr-3">{p.pro_annual_savings_pct}%</td>
+                  <td className="py-1.5 pr-3">{p.symbol}{p.team_seat_month} / {p.symbol}{p.team_seat_year}</td>
+                  <td className="py-1.5">{p.team_annual_savings_pct}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </Panel>
       <Panel title="Version history" testId="plans-versions">

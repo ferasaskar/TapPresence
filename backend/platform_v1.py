@@ -455,6 +455,10 @@ ALLOW_DEMO_BILLING = os.environ.get("ALLOW_DEMO_BILLING", "true").lower() in ("1
 COMMERCIAL_MARKETS = ["USD", "AED", "SAR", "EUR", "GBP"]
 _MARKET_SYMBOL = {"USD": "$", "AED": "AED ", "SAR": "SAR ", "EUR": "€", "GBP": "£"}
 
+# Currency conversion vs the USD base. AED & SAR are official pegs; EUR/GBP are
+# Super-Admin editable defaults (commercial_config.fx_rates overrides these).
+DEFAULT_FX_RATES = {"USD": 1.0, "AED": 3.6725, "SAR": 3.75, "EUR": 0.92, "GBP": 0.79}
+
 DEFAULT_COMMERCIAL_CONFIG = {
     "id": "global",
     "trial": {"enabled": True, "days": 14},
@@ -478,6 +482,11 @@ DEFAULT_COMMERCIAL_CONFIG = {
         "EUR": {"symbol": "€", "pro_month": 9.99, "pro_year": 99.99, "team_seat_month": 5.0, "team_seat_year": 50.0},
         "GBP": {"symbol": "£", "pro_month": 8.99, "pro_year": 89.99, "team_seat_month": 4.5, "team_seat_year": 45.0},
     },
+    # USD is the authoritative base. Every other currency is AUTO-converted from USD
+    # via fx_rates unless its code is listed in manual_price_markets (then the stored
+    # regional_pricing[market] block is used as an intentional manual override).
+    "fx_rates": dict(DEFAULT_FX_RATES),
+    "manual_price_markets": [],
 }
 
 
@@ -517,14 +526,58 @@ def _annual_savings_pct(monthly, yearly) -> int:
     return 0
 
 
+def _round_price(x) -> float:
+    """Exact 2-decimal currency conversion. Keeping the true converted value (rather
+    than snapping to .99) preserves the USD monthly:annual ratio, so derived annual
+    savings stay coherent across every auto-converted currency. Markets that want a
+    clean local price (e.g. AED 369.99) use a manual override instead."""
+    try:
+        x = float(x or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(x, 2) if x > 0 else 0.0
+
+
 def resolve_market_pricing(cfg: dict, market: str) -> dict:
+    """Authoritative price resolver used by EVERY price surface (landing, pricing,
+    registration, billing, checkout, admin preview).
+
+    USD is the base. Any other currency is AUTO-converted from the USD base using
+    fx_rates, UNLESS the market is an explicit manual override (in manual_price_markets
+    with a stored regional_pricing block). Annual savings are always DERIVED from the
+    resolved monthly vs yearly prices for that same currency."""
     market = (market or cfg.get("default_market") or "USD").upper()
-    rp = (cfg.get("regional_pricing") or {}).get(market)
-    if not rp:
-        market = cfg.get("default_market", "USD")
-        rp = (cfg.get("regional_pricing") or {}).get(market, DEFAULT_COMMERCIAL_CONFIG["regional_pricing"]["USD"])
-    out = {"market": market, "symbol": rp.get("symbol", _MARKET_SYMBOL.get(market, "")), **rp}
-    # annual savings are DERIVED from the configured monthly vs annual prices (never hard-coded)
+    rp_all = cfg.get("regional_pricing") or {}
+    base = rp_all.get("USD") or DEFAULT_COMMERCIAL_CONFIG["regional_pricing"]["USD"]
+    fx = {**DEFAULT_FX_RATES, **(cfg.get("fx_rates") or {})}
+    manual = {m.upper() for m in (cfg.get("manual_price_markets") or [])}
+
+    if market == "USD":
+        rp = dict(base)
+        source = "base"
+    elif market in manual and rp_all.get(market):
+        rp = dict(rp_all[market])
+        source = "manual"
+    else:
+        rate = float(fx.get(market) or 0)
+        if rate <= 0:
+            # Unknown currency with no configured rate -> fall back to USD base (never another market's stale price)
+            rp = dict(base)
+            market = "USD"
+            source = "base"
+        else:
+            rp = {
+                "symbol": _MARKET_SYMBOL.get(market, ""),
+                "pro_month": _round_price(base.get("pro_month", 0) * rate),
+                "pro_year": _round_price(base.get("pro_year", 0) * rate),
+                "team_seat_month": _round_price(base.get("team_seat_month", 0) * rate),
+                "team_seat_year": _round_price(base.get("team_seat_year", 0) * rate),
+            }
+            source = "auto"
+
+    out = {"market": market, "symbol": rp.get("symbol", _MARKET_SYMBOL.get(market, "")),
+           "pricing_source": source, "fx_rate": float(fx.get(market) or 1.0), **rp}
+    # annual savings are DERIVED from the resolved monthly vs annual prices (never hard-coded)
     out["pro_annual_savings_pct"] = _annual_savings_pct(rp.get("pro_month"), rp.get("pro_year"))
     out["team_annual_savings_pct"] = _annual_savings_pct(rp.get("team_seat_month"), rp.get("team_seat_year"))
     return out
@@ -583,11 +636,15 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
 async def commercial_pricing(market: Optional[str] = None):
     """Public resolved pricing for a market — for the billing page + marketing pricing."""
     cfg = await get_commercial_config()
+    resolved_all = {m: resolve_market_pricing(cfg, m) for m in COMMERCIAL_MARKETS}
     return {
         "trial": cfg["trial"], "plans": cfg["plans"], "referral": cfg["referral"],
         "pricing": resolve_market_pricing(cfg, market),
         "markets": COMMERCIAL_MARKETS,
         "all_regional": cfg["regional_pricing"],
+        "resolved_all": resolved_all,
+        "fx_rates": {**DEFAULT_FX_RATES, **(cfg.get("fx_rates") or {})},
+        "manual_price_markets": cfg.get("manual_price_markets") or [],
     }
 
 
@@ -2060,6 +2117,8 @@ class CommercialConfigIn(BaseModel):
     referral: Optional[dict] = None
     default_market: Optional[str] = None
     regional_pricing: Optional[dict] = None
+    fx_rates: Optional[dict] = None
+    manual_price_markets: Optional[list] = None
 
 
 @platform_router.get("/admin/commercial")

@@ -37,13 +37,25 @@ export default function CommercialSettings() {
   const isSuper = user?.role === "SUPER_ADMIN";
   const [cfg, setCfg] = useState(undefined);
   const [markets, setMarkets] = useState([]);
+  const [resolved, setResolved] = useState({});
   const [demo, setDemo] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const loadResolved = () => api.get("/commercial/pricing").then(({ data }) => setResolved(data.resolved_all || {})).catch(() => {});
 
   useEffect(() => {
     if (!isSuper) { setCfg(null); return; }
     api.get("/admin/commercial").then(({ data }) => { setCfg(data.config); setMarkets(data.markets); setDemo(data.demo_billing); }).catch(() => setCfg(null));
+    loadResolved();
   }, [isSuper]);
+
+  const isManual = (m) => (cfg?.manual_price_markets || []).includes(m);
+  const setManual = (m, on) => setPath((n) => {
+    const cur = new Set(n.manual_price_markets || []);
+    if (on) { cur.add(m); n.regional_pricing[m] = { ...(resolved[m] || n.regional_pricing[m] || {}) }; }
+    else cur.delete(m);
+    n.manual_price_markets = [...cur];
+  });
 
   const setPath = (fn) => setCfg((prev) => { const next = structuredClone(prev); fn(next); return next; });
   const num = (v) => (v === "" || v == null ? 0 : Number(v));
@@ -66,9 +78,12 @@ export default function CommercialSettings() {
         },
         default_market: cfg.default_market,
         regional_pricing: cfg.regional_pricing,
+        fx_rates: cfg.fx_rates,
+        manual_price_markets: cfg.manual_price_markets || [],
       };
       const { data } = await api.put("/admin/commercial", payload);
       setCfg(data.config);
+      await loadResolved();
       toast.success("Commercial configuration saved");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Could not save configuration");
@@ -139,29 +154,48 @@ export default function CommercialSettings() {
             </div>
 
             <Card icon={Globe} title="Regional pricing" testid="cfg-regional">
-              <div className="mb-4 flex items-center gap-3">
+              <div className="mb-4 flex flex-wrap items-center gap-3">
                 <span className="text-xs text-white/45">Default market</span>
                 <select value={cfg.default_market} onChange={(e) => setPath((n) => { n.default_market = e.target.value; })} data-testid="cfg-default-market" className="rounded-full border border-white/12 bg-white/5 px-3 py-1.5 text-sm text-white/80">
                   {markets.map((m) => <option key={m} value={m} className="bg-[#0A0B0D]">{m}</option>)}
                 </select>
-                <span className="text-[11px] text-white/30">Explicit per-market prices · no FX conversion</span>
+                <span className="text-[11px] text-white/30">USD is the base. Other currencies auto-convert via FX unless marked Manual.</span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
+                <table className="w-full min-w-[720px] text-sm">
                   <thead><tr className="text-left text-[11px] uppercase tracking-wide text-white/35">
-                    <th className="pb-2 pr-3">Market</th><th className="pb-2 pr-3">Pro / mo</th><th className="pb-2 pr-3">Pro / yr</th><th className="pb-2 pr-3">Team seat / mo</th><th className="pb-2">Team seat / yr</th>
+                    <th className="pb-2 pr-3">Market</th><th className="pb-2 pr-3">Source</th><th className="pb-2 pr-3">FX ×USD</th><th className="pb-2 pr-3">Pro / mo</th><th className="pb-2 pr-3">Pro / yr</th><th className="pb-2 pr-3">Team seat / mo</th><th className="pb-2">Team seat / yr</th>
                   </tr></thead>
                   <tbody>
                     {markets.map((m) => {
-                      const r = cfg.regional_pricing[m] || {};
+                      const base = m === "USD";
+                      const manual = base || isManual(m);
+                      const editable = base || isManual(m);
+                      const stored = cfg.regional_pricing[m] || {};
+                      const shown = editable ? stored : (resolved[m] || {});
                       const upd = (k, v) => setPath((n) => { n.regional_pricing[m] = { ...(n.regional_pricing[m] || {}), [k]: v }; });
+                      const updFx = (v) => setPath((n) => { n.fx_rates = { ...(n.fx_rates || {}), [m]: Number(v) }; });
                       return (
                         <tr key={m} className="border-t border-white/[0.06]" data-testid={`cfg-region-${m}`}>
                           <td className="py-2 pr-3 font-medium text-white/80">{m}</td>
+                          <td className="py-2 pr-3">
+                            {base ? (
+                              <span className="rounded-full bg-[#D6A653]/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#D6A653]" data-testid={`cfg-src-${m}`}>Base</span>
+                            ) : (
+                              <button onClick={() => setManual(m, !isManual(m))} data-testid={`cfg-manual-toggle-${m}`}
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${isManual(m) ? "bg-sky-500/15 text-sky-300" : "bg-white/10 text-white/55"}`}>
+                                {isManual(m) ? "Manual" : "Auto"}
+                              </button>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <input type="number" step="0.0001" disabled={base} value={base ? 1 : (cfg.fx_rates?.[m] ?? "")} onChange={(e) => updFx(e.target.value)} data-testid={`cfg-fx-${m}`}
+                              className="w-20 rounded-lg border border-white/12 bg-white/5 px-2 py-1.5 text-sm text-white outline-none focus:border-[#D6A653]/50 disabled:opacity-40" />
+                          </td>
                           {["pro_month", "pro_year", "team_seat_month", "team_seat_year"].map((k) => (
                             <td key={k} className="py-2 pr-3">
-                              <input type="number" step="0.01" value={r[k] ?? ""} onChange={(e) => upd(k, Number(e.target.value))} data-testid={`cfg-${m}-${k}`}
-                                className="w-24 rounded-lg border border-white/12 bg-white/5 px-2 py-1.5 text-sm text-white outline-none focus:border-[#D6A653]/50" />
+                              <input type="number" step="0.01" disabled={!editable} value={shown[k] ?? ""} onChange={(e) => upd(k, Number(e.target.value))} data-testid={`cfg-${m}-${k}`}
+                                className="w-24 rounded-lg border border-white/12 bg-white/5 px-2 py-1.5 text-sm text-white outline-none focus:border-[#D6A653]/50 disabled:opacity-40" />
                             </td>
                           ))}
                         </tr>
@@ -170,6 +204,7 @@ export default function CommercialSettings() {
                   </tbody>
                 </table>
               </div>
+              <p className="mt-3 text-[11px] text-white/30">Auto markets recompute from USD whenever you change the USD base or their FX rate. Switch a market to Manual to set a fixed local price (e.g. AED 369.99); manual prices are preserved when USD changes.</p>
             </Card>
 
             <p className="text-center text-[11px] text-white/30" data-testid="cfg-demo-note">
