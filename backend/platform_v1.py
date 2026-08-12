@@ -755,6 +755,15 @@ class CheckoutIn(BaseModel):
     origin_url: str
 
 
+def _trial_eligible(sub: dict) -> bool:
+    """The 14-day trial is a ONE-TIME signup benefit. Any account that has EVER started
+    a trial carries a persistent, immutable marker (trial_started_at / trial_ends_at) and
+    is permanently ineligible for another — regardless of cancel, expiry, payment failure,
+    plan/interval switch, re-login or repeated checkout."""
+    sub = sub or {}
+    return not (sub.get("trial_started_at") or sub.get("trial_ends_at"))
+
+
 def _resolve_checkout_amount(cfg: dict, plan: str, interval: str, seats: int):
     """Amount ALWAYS resolves from the published commercial config — never from the client."""
     market = (cfg.get("default_market") or "USD").upper()
@@ -786,15 +795,10 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
     unit_amount = int(round(amount * 100))
     if unit_amount <= 0:
         raise HTTPException(400, "This plan is not available for self-service checkout")
-    # honour any remaining free-trial days from the workspace subscription
+    # Trial eligibility is server-side & persistent (never based on current status alone).
     ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
     sub = (ws or {}).get("subscription") or {}
-    trial_days_left = 0
-    te = sub.get("trial_ends_at")
-    if sub.get("status") == "trialing" and te and te > now_iso():
-        import math
-        secs = (datetime.fromisoformat(te) - datetime.now(timezone.utc)).total_seconds()
-        trial_days_left = max(0, min(30, int(math.ceil(secs / 86400))))
+    trial_eligible = _trial_eligible(sub)
     line_items = [{
         "price_data": {
             "currency": currency,
@@ -806,8 +810,12 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
         "quantity": seats,
     }]
     sub_data = {"metadata": {"ws_id": ws_id, "plan": body.plan}}
-    if trial_days_left > 0:
-        sub_data["trial_period_days"] = trial_days_left
+    # Only a trial-eligible (never-trialed) account may receive a free-trial window.
+    # Previously-trialed accounts are charged immediately (no trial_period_days).
+    if trial_eligible:
+        _tdays = await trial_days()
+        if _tdays > 0:
+            sub_data["trial_period_days"] = _tdays
     meta = {"ws_id": ws_id, "plan": body.plan, "interval": body.interval, "seats": str(seats), "market": market}
     base_kwargs = dict(
         mode="subscription",
@@ -857,6 +865,10 @@ async def _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, mar
     _rf = ((prior or {}).get("subscription") or {}).get("referral")
     if _rf:
         sub["referral"] = _rf
+    # Preserve the immutable one-time-trial marker so a paid/synced state can never
+    # make the account trial-eligible again. Set it if Stripe reports a trial.
+    _prior_started = ((prior or {}).get("subscription") or {}).get("trial_started_at")
+    sub["trial_started_at"] = _prior_started or sub["trial_ends_at"] or (now_iso() if st == "trialing" else None)
     await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription": sub, "plan": plan}})
     if status == "active" and plan in ("pro", "team"):
         await record_paid_subscription_event(ws_id, source=source, event_id=event_id)
@@ -1236,10 +1248,12 @@ async def _provision_account(*, email, name, account_type="individual", company_
     _pending = "team" if is_team else "pro"
     if _tdays > 0:
         _sub = {"plan": "trial", "pending_plan": _pending, "status": "trialing",
+                "trial_started_at": now_iso(),
                 "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=_tdays)).isoformat(),
                 "current_period_end": None, "seats": seats_n, "interval": interval}
     else:
         _sub = {"plan": "trial", "pending_plan": _pending, "status": "trial_expired",
+                "trial_started_at": now_iso(),
                 "trial_ends_at": now_iso(), "current_period_end": None, "seats": seats_n, "interval": interval}
     _ws_name = (company_name.strip() if is_team else "") or (workspace_name or "").strip() or ((name or "").strip() or "My Workspace")
     await db.workspaces.insert_one({

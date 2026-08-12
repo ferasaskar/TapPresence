@@ -886,3 +886,17 @@ Gap fixed: FX-rate editing + AUTO/MANUAL toggle + manual price entry now live in
 - Policy: no external FX API; DEFAULT_FX_RATES are only initial defaults; persisted commercial_config.fx_rates is the editable source of truth from /control/plans.
 - Production safety (verified in code): commercial_config is inserted only when absent (get_commercial_config) and mutated only by explicit admin publish/PUT; run_migration never touches it; get_commercial_config _deep_merge fills only MISSING keys (never overwrites existing USD/prices). So deploy keeps production USD base authoritative, AUTO currencies resolve from it, MANUAL overrides preserved, no seed/preview value overwrites production.
 - Tests: backend/tests/test_pricing_admin_controls.py 12/12 (USD->AUTO recompute; AED FX edit recomputes AED only; AED->MANUAL wins; USD change keeps MANUAL AED; AED->AUTO recomputes; EUR/SAR/GBP independent; savings correct; persists after refresh; landing==registration==resolver; seed does not overwrite published). Prior suite test_pricing_currency.py still 13/13. Config snapshotted+restored.
+
+---
+
+## P0 Trial-eligibility bug fix (2026-06-12) — preview only, REDEPLOY needed for production
+ROOT CAUSE: `billing/checkout` set `trial_period_days` from CURRENT status (`status=="trialing"` + remaining days), not a persistent "ever trialed" signal. A user still within their signup trial (or any re-checkout) got another free-trial window in Stripe. Duplicate registration was already blocked (email normalized+unique in `_provision_account`), so this was the existing-account checkout path.
+FIX (persistent, server-side): trial is a ONE-TIME signup benefit.
+- Added immutable marker `subscription.trial_started_at` set at registration (both trial-on and trial-off branches) alongside existing `trial_ends_at`.
+- New pure helper `_trial_eligible(sub)` = eligible only if NEITHER `trial_started_at` NOR `trial_ends_at` exists.
+- `billing_checkout` now: `trial_eligible = _trial_eligible(sub)`; adds `trial_period_days` ONLY when eligible (never-trialed). Previously-trialed accounts get NO trial in the Stripe Checkout Session → charged immediately. Removed the old "honor remaining trial days" logic.
+- Webhook `_sync_ws_from_stripe_sub` now PRESERVES `trial_started_at` (prior value, else trial_ends_at, else now if Stripe reports trialing) so a paid/synced state can never re-enable trial eligibility.
+- Marker is immutable across cancel/expire/payment-fail/plan switch/relogin/retry. Legacy users already carry `trial_ends_at` (migration) → ineligible.
+Files: backend/platform_v1.py (_trial_eligible, billing_checkout trial gating, _provision_account trial_started_at, _sync_ws_from_stripe_sub preservation).
+Tests: backend/tests/test_trial_eligibility.py 14/14 (new user 1x14d trial; 2nd checkout no trial; cancel/expire/payment-fail/monthly<->annual/relogin all ineligible; eligible only with no marker; duplicate + case/whitespace-normalized email rejected; existing admin intact). Stripe payload omits trial_period_days for ineligible users (gated by _trial_eligible=False).
+PRODUCTION: fix is in preview only — user must REDEPLOY to apply on https://tappresence.com.
