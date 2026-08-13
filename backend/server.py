@@ -902,6 +902,21 @@ async def clear_lead_reminder(lead_id: str, user: dict = Depends(get_current_use
     return {"ok": True}
 
 
+@api_router.post("/admin/leads/{lead_id}/complete-follow-up")
+async def complete_lead_follow_up(lead_id: str, user: dict = Depends(get_current_user)):
+    """Mark the lead's follow-up as done (real persisted completion for event analytics).
+    Clears the pending reminder + records a timeline entry. Reuses existing lead management."""
+    await _lead_or_403(lead_id, user)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.notifications.delete_many({"type": "lead_reminder", "lead_id": lead_id})
+    await db.leads.update_one({"id": lead_id}, {
+        "$set": {"follow_up_completed_at": now, "next_follow_up": "", "updated_at": now, "last_activity": now},
+        "$push": {"timeline": {"at": now, "event": "follow_up_completed", "by": user.get("id")}}})
+    return {"ok": True, "follow_up_completed_at": now}
+
+
+
+
 @api_router.delete("/admin/leads/{lead_id}")
 async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
     await _lead_or_403(lead_id, user)

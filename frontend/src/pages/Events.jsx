@@ -16,6 +16,7 @@ export default function Events() {
   const navigate = useNavigate();
   const { t } = useLocale();
   const [events, setEvents] = useState(null);
+  const [seg, setSeg] = useState("all");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", location: "", start_date: "", end_date: "", notes: "" });
   const [saving, setSaving] = useState(false);
@@ -60,8 +61,17 @@ export default function Events() {
             {t("events.empty")}
           </div>
         ) : (
+          <>
+          <div className="mb-4 flex gap-2" data-testid="events-segments">
+            {["all", "active", "archived"].map((s) => (
+              <button key={s} onClick={() => setSeg(s)} data-testid={`events-seg-${s}`}
+                className={`rounded-full border px-3.5 py-1.5 text-sm transition-all ${seg === s ? "border-[#D6A653] bg-[#D6A653]/12 text-white" : "border-white/10 text-white/55 hover:border-white/25"}`}>
+                {t(`events.seg_${s}`)}
+              </button>
+            ))}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2" data-testid="events-list">
-            {events.map((e) => (
+            {events.filter((e) => seg === "all" || (e.status || "active") === seg).map((e) => (
               <button key={e.id} onClick={() => navigate(`/events/${e.id}`)} data-testid={`event-card-${e.id}`}
                 className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-left transition-all hover:border-[#D6A653]/40">
                 <div className="min-w-0">
@@ -70,12 +80,17 @@ export default function Events() {
                     {e.location ? <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {e.location}</span> : null}
                     {e.start_date ? <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" /> {fmtDate(e.start_date)}{e.end_date ? ` – ${fmtDate(e.end_date)}` : ""}</span> : null}
                   </div>
-                  <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-[#D6A653]/30 bg-[#D6A653]/10 px-2 py-0.5 text-[11px] text-[#D6A653]"><Users className="h-3 w-3" /> {t("events.leadsCount", { count: e.lead_count || 0 })}</span>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[#D6A653]/30 bg-[#D6A653]/10 px-2 py-0.5 text-[11px] text-[#D6A653]"><Users className="h-3 w-3" /> {t("events.leadsCount", { count: e.lead_count || 0 })}</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[11px] text-violet-300">{t("events.meetingsCount", { count: e.meeting_count || 0 })}</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[11px] text-emerald-300">{t("events.customersCount", { count: e.customer_count || 0 })}</span>
+                  </div>
                 </div>
                 <ChevronRight className="h-5 w-5 shrink-0 text-white/30 transition-colors group-hover:text-[#D6A653]" />
               </button>
             ))}
           </div>
+          </>
         )}
       </main>
 

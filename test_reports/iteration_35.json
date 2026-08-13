@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 35 — Event Dashboard + Attribution V1. Backend: 11/11 pytest cases pass covering GET /api/events (with lead_count/meeting_count/customer_count), GET /api/events/{id} (enriched leads with captured_by_name/new_returning/has_meeting), GET /api/events/{id}/dashboard (kpis, pipeline 7 stages, capture_methods, conversion, followups, leaderboard, daily_trend in event tz, cost with revenue/roi=null never fabricated), PATCH /api/events/{id} (event_cost + currency uppercased), POST /api/admin/leads/{id}/complete-follow-up, tenant isolation 403 for cross-tenant + empty events list, empty-event dashboard shows all zeros + null revenue/roi, and pipeline count == total leads invariant. Frontend UI (data-testid based): GITEX dashboard renders correct seed metrics (total=4, new=4/100%, returning=0, meetings=0, customers=1, conversion=25%, follow-ups-due=1 with 1 overdue, follow-ups-done=2), pipeline pipe-<stage> clickable and filters event-leads-list, capture-methods bar, daily-trend chart, cost card with 'Not available yet' for revenue/ROI, team leaderboard with 1 row and lb-sort dropdown, events list segment filters + 3 event cards. Tenant isolation on UI: work@gmail.com sees event-detail-error for GITEX and empty /events list (0 cards). Mobile 430px: no horizontal overflow. Arabic RTL: html dir=rtl, KPI labels translated (e.g. 'إجمالي العملاء'), no overflow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/events/{id}", "issue": "Cannot unset event_cost back to null once set — Pydantic body 'if v is None: continue' skips null values in update_event(), so a user who typed a cost by mistake has no way to clear it via the API. Consider explicit sentinel or empty-string handling."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "EventDetail cost card", "issue": "When event_cost is 0 (e.g. user cleared field), the card shows '<CURRENCY> 0' instead of 'Not set'. Condition uses `!= null` so 0 is treated as a real value. Recommend treating 0 and null the same for display, or hide currency when value is 0.", "selector": "[data-testid=\"event-cost-value\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter35_event_dashboard.py", "/app/test_reports/pytest/iter35.xml"],
+  "action_items": [
+    "(Low) Allow clearing event_cost via PATCH (accept explicit null / empty). Currently the field is stuck once set.",
+    "(Low) In EventDetail.jsx line 190, treat event_cost === 0 the same as null (show 'Not set')."
+  ],
+  "critical_code_review_comments": [
+    "platform_v1.py now 4237 lines — same maintenance risk flagged in iter34. Event routes (list/create/get/patch/dashboard + helpers) are ~270 lines and should live in backend/routes/events.py.",
+    "EventDetail.jsx (~282 lines) is dense but readable; consider extracting <Pipeline>, <Leaderboard>, <CostCard>, <LeadRow> sub-components for testability.",
+    "Follow-up bucketing logic in event_dashboard has an unreachable branch: `elif nf <= now.isoformat() or nfday == today: fu['due'] += 1 else: fu['due'] += 0` — the else adds nothing but implies future reminders are silently dropped from any bucket (they go into 'scheduled_future' via subtraction). Cleaner to add an explicit 'future' bucket.",
+    "Dashboard endpoint recomputes _lead_new_or_returning twice (once for nr counter, again inside leaderboard loop). Fine for current scale but O(2*N*T) — cache result per lead if lead volumes grow.",
+    "Tenant scoping: _event_or_403 correctly returns 403 for cross-tenant access; GET /api/events uses workspace_ids_for(user) which returns 'ALL' for SUPER_ADMIN — confirmed working."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter35_event_dashboard.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% (all visible flows pass)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN sees GITEX), work@gmail.com / mohammed (isolated workspace).",
+  "seed_data_creation": "Created ephemeral event TEST_iter35_empty_<ts> (Asia/Dubai tz) for empty-state test, then PATCHed status=archived to keep events list clean. Also PATCHed GITEX event_cost=12345.5 USD then reset to 0 USD — see minor issue above (cannot fully null). No leads were created in this iteration.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Event Dashboard V1 is functionally complete and correct. All KPI/pipeline/leaderboard/daily/RTL/mobile/tenant checks green. Two low-priority polish items only: (1) PATCH cannot clear event_cost back to null, (2) event_cost=0 displays 'AED 0' instead of 'Not set'. GITEX (id 3877d2f4-b5b8-41fa-ba60-4e934f88a83f) currently has event_cost=0 USD as residue from testing — main agent may want to $unset it in Mongo. Backend pytest file: /app/backend/tests/test_iter35_event_dashboard.py, junit: /app/test_reports/pytest/iter35.xml.",
+  "rca of the issue": "N/A — no functional bugs. Cost-null UX gap is cosmetic (main agent can gate on `event_cost != null && Number(event_cost) > 0` on line 190 of EventDetail.jsx and mirror the None-vs-clear semantics in update_event by treating empty string as an explicit unset)."
+}

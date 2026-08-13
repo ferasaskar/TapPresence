@@ -5,7 +5,7 @@ import { OwnerNav } from "@/components/admin/OwnerNav";
 import { DateFilter } from "@/components/admin/DateFilter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Loader2, Search, Phone, Mail, MessageCircle, Sparkles, Trash2, User, CreditCard, Clock, Copy, X, ArrowLeft, CalendarDays, CalendarPlus, Bell, BellOff, Save, Building2, Globe, Tag } from "lucide-react";
+import { Loader2, Search, Phone, Mail, MessageCircle, Sparkles, Trash2, User, CreditCard, Clock, Copy, X, ArrowLeft, CalendarDays, CalendarPlus, Bell, BellOff, Save, Building2, Globe, Tag, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/i18n/useLocale";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
@@ -156,6 +156,12 @@ export default function Leads() {
   const clearReminder = async (l) => {
     setSavingRemind(true);
     try { await api.delete(`/admin/leads/${l.id}/remind`); setRemindWhen(""); patchLeadLocal(l.id, { next_follow_up: "" }); toast.success(t("leads.reminderCleared")); }
+    catch { toast.error(t("leads.couldNotUpdate")); } finally { setSavingRemind(false); }
+  };
+
+  const completeFollowUp = async (l) => {
+    setSavingRemind(true);
+    try { const { data } = await api.post(`/admin/leads/${l.id}/complete-follow-up`); patchLeadLocal(l.id, { next_follow_up: "", follow_up_completed_at: data.follow_up_completed_at }); toast.success(t("leads.followUpDone")); }
     catch { toast.error(t("leads.couldNotUpdate")); } finally { setSavingRemind(false); }
   };
 
@@ -325,6 +331,8 @@ export default function Leads() {
                       <input type="datetime-local" value={remindWhen} onChange={(e) => setRemindWhen(e.target.value)} className="h-8 flex-1 rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="reminder-input" />
                       <button onClick={() => saveReminder(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg bg-[#D6A653] px-3 py-1.5 text-xs font-medium text-[#050607] hover:bg-[#E8B764] disabled:opacity-60" data-testid="reminder-set">{savingRemind ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bell className="h-3.5 w-3.5" />} {t("leads.setReminder")}</button>
                       {l.next_follow_up ? <button onClick={() => clearReminder(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg border border-white/12 px-3 py-1.5 text-xs text-white/60 hover:text-white disabled:opacity-60" data-testid="reminder-clear"><BellOff className="h-3.5 w-3.5" /> {t("leads.clearReminder")}</button> : null}
+                      {l.next_follow_up && !l.follow_up_completed_at ? <button onClick={() => completeFollowUp(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-400/20 disabled:opacity-60" data-testid="reminder-complete"><Check className="h-3.5 w-3.5" /> {t("leads.markFollowUpDone")}</button> : null}
+                      {l.follow_up_completed_at ? <span className="flex items-center gap-1 text-xs text-emerald-300" data-testid="reminder-done"><Check className="h-3.5 w-3.5" /> {t("leads.followUpDone")}</span> : null}
                     </div>
                   </div>
 

@@ -2953,6 +2953,9 @@ class EventIn(BaseModel):
     end_date: str = ""
     notes: str = ""
     campaign_code: str = ""
+    timezone: str = ""
+    event_cost: Optional[float] = None
+    event_cost_currency: str = ""
 
 
 class EventUpdateIn(BaseModel):
@@ -2963,6 +2966,9 @@ class EventUpdateIn(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     campaign_code: Optional[str] = None
+    timezone: Optional[str] = None
+    event_cost: Optional[float] = None
+    event_cost_currency: Optional[str] = None
 
 
 async def _event_or_403(event_id: str, user: dict):
@@ -2975,13 +2981,57 @@ async def _event_or_403(event_id: str, user: dict):
     return ev
 
 
+# ---- Event analytics helpers (all derived from real persisted data) ----
+_MEETING_ACTIVE = {"requested", "scheduled", "confirmed", "rescheduled", "time_proposed", "completed"}
+
+
+def _event_lead_query(event_id: str) -> dict:
+    """A lead belongs to an event if its current event_id matches OR any timeline interaction
+    references the event. Timeline preserves cross-event history after a re-scan moves event_id."""
+    return {"$or": [{"event_id": event_id}, {"timeline.event_id": event_id}]}
+
+
+def _lead_new_or_returning(lead: dict, event_id: str) -> str:
+    """NEW = this lead was first created at this event (initial scan/exchange interaction here).
+    RETURNING = an already-existing contact re-engaged at this event (badge_rescanned here)."""
+    entries = [t for t in (lead.get("timeline") or []) if t.get("event_id") == event_id]
+    if any(t.get("event") in ("badge_scanned", "card_scanned") for t in entries):
+        return "new"
+    if any(t.get("event") == "badge_rescanned" for t in entries):
+        return "returning"
+    # fallback: lead attributed only by event_id field with no timeline detail → treat as new
+    return "new"
+
+
+async def _event_meetings_by_lead(lead_ids):
+    """Structured meeting records keyed by lead_id. Excludes cancelled/declined. Deduped by meeting id."""
+    if not lead_ids:
+        return {}
+    meets = await db.meetings.find({"lead_id": {"$in": list(lead_ids)}}, {"_id": 0}).to_list(20000)
+    out = {}
+    seen = set()
+    for m in meets:
+        if m.get("id") in seen:
+            continue
+        seen.add(m.get("id"))
+        if m.get("status") in ("cancelled", "declined"):
+            continue
+        out.setdefault(m["lead_id"], []).append(m)
+    return out
+
+
 @platform_router.get("/events")
 async def list_events(user: dict = Depends(current_user)):
     ws_ids = await workspace_ids_for(user)
     q = {} if ws_ids == "ALL" else {"workspace_id": {"$in": ws_ids}}
     events = await db.events.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     for e in events:
-        e["lead_count"] = await db.leads.count_documents({"event_id": e["id"]})
+        leads = await db.leads.find(_event_lead_query(e["id"]), {"_id": 0, "id": 1, "status": 1}).to_list(20000)
+        lead_ids = [l["id"] for l in leads]
+        by_lead = await _event_meetings_by_lead(lead_ids)
+        e["lead_count"] = len(leads)
+        e["meeting_count"] = sum(len(v) for v in by_lead.values())
+        e["customer_count"] = sum(1 for l in leads if (l.get("status") or "new").strip().lower() in ("customer", "converted", "won"))
     return events
 
 
@@ -2993,28 +3043,39 @@ async def create_event(body: EventIn, user: dict = Depends(current_user)):
         raise HTTPException(400, "No workspace")
     if not body.name.strip():
         raise HTTPException(400, "Event name is required")
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "region": 1})
+    tz = body.timezone.strip() or ((ws or {}).get("region") or {}).get("timezone") or "UTC"
     doc = {"id": str(uuid.uuid4()), "workspace_id": ws_id,
            "name": body.name.strip(), "location": body.location.strip(),
            "start_date": body.start_date.strip(), "end_date": body.end_date.strip(),
            "notes": body.notes.strip(), "campaign_code": body.campaign_code.strip(),
+           "timezone": tz,
+           "event_cost": body.event_cost if body.event_cost is not None else None,
+           "event_cost_currency": (body.event_cost_currency or "").strip().upper(),
            "status": "active", "created_by": user["id"],
            "created_at": now_iso(), "updated_at": now_iso()}
     await db.events.insert_one(doc)
     doc.pop("_id", None)
     doc["lead_count"] = 0
+    doc["meeting_count"] = 0
+    doc["customer_count"] = 0
     return doc
 
 
 @platform_router.get("/events/{event_id}")
 async def get_event(event_id: str, user: dict = Depends(current_user)):
     ev = await _event_or_403(event_id, user)
-    leads = await db.leads.find({"event_id": event_id}, {"_id": 0}).sort("created_at", -1).to_list(3000)
-    # resolve captured_by names for the leads list
+    leads = await db.leads.find(_event_lead_query(event_id), {"_id": 0}).sort("created_at", -1).to_list(20000)
     uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
     users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(500) if uids else []
     uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    by_lead = await _event_meetings_by_lead([l["id"] for l in leads])
     for l in leads:
         l["captured_by_name"] = uname.get(l.get("captured_by"), "")
+        l["new_returning"] = _lead_new_or_returning(l, event_id)
+        ms_l = by_lead.get(l["id"]) or []
+        l["has_meeting"] = bool(ms_l)
+        l["meeting_status"] = (ms_l[0].get("status") if ms_l else "")
     ev["lead_count"] = len(leads)
     return {"event": ev, "leads": leads, "lead_count": len(leads)}
 
@@ -3022,14 +3083,177 @@ async def get_event(event_id: str, user: dict = Depends(current_user)):
 @platform_router.patch("/events/{event_id}")
 async def update_event(event_id: str, body: EventUpdateIn, user: dict = Depends(current_user)):
     await _event_or_403(event_id, user)
-    upd = {k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump().items() if v is not None}
+    # exclude_unset lets callers explicitly clear event_cost (send null) vs. omit it entirely
+    raw = body.model_dump(exclude_unset=True)
+    upd = {}
+    for k, v in raw.items():
+        if v is None:
+            # only nullable/clearable fields may be set to null
+            if k in ("event_cost", "event_cost_currency", "notes"):
+                upd[k] = None if k == "event_cost" else ""
+            continue
+        upd[k] = v.strip() if isinstance(v, str) else v
+    if "event_cost_currency" in upd and isinstance(upd["event_cost_currency"], str):
+        upd["event_cost_currency"] = upd["event_cost_currency"].upper()
     if "status" in upd and upd["status"] not in ("active", "archived"):
         raise HTTPException(400, "Invalid status")
     upd["updated_at"] = now_iso()
     await db.events.update_one({"id": event_id}, {"$set": upd})
     ev = await db.events.find_one({"id": event_id}, {"_id": 0})
-    ev["lead_count"] = await db.leads.count_documents({"event_id": event_id})
+    ev["lead_count"] = await db.leads.count_documents(_event_lead_query(event_id))
     return ev
+
+
+def _event_days(ev: dict) -> int:
+    sd, ed = ev.get("start_date"), ev.get("end_date")
+    try:
+        if sd and ed:
+            d0 = datetime.fromisoformat(sd).date()
+            d1 = datetime.fromisoformat(ed).date()
+            return max(1, (d1 - d0).days + 1)
+        if sd:
+            return 1
+    except Exception:
+        pass
+    return 0
+
+
+def _local_day(iso_str: str, tzname: str) -> str:
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromisoformat((iso_str or "").replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo(tzname or "UTC")).strftime("%Y-%m-%d")
+    except Exception:
+        return (iso_str or "")[:10]
+
+
+@platform_router.get("/events/{event_id}/dashboard")
+async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
+    """Server-side aggregated event analytics. Tenant-scoped via _event_or_403.
+    Every metric is derived from real persisted leads/meetings — no fabricated values."""
+    ev = await _event_or_403(event_id, user)
+    tz = ev.get("timezone") or "UTC"
+    leads = await db.leads.find(_event_lead_query(event_id),
+                                {"_id": 0, "id": 1, "status": 1, "source": 1, "scanner_type": 1,
+                                 "captured_by": 1, "captured_at": 1, "created_at": 1,
+                                 "next_follow_up": 1, "follow_up_completed_at": 1, "timeline": 1}).to_list(50000)
+    lead_ids = [l["id"] for l in leads]
+    by_lead = await _event_meetings_by_lead(lead_ids)
+    total = len(leads)
+
+    # New vs returning
+    nr = {"new": 0, "returning": 0}
+    for l in leads:
+        nr[_lead_new_or_returning(l, event_id)] += 1
+
+    # Pipeline distribution (existing 7 stages, legacy aliased)
+    STAGES = ["new", "contacted", "qualified", "meeting", "opportunity", "customer", "not_interested"]
+    ALIAS = {"meeting_booked": "meeting", "converted": "customer", "archived": "not_interested",
+             "won": "customer", "lost": "not_interested", "follow_up": "contacted"}
+    def stage_of(l):
+        s = (l.get("status") or "new").strip().lower()
+        s = ALIAS.get(s, s)
+        return s if s in STAGES else "new"
+    pipeline = {s: 0 for s in STAGES}
+    for l in leads:
+        pipeline[stage_of(l)] += 1
+    customers = pipeline["customer"]
+
+    # Capture methods
+    caps = {}
+    for l in leads:
+        key = (l.get("source") or "inquiry")
+        caps[key] = caps.get(key, 0) + 1
+    capture_methods = sorted([{"key": k, "count": v, "pct": round(v * 100 / total, 1) if total else 0}
+                              for k, v in caps.items()], key=lambda x: x["count"], reverse=True)
+
+    # Meetings (deduped, non-cancelled)
+    meetings_total = sum(len(v) for v in by_lead.values())
+    leads_with_meeting = len(by_lead)
+    customer_lead_ids = {l["id"] for l in leads if stage_of(l) == "customer"}
+    meetings_to_customers = sum(1 for lid in by_lead if lid in customer_lead_ids)
+
+    # Follow-ups
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
+    fu = {"due": 0, "overdue": 0, "completed": 0, "none": 0}
+    for l in leads:
+        if l.get("follow_up_completed_at"):
+            fu["completed"] += 1; continue
+        nf = (l.get("next_follow_up") or "").strip()
+        if not nf:
+            fu["none"] += 1; continue
+        nfday = nf[:10]
+        if nfday < today:
+            fu["overdue"] += 1
+        elif nf <= now.isoformat() or nfday == today:
+            fu["due"] += 1
+        else:
+            fu["due"] += 0  # scheduled future — counted under 'set' implicitly
+    fu["scheduled_future"] = total - fu["due"] - fu["overdue"] - fu["completed"] - fu["none"]
+
+    # Leaderboard (captured_by → workspace member)
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(1000) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    lb = {}
+    for l in leads:
+        uid = l.get("captured_by") or "unknown"
+        row = lb.setdefault(uid, {"user_id": uid, "name": uname.get(uid, "—"), "leads": 0, "new": 0,
+                                  "returning": 0, "meetings": 0, "customers": 0})
+        row["leads"] += 1
+        row[_lead_new_or_returning(l, event_id)] += 1
+        if by_lead.get(l["id"]):
+            row["meetings"] += 1
+        if stage_of(l) == "customer":
+            row["customers"] += 1
+    for row in lb.values():
+        row["conversion_rate"] = round(row["customers"] * 100 / row["leads"], 1) if row["leads"] else 0
+    leaderboard = sorted(lb.values(), key=lambda x: x["leads"], reverse=True)
+
+    # Daily trend (in event timezone)
+    daily = {}
+    for l in leads:
+        d = _local_day(l.get("captured_at") or l.get("created_at") or "", tz)
+        if d:
+            daily[d] = daily.get(d, 0) + 1
+    daily_trend = [{"date": d, "leads": daily[d]} for d in sorted(daily)]
+
+    created_user = await db.users.find_one({"id": ev.get("created_by")}, {"_id": 0, "name": 1, "email": 1})
+    conversion_rate = round(customers * 100 / total, 1) if total else 0
+
+    return {
+        "event": {**ev, "days": _event_days(ev),
+                  "created_by_name": (created_user or {}).get("name") or (created_user or {}).get("email") or ""},
+        "timezone": tz,
+        "kpis": {
+            "total_leads": total,
+            "new_contacts": nr["new"],
+            "returning_contacts": nr["returning"],
+            "meetings_booked": meetings_total,
+            "followups_due": fu["due"], "followups_overdue": fu["overdue"],
+            "followups_completed": fu["completed"], "followups_none": fu["none"],
+            "customers": customers,
+            "conversion_rate": conversion_rate,
+        },
+        "new_vs_returning": {"new": nr["new"], "returning": nr["returning"],
+                             "new_pct": round(nr["new"] * 100 / total, 1) if total else 0,
+                             "returning_pct": round(nr["returning"] * 100 / total, 1) if total else 0},
+        "pipeline": [{"stage": s, "count": pipeline[s]} for s in STAGES],
+        "capture_methods": capture_methods,
+        "conversion": {"leads": total, "customers": customers, "conversion_rate": conversion_rate,
+                       "meetings": meetings_total, "leads_with_meeting": leads_with_meeting,
+                       "meeting_rate": round(leads_with_meeting * 100 / total, 1) if total else 0,
+                       "meetings_to_customers": meetings_to_customers},
+        "followups": fu,
+        "leaderboard": leaderboard,
+        "daily_trend": daily_trend,
+        "cost": {"event_cost": ev.get("event_cost"), "currency": ev.get("event_cost_currency") or "",
+                 "attributed_revenue": None, "roi": None},
+    }
+
 
 
 
@@ -3926,6 +4150,11 @@ async def run_migration():
         await db.referral_reward_grants.create_index([("referrer_ws_id", 1), ("index", 1)], unique=True)
         await db.referrals.create_index("status")
         await db.billing_events.create_index("key", unique=True)
+        # Event Dashboard V1 — query patterns: leads by event, timeline event, meetings by lead
+        await db.events.create_index([("workspace_id", 1), ("created_at", -1)])
+        await db.leads.create_index("event_id")
+        await db.leads.create_index("timeline.event_id")
+        await db.meetings.create_index("lead_id")
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 
