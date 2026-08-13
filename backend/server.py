@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized, recalc_lead_score, require_ws_admin, _event_or_403
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized, recalc_lead_score, require_ws_admin, _event_or_403, crm_maybe_autosync, _lead_workspace_id
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -865,6 +865,8 @@ async def update_lead_fields(lead_id: str, body: LeadFieldsIn, user: dict = Depe
     upd["last_activity"] = now
     await db.leads.update_one({"id": lead_id}, {"$set": upd})
     await recalc_lead_score(lead_id)
+    _l = await db.leads.find_one({"id": lead_id}, {"_id": 0, "workspace_id": 1, "cardSlug": 1})
+    asyncio.create_task(crm_maybe_autosync(await _lead_workspace_id(_l), lead_id))
     return await db.leads.find_one({"id": lead_id}, {"_id": 0})
 
 
@@ -1056,6 +1058,7 @@ async def update_lead_financials(lead_id: str, body: LeadFinancialsIn, user: dic
             ops["$push"] = {"timeline": {"$each": tl}}
         await db.leads.update_one({"id": lead_id}, ops)
     # NOTE: lead score is intentionally NOT recalculated — financial values never affect scoring.
+    asyncio.create_task(crm_maybe_autosync(ws_id, lead_id))
     return await db.leads.find_one({"id": lead_id}, {"_id": 0})
 
 
@@ -1092,6 +1095,8 @@ async def set_lead_status(lead_id: str, body: Dict[str, Any], user: dict = Depen
     now = datetime.now(timezone.utc).isoformat()
     await db.leads.update_one({"id": lead_id}, {"$set": {"status": st, "updated_at": now, "last_activity": now}})
     await recalc_lead_score(lead_id)
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0, "workspace_id": 1, "cardSlug": 1})
+    asyncio.create_task(crm_maybe_autosync(await _lead_workspace_id(lead), lead_id))
     return {"ok": True}
 
 

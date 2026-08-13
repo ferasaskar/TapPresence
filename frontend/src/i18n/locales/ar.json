@@ -1205,6 +1205,34 @@
     "company": "الشركة",
     "score": "النقاط",
     "stage": "المرحلة",
-    "value": "القيمة"
+    "value": "القيمة",
+    "exportCsv": "تصدير CSV",
+    "syncHubspot": "مزامنة العملاء مع HubSpot"
+  },
+  "hubspot": {
+    "connected": "تم ربط HubSpot",
+    "connectFailed": "تعذّر ربط HubSpot",
+    "notAvailable": "HubSpot غير متاح",
+    "disconnected": "تم فصل HubSpot",
+    "couldNotDisconnect": "حدث خطأ ما",
+    "saved": "تم الحفظ",
+    "statusConnected": "متصل",
+    "reconnectNeeded": "يلزم إعادة الربط",
+    "connectedDesc": "متصل بالحساب {{hub}}. تتم مزامنة العملاء مع HubSpot.",
+    "disconnectedDesc": "اربط HubSpot لمزامنة العملاء والصفقات مع نظام CRM.",
+    "autoSync": "مزامنة العملاء تلقائيًا مع HubSpot",
+    "connect": "ربط HubSpot",
+    "reconnect": "إعادة الربط",
+    "disconnect": "فصل",
+    "synced": "تمت المزامنة مع HubSpot",
+    "syncFailed": "فشلت مزامنة HubSpot",
+    "syncToHubspot": "مزامنة إلى HubSpot",
+    "retrySync": "إعادة المحاولة",
+    "lastSynced": "آخر مزامنة {{when}}",
+    "state_synced": "متزامن",
+    "state_pending": "قيد الانتظار",
+    "state_failed": "فشل",
+    "state_not_synced": "غير متزامن",
+    "eventSyncSummary": "تمت مزامنة {{synced}} · فشل {{failed}} · تم تخطي {{skipped}}"
   }
 }

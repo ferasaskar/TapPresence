@@ -1205,6 +1205,34 @@
     "company": "Empresa",
     "score": "Puntuación",
     "stage": "Etapa",
-    "value": "Valor"
+    "value": "Valor",
+    "exportCsv": "Exportar CSV",
+    "syncHubspot": "Sincronizar leads con HubSpot"
+  },
+  "hubspot": {
+    "connected": "HubSpot conectado",
+    "connectFailed": "No se pudo conectar HubSpot",
+    "notAvailable": "HubSpot no está disponible",
+    "disconnected": "HubSpot desconectado",
+    "couldNotDisconnect": "Algo salió mal",
+    "saved": "Guardado",
+    "statusConnected": "Conectado",
+    "reconnectNeeded": "Reconexión necesaria",
+    "connectedDesc": "Conectado al portal {{hub}}. Los leads se sincronizan con HubSpot.",
+    "disconnectedDesc": "Conecta HubSpot para sincronizar leads y negocios con tu CRM.",
+    "autoSync": "Sincronizar leads automáticamente con HubSpot",
+    "connect": "Conectar HubSpot",
+    "reconnect": "Reconectar",
+    "disconnect": "Desconectar",
+    "synced": "Sincronizado con HubSpot",
+    "syncFailed": "Falló la sincronización de HubSpot",
+    "syncToHubspot": "Sincronizar con HubSpot",
+    "retrySync": "Reintentar",
+    "lastSynced": "Última sincronización {{when}}",
+    "state_synced": "Sincronizado",
+    "state_pending": "Pendiente",
+    "state_failed": "Fallido",
+    "state_not_synced": "Sin sincronizar",
+    "eventSyncSummary": "Sincronizados {{synced}} · fallidos {{failed}} · omitidos {{skipped}}"
   }
 }

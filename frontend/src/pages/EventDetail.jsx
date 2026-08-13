@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { OwnerNav } from "@/components/admin/OwnerNav";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Loader2, ArrowLeft, CalendarDays, MapPin, Users, User, Search, TrendingUp, UserPlus, RefreshCw, CalendarCheck, Trophy, Coins, Pencil, Check, DollarSign } from "lucide-react";
+import { Loader2, ArrowLeft, CalendarDays, MapPin, Users, User, Search, TrendingUp, UserPlus, RefreshCw, CalendarCheck, Trophy, Coins, Pencil, Check, DollarSign, Download } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/i18n/useLocale";
 
@@ -45,6 +45,8 @@ export default function EventDetail() {
   const [lbSort, setLbSort] = useState("leads");
   const [editCost, setEditCost] = useState(false);
   const [costForm, setCostForm] = useState({ event_cost: "", event_cost_currency: "AED" });
+  const [hsConn, setHsConn] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const load = () => {
     api.get(`/events/${id}/dashboard`).then(({ data }) => {
@@ -52,8 +54,29 @@ export default function EventDetail() {
       setCostForm({ event_cost: data.cost.event_cost ?? "", event_cost_currency: data.cost.currency || "AED" });
     }).catch(() => setErr(true));
     api.get(`/events/${id}`).then(({ data }) => setLeads(data.leads || [])).catch(() => {});
+    api.get("/integrations/hubspot/status").then(({ data }) => setHsConn(data)).catch(() => setHsConn(null));
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+
+  const exportCsv = async () => {
+    try {
+      const res = await api.get(`/events/${id}/leads.csv`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "text/csv" }));
+      const a = document.createElement("a"); a.href = url;
+      a.download = `${(dash?.event?.name || "event")}-leads.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } catch { toast.error(t("events.createFailed")); }
+  };
+
+  const syncEventHubspot = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/events/${id}/sync-hubspot`);
+      toast.success(t("hubspot.eventSyncSummary", { synced: data.synced, failed: data.failed, skipped: data.skipped }));
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || t("hubspot.syncFailed")); }
+    finally { setBusy(false); }
+  };
 
   const saveCost = async () => {
     try {
@@ -109,6 +132,14 @@ export default function EventDetail() {
                 {ev.days ? <span>{t("eventDash.days", { count: ev.days })}</span> : null}
                 {ev.created_by_name ? <span className="flex items-center gap-1.5"><User className="h-4 w-4 text-white/40" /> {ev.created_by_name}</span> : null}
                 <span className="text-white/35">{dash.timezone}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button onClick={exportCsv} className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-medium text-white/85 hover:bg-white/10" data-testid="event-export-csv"><Download className="h-3.5 w-3.5 text-[#D6A653]" /> {t("eventDash.exportCsv")}</button>
+                {hsConn?.connected ? (
+                  <button onClick={syncEventHubspot} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 px-3.5 py-2 text-xs font-medium text-[#D6A653] hover:bg-[#D6A653]/20 disabled:opacity-60" data-testid="event-sync-hubspot">
+                    {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />} {t("eventDash.syncHubspot")}
+                  </button>
+                ) : null}
               </div>
             </div>
 

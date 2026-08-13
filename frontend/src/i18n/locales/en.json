@@ -1205,6 +1205,34 @@
     "company": "Company",
     "score": "Score",
     "stage": "Stage",
-    "value": "Value"
+    "value": "Value",
+    "exportCsv": "Export CSV",
+    "syncHubspot": "Sync leads to HubSpot"
+  },
+  "hubspot": {
+    "connected": "HubSpot connected",
+    "connectFailed": "Couldn't connect HubSpot",
+    "notAvailable": "HubSpot isn't available",
+    "disconnected": "HubSpot disconnected",
+    "couldNotDisconnect": "Something went wrong",
+    "saved": "Saved",
+    "statusConnected": "Connected",
+    "reconnectNeeded": "Reconnect needed",
+    "connectedDesc": "Connected to portal {{hub}}. Leads sync to your HubSpot CRM.",
+    "disconnectedDesc": "Connect HubSpot to sync leads and deals into your CRM.",
+    "autoSync": "Automatically sync leads to HubSpot",
+    "connect": "Connect HubSpot",
+    "reconnect": "Reconnect",
+    "disconnect": "Disconnect",
+    "synced": "Synced to HubSpot",
+    "syncFailed": "HubSpot sync failed",
+    "syncToHubspot": "Sync to HubSpot",
+    "retrySync": "Retry sync",
+    "lastSynced": "Last synced {{when}}",
+    "state_synced": "Synced",
+    "state_pending": "Pending",
+    "state_failed": "Failed",
+    "state_not_synced": "Not synced",
+    "eventSyncSummary": "Synced {{synced}} · failed {{failed}} · skipped {{skipped}}"
   }
 }

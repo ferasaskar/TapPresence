@@ -104,6 +104,37 @@ export default function Settings() {
     finally { setGcalBusy(false); }
   };
 
+  // HubSpot CRM integration
+  const [hs, setHs] = useState(null);
+  const [hsBusy, setHsBusy] = useState(false);
+  const loadHs = () => api.get("/integrations/hubspot/status").then(({ data }) => setHs(data)).catch(() => setHs({ configured: false, connected: false }));
+  useEffect(() => { loadHs(); }, []);
+  useEffect(() => {
+    const r = params.get("hubspot") || params.get("hubspot_error");
+    if (!r) return;
+    if (params.get("hubspot") === "connected") toast.success(t("hubspot.connected"));
+    else toast.error(t("hubspot.connectFailed"));
+    params.delete("hubspot"); params.delete("hubspot_error"); setParams(params, { replace: true });
+    loadHs();
+    // eslint-disable-next-line
+  }, []);
+  const connectHs = async () => {
+    setHsBusy(true);
+    try {
+      const { data } = await api.get("/integrations/hubspot/connect");
+      window.location.href = data.authorization_url;
+    } catch (e) { toast.error(e.response?.data?.detail || t("hubspot.notAvailable")); setHsBusy(false); }
+  };
+  const disconnectHs = async () => {
+    setHsBusy(true);
+    try { await api.post("/integrations/hubspot/disconnect"); toast.success(t("hubspot.disconnected")); await loadHs(); }
+    catch { toast.error(t("hubspot.couldNotDisconnect")); } finally { setHsBusy(false); }
+  };
+  const toggleHsAutoSync = async (v) => {
+    try { await api.post("/integrations/hubspot/settings", { auto_sync: v }); setHs((o) => ({ ...o, auto_sync: v })); toast.success(t("hubspot.saved")); }
+    catch { toast.error(t("hubspot.couldNotDisconnect")); }
+  };
+
   const exportData = async () => {
     setExporting(true);
     try {
@@ -199,9 +230,10 @@ export default function Settings() {
         </div>
 
         {/* Integrations */}
-        {gcal?.configured && (
+        {(gcal?.configured || hs?.configured) && (
           <div className="mt-5 rounded-2xl border border-white/10 bg-[#11121A] p-6" data-testid="settings-integrations">
             <p className="mb-4 flex items-center gap-2 text-xs uppercase tracking-wider text-[#D4AF37]"><Calendar className="h-3.5 w-3.5" /> Integrations</p>
+            {gcal?.configured && (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="flex items-center gap-2 text-sm font-medium text-white">
@@ -229,6 +261,38 @@ export default function Settings() {
                 </button>
               )}
             </div>
+            )}
+
+            {/* HubSpot CRM */}
+            {hs?.configured && (
+            <div className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between ${gcal?.configured ? "mt-5 border-t border-white/8 pt-5" : ""}`} data-testid="hubspot-card">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium text-white">
+                  HubSpot
+                  {hs.connected && !hs.needs_reconnect && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-300" data-testid="hubspot-connected-badge"><CheckCircle2 className="h-3 w-3" /> {t("hubspot.statusConnected")}</span>}
+                  {hs.needs_reconnect && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-300" data-testid="hubspot-reconnect-badge"><AlertTriangle className="h-3 w-3" /> {t("hubspot.reconnectNeeded")}</span>}
+                </p>
+                <p className="mt-0.5 truncate text-sm text-white/50">
+                  {hs.connected && !hs.needs_reconnect ? t("hubspot.connectedDesc", { hub: hs.hub_id || "" }) : t("hubspot.disconnectedDesc")}
+                </p>
+                {hs.connected && !hs.needs_reconnect && (
+                  <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-sm text-white/75" data-testid="hubspot-autosync-label">
+                    <input type="checkbox" checked={!!hs.auto_sync} onChange={(e) => toggleHsAutoSync(e.target.checked)} className="h-4 w-4 accent-[#D4AF37]" data-testid="hubspot-autosync-toggle" />
+                    {t("hubspot.autoSync")}
+                  </label>
+                )}
+              </div>
+              {hs.connected && !hs.needs_reconnect ? (
+                <button onClick={disconnectHs} disabled={hsBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-5 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/10 disabled:opacity-60" data-testid="hubspot-disconnect-btn">
+                  {hsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4 text-[#D4AF37]" />} {t("hubspot.disconnect")}
+                </button>
+              ) : (
+                <button onClick={connectHs} disabled={hsBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#D4AF37] px-5 py-2.5 text-sm font-medium text-[#050607] transition-colors hover:bg-[#E8B764] disabled:opacity-60" data-testid="hubspot-connect-btn">
+                  {hsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {hs.needs_reconnect ? t("hubspot.reconnect") : t("hubspot.connect")}
+                </button>
+              )}
+            </div>
+            )}
           </div>
         )}
 

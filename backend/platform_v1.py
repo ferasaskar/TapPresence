@@ -1879,20 +1879,94 @@ async def lead_activities(lead_id: str, user: dict = Depends(current_user)):
     return await db.lead_activities.find({"lead_id": lead_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
 
 
+CRM_HIDDEN = ()  # placeholder
+
+
+LEAD_CSV_COLS = [
+    ("name", "Name"), ("first_name", "First Name"), ("last_name", "Last Name"),
+    ("email", "Email"), ("phone", "Phone"), ("company", "Company"), ("title", "Job Title"),
+    ("website", "Website"), ("linkedin", "LinkedIn"),
+    ("source", "Source"), ("scanner_type", "Scanner Type"), ("event", "Event"),
+    ("event_id", "Event ID"), ("captured_by_name", "Captured By"), ("captured_at", "Captured At"),
+    ("status", "Pipeline Stage"), ("tags", "Tags"), ("next_follow_up", "Next Follow-up"),
+    ("follow_up_completed_at", "Follow-up Completed"), ("lead_score", "Lead Score"),
+    ("effective_temperature", "Temperature"), ("classification", "Classification"),
+    ("opportunity_value", "Opportunity Value"), ("opportunity_currency", "Opportunity Currency"),
+    ("expected_close_date", "Expected Close Date"), ("actual_revenue", "Actual Revenue"),
+    ("actual_revenue_currency", "Revenue Currency"), ("revenue_recorded_at", "Revenue Date"),
+    ("revenue_attribution_event", "Revenue Attribution Event"),
+    ("revenue_attribution_type", "Revenue Attribution Type"),
+]
+
+
+async def _lead_csv_row(l: dict, uname: dict, ev_names: dict) -> list:
+    ra = l.get("revenue_attribution") or {}
+    eff = effective_temperature(l) if "effective_temperature" in globals() else (l.get("lead_temperature") or "")
+    classification = "Manual" if l.get("lead_temperature_override") else "Automatic"
+    att_ev = ""
+    if ra.get("event_id"):
+        att_ev = ev_names.get(ra["event_id"]) or ra["event_id"]
+    elif ra.get("type") in ("organic", "other"):
+        att_ev = ra.get("type").capitalize()
+    computed = {
+        "captured_by_name": uname.get(l.get("captured_by"), l.get("captured_by") or ""),
+        "effective_temperature": eff, "classification": classification,
+        "revenue_attribution_event": att_ev, "revenue_attribution_type": ra.get("type") or "",
+    }
+    out = []
+    for key, _ in LEAD_CSV_COLS:
+        if key == "tags":
+            out.append(", ".join(l.get("tags") or []))
+        elif key in computed:
+            out.append(computed[key])
+        else:
+            v = l.get(key)
+            out.append("" if v is None else v)
+    return out
+
+
+def _csv_response(rows, header, filename):
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(header)
+    for r in rows:
+        w.writerow(r)
+    # UTF-8 BOM so Excel renders Arabic correctly
+    data = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return StreamingResponse(io.BytesIO(data), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @platform_router.get("/crm/leads.csv")
 async def export_leads_csv(user: dict = Depends(current_user)):
     slugs = await _owned_slugs(user)
-    leads = await db.leads.find({"cardSlug": {"$in": slugs}}, {"_id": 0}).to_list(5000)
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    cols = ["name", "email", "phone", "company", "title", "website", "status", "source", "campaign", "event",
-            "interest", "notes", "tags", "cardSlug", "met_at", "created_at", "next_follow_up"]
-    w.writerow(cols)
+    leads = await db.leads.find({"cardSlug": {"$in": slugs}}, {"_id": 0}).to_list(20000)
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(5000) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    evids = list({(l.get("revenue_attribution") or {}).get("event_id") for l in leads if (l.get("revenue_attribution") or {}).get("event_id")})
+    evs = await db.events.find({"id": {"$in": evids}}, {"_id": 0, "id": 1, "name": 1}).to_list(1000) if evids else []
+    ev_names = {e["id"]: e.get("name") for e in evs}
+    rows = [await _lead_csv_row(l, uname, ev_names) for l in leads]
+    return _csv_response(rows, [h for _, h in LEAD_CSV_COLS], "tappresence-leads.csv")
+
+
+@platform_router.get("/events/{event_id}/leads.csv")
+async def export_event_leads_csv(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    leads = await db.leads.find(_event_lead_query(event_id), {"_id": 0}).sort("created_at", -1).to_list(20000)
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(5000) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    ev_names = {event_id: ev.get("name")}
     for l in leads:
-        w.writerow([",".join(l.get("tags", [])) if c == "tags" else l.get(c, "") for c in cols])
-    buf.seek(0)
-    return StreamingResponse(io.BytesIO(buf.getvalue().encode()), media_type="text/csv",
-                             headers={"Content-Disposition": 'attachment; filename="leads.csv"'})
+        raid = (l.get("revenue_attribution") or {}).get("event_id")
+        if raid and raid not in ev_names:
+            oe = await db.events.find_one({"id": raid}, {"_id": 0, "name": 1})
+            ev_names[raid] = (oe or {}).get("name") or raid
+    rows = [await _lead_csv_row(l, uname, ev_names) for l in leads]
+    safe = "".join(c for c in (ev.get("name") or "event") if c.isalnum() or c in " -_")[:40].strip() or "event"
+    return _csv_response(rows, [h for _, h in LEAD_CSV_COLS], f"{safe}-leads.csv")
 
 # ------------------------------------------------------------------ wallet passes (Phase 5, provider-abstracted)
 _GW_SCOPE = "https://www.googleapis.com/auth/wallet_object.issuer"
@@ -3092,6 +3166,7 @@ async def get_event(event_id: str, user: dict = Depends(current_user)):
         l["has_meeting"] = bool(ms_l)
         l["meeting_status"] = (ms_l[0].get("status") if ms_l else "")
         l["effective_temperature"] = effective_temperature(l)
+        l["crm_sync"] = _crm_public_state(l)
     ev["lead_count"] = len(leads)
     return {"event": ev, "leads": leads, "lead_count": len(leads)}
 
@@ -3942,6 +4017,7 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
             "read": False, "created_at": now,
         })
         lead = await db.leads.find_one({"id": existing["id"]}, {"_id": 0})
+        asyncio.create_task(crm_maybe_autosync(await _lead_workspace_id(lead), existing["id"]))
         return {"ok": True, "lead": lead, "updated": True}
 
     # ---- Duplicate guard — let the user decide (update existing vs. save anyway)
@@ -3980,6 +4056,7 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
         "read": False, "created_at": now,
     })
     lead = await db.leads.find_one({"id": lead["id"]}, {"_id": 0})
+    asyncio.create_task(crm_maybe_autosync(card.get("workspace_id"), lead["id"]))
     return {"ok": True, "lead": lead}
 
 
@@ -4328,6 +4405,396 @@ async def remove_member(wid: str, uid: str, user: dict = Depends(current_user)):
     return {"ok": True}
 
 
+# ================================================================== CRM CONNECTORS (V1: HubSpot, one-way TapPresence -> CRM)
+# Shared adapter surface so Salesforce/Pipedrive can be added later WITHOUT touching lead/event logic.
+# Tokens live ONLY server-side in Mongo `crm_connections` (never returned to client / logged / in CSV).
+import httpx as _cx
+
+HUBSPOT_CLIENT_ID = os.environ.get("HUBSPOT_CLIENT_ID") or ""
+HUBSPOT_CLIENT_SECRET = os.environ.get("HUBSPOT_CLIENT_SECRET") or ""
+HUBSPOT_REDIRECT_URI = os.environ.get("HUBSPOT_REDIRECT_URI") or ""
+HUBSPOT_SCOPES = ("oauth crm.objects.contacts.read crm.objects.contacts.write "
+                  "crm.objects.deals.read crm.objects.deals.write "
+                  "crm.schemas.contacts.read crm.schemas.contacts.write "
+                  "crm.schemas.deals.read crm.schemas.deals.write")
+HS_API = "https://api.hubspot.com"
+# TapPresence stage -> HubSpot DEFAULT-pipeline stage internal id (controlled map; portals with custom
+# pipelines need per-workspace config — documented V1 limitation, we never move a deal to an arbitrary stage).
+HS_STAGE_MAP = {"new": "appointmentscheduled", "contacted": "appointmentscheduled",
+                "qualified": "qualifiedtobuy", "meeting": "presentationscheduled",
+                "opportunity": "decisionmakerboughtin", "customer": "closedwon", "not_interested": "closedlost"}
+# Custom properties we create once per portal (kept intentionally small).
+HS_CONTACT_PROPS = [
+    ("tap_lead_id", "TapPresence Lead ID", "string", "text", True),
+    ("tap_lead_score", "TapPresence Lead Score", "number", "number", False),
+    ("tap_lead_temperature", "TapPresence Temperature", "string", "text", False),
+    ("tap_pipeline_stage", "TapPresence Pipeline Stage", "string", "text", False),
+    ("tap_source", "TapPresence Source", "string", "text", False),
+    ("tap_capture_method", "TapPresence Capture Method", "string", "text", False),
+    ("tap_event_name", "TapPresence Event", "string", "text", False),
+    ("tap_captured_by", "TapPresence Captured By", "string", "text", False),
+    ("tap_last_interaction", "TapPresence Last Interaction", "string", "text", False),
+]
+HS_DEAL_PROPS = [
+    ("tap_deal_id", "TapPresence Lead ID", "string", "text", True),
+    ("tap_event_name", "TapPresence Event", "string", "text", False),
+    ("tap_currency", "TapPresence Currency", "string", "text", False),
+]
+
+
+def _hubspot_configured() -> bool:
+    return bool(HUBSPOT_CLIENT_ID and HUBSPOT_CLIENT_SECRET and HUBSPOT_REDIRECT_URI)
+
+
+def _hubspot_frontend_base() -> str:
+    suffix = "/api/integrations/hubspot/callback"
+    if HUBSPOT_REDIRECT_URI.endswith(suffix):
+        return HUBSPOT_REDIRECT_URI[: -len(suffix)]
+    return PUBLIC_APP_URL
+
+
+class _CrmNeedsReconnect(Exception):
+    pass
+
+
+async def _lead_workspace_id(lead: dict) -> str:
+    wid = lead.get("workspace_id")
+    if wid:
+        return wid
+    card = await db.digital_cards.find_one({"slug": lead.get("cardSlug")}, {"_id": 0, "workspace_id": 1})
+    return (card or {}).get("workspace_id")
+
+
+async def _crm_conn(ws_id: str, provider: str = "hubspot"):
+    return await db.crm_connections.find_one({"workspace_id": ws_id, "provider": provider}, {"_id": 0})
+
+
+async def _hs_access_token(ws_id: str):
+    """Valid access token for the workspace's HubSpot connection (refresh if needed). Never leaves the server."""
+    conn = await _crm_conn(ws_id)
+    if not conn or conn.get("revoked"):
+        return None
+    now = datetime.now(timezone.utc)
+    exp = conn.get("access_expiry")
+    if conn.get("access_token") and exp and datetime.fromisoformat(exp) > now + timedelta(seconds=60):
+        return conn["access_token"]
+    rt = conn.get("refresh_token")
+    if not rt:
+        return None
+    async with _cx.AsyncClient(timeout=20) as cx:
+        r = await cx.post(f"{HS_API}/oauth/v3/token", data={
+            "grant_type": "refresh_token", "client_id": HUBSPOT_CLIENT_ID,
+            "client_secret": HUBSPOT_CLIENT_SECRET, "refresh_token": rt})
+    if r.status_code != 200:
+        err = ""
+        try:
+            err = (r.json() or {}).get("message", "")
+        except Exception:
+            pass
+        logger.error(f"[hubspot] refresh failed ws={ws_id} http={r.status_code}")
+        if r.status_code in (400, 401, 403):
+            await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+                {"$set": {"revoked": True, "needs_reconnect": True, "updated_at": now.isoformat()}})
+            raise _CrmNeedsReconnect()
+        return None
+    tok = r.json()
+    at = tok.get("access_token")
+    new_rt = tok.get("refresh_token") or rt
+    new_exp = (now + timedelta(seconds=int(tok.get("expires_in", 1800)))).isoformat()
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+        {"$set": {"access_token": at, "refresh_token": new_rt, "access_expiry": new_exp,
+                  "revoked": False, "needs_reconnect": False, "updated_at": now.isoformat()}})
+    return at
+
+
+async def _hs(ws_id: str, method: str, path: str, json=None):
+    """Authenticated HubSpot call. Returns (status_code, json_or_text). Redacts auth in errors."""
+    token = await _hs_access_token(ws_id)
+    if not token:
+        raise _CrmNeedsReconnect()
+    async with _cx.AsyncClient(base_url=HS_API, timeout=30) as cx:
+        r = await cx.request(method, path, headers={"Authorization": f"Bearer {token}",
+                             "Content-Type": "application/json"}, json=json)
+    try:
+        body = r.json() if r.content else {}
+    except Exception:
+        body = {"raw": (r.text or "")[:300]}
+    return r.status_code, body
+
+
+async def _hs_ensure_props(ws_id: str, conn: dict):
+    """Create TapPresence custom properties once per portal (idempotent). Marks props_ready on success."""
+    if conn.get("props_ready"):
+        return
+    for obj, props in (("contacts", HS_CONTACT_PROPS), ("deals", HS_DEAL_PROPS)):
+        group = "contactinformation" if obj == "contacts" else "dealinformation"
+        for name, label, ptype, ftype, uniq in props:
+            st, _ = await _hs(ws_id, "GET", f"/crm/v3/properties/{obj}/{name}")
+            if st == 200:
+                continue
+            payload = {"groupName": group, "name": name, "label": label, "type": ptype, "fieldType": ftype}
+            if uniq:
+                payload["hasUniqueValue"] = True
+            await _hs(ws_id, "POST", f"/crm/v3/properties/{obj}", json=payload)
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+                                        {"$set": {"props_ready": True}})
+
+
+def _lead_contact_props(lead: dict) -> dict:
+    eff = effective_temperature(lead) if "effective_temperature" in globals() else (lead.get("lead_temperature") or "")
+    p = {
+        "email": (lead.get("email") or "").strip(),
+        "firstname": (lead.get("first_name") or (lead.get("name") or "").split(" ")[0]).strip(),
+        "lastname": (lead.get("last_name") or " ".join((lead.get("name") or "").split(" ")[1:])).strip(),
+        "phone": (lead.get("phone") or "").strip(),
+        "jobtitle": (lead.get("title") or "").strip(),
+        "company": (lead.get("company") or "").strip(),
+        "website": (lead.get("website") or "").strip(),
+        "tap_lead_id": lead.get("id"),
+        "tap_lead_score": lead.get("lead_score"),
+        "tap_lead_temperature": eff,
+        "tap_pipeline_stage": (lead.get("status") or "new"),
+        "tap_source": (lead.get("source") or ""),
+        "tap_capture_method": (lead.get("scanner_type") or lead.get("source") or ""),
+        "tap_event_name": (lead.get("event") or ""),
+        "tap_captured_by": (lead.get("captured_by") or ""),
+        "tap_last_interaction": (lead.get("last_activity") or lead.get("updated_at") or ""),
+    }
+    return {k: str(v) for k, v in p.items() if v not in (None, "")}
+
+
+def _sync_signature(lead: dict) -> str:
+    import hashlib as _h
+    basis = "|".join(str(lead.get(k) or "") for k in
+                     ["name", "email", "phone", "company", "title", "website", "status", "source",
+                      "event", "captured_by", "lead_score", "lead_temperature", "lead_temperature_override",
+                      "opportunity_value", "opportunity_currency", "expected_close_date", "actual_revenue"])
+    return _h.sha256(basis.encode()).hexdigest()[:16]
+
+
+async def crm_sync_lead(ws_id: str, lead: dict, provider: str = "hubspot") -> dict:
+    """Idempotent one-way sync of a TapPresence lead into HubSpot (contact + optional deal).
+    Never raises to caller — always records structured crm_sync state on the lead and returns it."""
+    now = datetime.now(timezone.utc).isoformat()
+    prior = lead.get("crm_sync") or {}
+    state = {"provider": provider, "remote_contact_id": prior.get("remote_contact_id"),
+             "remote_deal_id": prior.get("remote_deal_id"), "status": "pending",
+             "last_synced_at": prior.get("last_synced_at"), "last_error": "",
+             "retry_count": int(prior.get("retry_count") or 0), "signature": prior.get("signature")}
+    try:
+        conn = await _crm_conn(ws_id, provider)
+        if not conn or conn.get("revoked"):
+            raise _CrmNeedsReconnect()
+        email = (lead.get("email") or "").strip()
+        if not email:
+            state.update({"status": "failed", "last_error": "email_required"})
+            await _persist_crm_state(lead["id"], state)
+            return state
+        await _hs_ensure_props(ws_id, conn)
+        # --- Contact upsert by email (dedupe-safe) ---
+        st, body = await _hs(ws_id, "POST", "/crm/v3/objects/contacts/batch/upsert",
+                             json={"inputs": [{"idProperty": "email", "id": email,
+                                               "properties": _lead_contact_props(lead)}]})
+        if st >= 400:
+            raise RuntimeError(f"contact_upsert_{st}: {str(body)[:160]}")
+        contact_id = (body.get("results") or [{}])[0].get("id")
+        state["remote_contact_id"] = contact_id
+        # --- Deal upsert (only when a real opportunity value exists) ---
+        ov = lead.get("opportunity_value")
+        if ov is not None:
+            dprops = {"tap_deal_id": lead.get("id"),
+                      "dealname": (lead.get("name") or "TapPresence lead") + (f" — {lead.get('company')}" if lead.get("company") else ""),
+                      "amount": str(ov), "pipeline": "default",
+                      "dealstage": HS_STAGE_MAP.get((lead.get("status") or "new").lower(), "appointmentscheduled"),
+                      "tap_event_name": lead.get("event") or "",
+                      "tap_currency": lead.get("opportunity_currency") or ""}
+            cd = lead.get("expected_close_date")
+            if cd:
+                dprops["closedate"] = str(cd)[:10]
+            st2, body2 = await _hs(ws_id, "POST", "/crm/v3/objects/deals/batch/upsert",
+                                   json={"inputs": [{"idProperty": "tap_deal_id", "id": lead.get("id"), "properties": dprops}]})
+            if st2 >= 400:
+                raise RuntimeError(f"deal_upsert_{st2}: {str(body2)[:160]}")
+            deal_id = (body2.get("results") or [{}])[0].get("id")
+            state["remote_deal_id"] = deal_id
+            if deal_id and contact_id:
+                await _hs(ws_id, "PUT", f"/crm/v4/objects/deals/{deal_id}/associations/default/contacts/{contact_id}", json=None)
+        state.update({"status": "synced", "last_synced_at": now, "last_error": "",
+                      "retry_count": 0, "signature": _sync_signature(lead)})
+    except _CrmNeedsReconnect:
+        state.update({"status": "failed", "last_error": "needs_reconnect", "retry_count": state["retry_count"] + 1})
+    except Exception as e:
+        state.update({"status": "failed", "last_error": str(e)[:200], "retry_count": state["retry_count"] + 1})
+    await _persist_crm_state(lead["id"], state)
+    return state
+
+
+async def _persist_crm_state(lead_id: str, state: dict):
+    await db.leads.update_one({"id": lead_id}, {"$set": {"crm_sync": state}})
+
+
+async def crm_maybe_autosync(ws_id: str, lead_id: str):
+    """Fire-and-forget auto-sync: only when the workspace has auto_sync enabled and the lead changed."""
+    try:
+        conn = await _crm_conn(ws_id)
+        if not conn or conn.get("revoked") or not conn.get("auto_sync"):
+            return
+        lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+        if not lead or not (lead.get("email") or "").strip():
+            return
+        if (lead.get("crm_sync") or {}).get("signature") == _sync_signature(lead) and (lead.get("crm_sync") or {}).get("status") == "synced":
+            return  # change-aware: nothing new to push
+        await crm_sync_lead(ws_id, lead)
+    except Exception as e:
+        logger.warning(f"[hubspot] autosync skip lead={lead_id}: {e}")
+
+
+def _crm_public_state(lead: dict) -> dict:
+    """Client-safe CRM sync view for a lead (no tokens/secrets)."""
+    s = lead.get("crm_sync") or {}
+    return {"provider": s.get("provider") or "hubspot", "status": s.get("status") or "not_synced",
+            "remote_contact_id": s.get("remote_contact_id"), "remote_deal_id": s.get("remote_deal_id"),
+            "last_synced_at": s.get("last_synced_at"), "last_error": s.get("last_error") or "",
+            "retry_count": s.get("retry_count") or 0}
+
+
+# ---- OAuth + management routes (workspace-level; owner/admin only) ----
+async def _hs_ws_for_user(user: dict) -> str:
+    ms = await memberships_for(user["id"])
+    if not ms:
+        raise HTTPException(400, "No workspace")
+    return ms[0]["workspace_id"]
+
+
+@platform_router.get("/integrations/hubspot/status")
+async def hubspot_status(user: dict = Depends(current_user)):
+    ws_id = await _hs_ws_for_user(user)
+    conn = await _crm_conn(ws_id)
+    connected = bool(conn and not conn.get("revoked") and conn.get("refresh_token"))
+    return {"configured": _hubspot_configured(), "connected": connected,
+            "needs_reconnect": bool(conn and conn.get("needs_reconnect")),
+            "auto_sync": bool(conn and conn.get("auto_sync")),
+            "hub_id": (conn or {}).get("hub_id") if connected else None,
+            "connected_at": (conn or {}).get("connected_at") if connected else None}
+
+
+@platform_router.get("/integrations/hubspot/connect")
+async def hubspot_connect(user: dict = Depends(current_user)):
+    if not _hubspot_configured():
+        raise HTTPException(400, "HubSpot is not configured on the server")
+    ws_id = await _hs_ws_for_user(user)
+    await require_ws_admin(user, ws_id)
+    state = _secrets.token_urlsafe(24)
+    await db.crm_oauth_states.insert_one({"state": state, "workspace_id": ws_id, "user_id": user["id"],
+                                          "provider": "hubspot", "created_at": now_iso()})
+    from urllib.parse import urlencode as _ue
+    params = {"client_id": HUBSPOT_CLIENT_ID, "scope": HUBSPOT_SCOPES,
+              "redirect_uri": HUBSPOT_REDIRECT_URI, "state": state}
+    return {"authorization_url": f"https://app.hubspot.com/oauth/authorize?{_ue(params)}"}
+
+
+@platform_router.get("/integrations/hubspot/callback")
+async def hubspot_callback(code: str = "", state: str = ""):
+    base = _hubspot_frontend_base()
+    dest = f"{base}/settings?tab=integrations"
+    st = await db.crm_oauth_states.find_one_and_delete({"state": state, "provider": "hubspot"}) if state else None
+    if not st or not code:
+        return RedirectResponse(f"{dest}&hubspot_error=state")
+    async with _cx.AsyncClient(timeout=20) as cx:
+        r = await cx.post(f"{HS_API}/oauth/v3/token", data={
+            "grant_type": "authorization_code", "code": code, "redirect_uri": HUBSPOT_REDIRECT_URI,
+            "client_id": HUBSPOT_CLIENT_ID, "client_secret": HUBSPOT_CLIENT_SECRET})
+    if r.status_code != 200:
+        logger.error(f"[hubspot] code exchange failed http={r.status_code}")
+        return RedirectResponse(f"{dest}&hubspot_error=exchange")
+    tok = r.json()
+    now = datetime.now(timezone.utc)
+    ws_id = st["workspace_id"]
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"}, {"$set": {
+        "workspace_id": ws_id, "provider": "hubspot", "hub_id": tok.get("hub_id"),
+        "scopes": tok.get("scopes") or [], "access_token": tok.get("access_token"),
+        "refresh_token": tok.get("refresh_token"),
+        "access_expiry": (now + timedelta(seconds=int(tok.get("expires_in", 1800)))).isoformat(),
+        "revoked": False, "needs_reconnect": False, "props_ready": False,
+        "connected_by": st.get("user_id"), "connected_at": now.isoformat(), "updated_at": now.isoformat(),
+    }}, upsert=True)
+    await audit(ws_id, st.get("user_id"), "crm.hubspot.connected", {"hub_id": tok.get("hub_id")})
+    return RedirectResponse(f"{dest}&hubspot=connected")
+
+
+@platform_router.post("/integrations/hubspot/disconnect")
+async def hubspot_disconnect(user: dict = Depends(current_user)):
+    ws_id = await _hs_ws_for_user(user)
+    await require_ws_admin(user, ws_id)
+    await db.crm_connections.delete_one({"workspace_id": ws_id, "provider": "hubspot"})
+    await audit(ws_id, user["id"], "crm.hubspot.disconnected", {})
+    return {"ok": True}
+
+
+class HubspotSettingsIn(BaseModel):
+    auto_sync: bool
+
+
+@platform_router.post("/integrations/hubspot/settings")
+async def hubspot_settings(body: HubspotSettingsIn, user: dict = Depends(current_user)):
+    ws_id = await _hs_ws_for_user(user)
+    await require_ws_admin(user, ws_id)
+    conn = await _crm_conn(ws_id)
+    if not conn:
+        raise HTTPException(400, "HubSpot is not connected")
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+                                        {"$set": {"auto_sync": bool(body.auto_sync), "updated_at": now_iso()}})
+    await audit(ws_id, user["id"], "crm.hubspot.auto_sync", {"enabled": bool(body.auto_sync)})
+    return {"ok": True, "auto_sync": bool(body.auto_sync)}
+
+
+async def _crm_lead_or_403(lead_id: str, user: dict):
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    slugs = await _owned_slugs(user)
+    if lead.get("cardSlug") not in slugs and user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Not your lead")
+    return lead
+
+
+@platform_router.post("/admin/leads/{lead_id}/sync-hubspot")
+async def sync_lead_hubspot(lead_id: str, user: dict = Depends(current_user)):
+    lead = await _crm_lead_or_403(lead_id, user)
+    ws_id = await _lead_workspace_id(lead)
+    conn = await _crm_conn(ws_id)
+    if not conn or conn.get("revoked"):
+        raise HTTPException(400, "HubSpot is not connected for this workspace")
+    state = await crm_sync_lead(ws_id, lead)
+    await audit(ws_id, user["id"], "crm.hubspot.lead_synced", {"lead_id": lead_id, "status": state["status"]})
+    if state["status"] != "synced":
+        raise HTTPException(502, {"detail": "sync_failed", "crm_sync": state})
+    return {"ok": True, "crm_sync": _crm_public_state({"crm_sync": state})}
+
+
+@platform_router.post("/events/{event_id}/sync-hubspot")
+async def sync_event_hubspot(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    await require_ws_admin(user, ev.get("workspace_id"))
+    conn = await _crm_conn(ev.get("workspace_id"))
+    if not conn or conn.get("revoked"):
+        raise HTTPException(400, "HubSpot is not connected for this workspace")
+    leads = await db.leads.find(_event_lead_query(event_id), {"_id": 0}).to_list(10000)
+    summary = {"total": len(leads), "synced": 0, "failed": 0, "skipped": 0}
+    MAX_BULK = 1000
+    for l in leads[:MAX_BULK]:
+        if not (l.get("email") or "").strip():
+            summary["skipped"] += 1
+            continue
+        st = await crm_sync_lead(ev.get("workspace_id"), l)
+        summary["synced" if st["status"] == "synced" else "failed"] += 1
+    if len(leads) > MAX_BULK:
+        summary["remaining"] = len(leads) - MAX_BULK
+    await audit(ev.get("workspace_id"), user["id"], "crm.hubspot.event_synced", {"event_id": event_id, **summary})
+    return summary
+
+
+
 @platform_router.put("/workspaces/{wid}/branding")
 async def set_branding(wid: str, body: BrandingIn, user: dict = Depends(current_user)):
     await require_ws_admin(user, wid)
@@ -4481,6 +4948,9 @@ async def run_migration():
         await db.meetings.create_index("lead_id")
         # Pipeline Value / Revenue Attribution V1 — exclusive revenue lookup per event
         await db.leads.create_index("revenue_attribution.event_id")
+        # CRM & Data Export Pack V1 — HubSpot connectors
+        await db.crm_connections.create_index([("workspace_id", 1), ("provider", 1)], unique=True)
+        await db.crm_oauth_states.create_index("state", unique=True)
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 

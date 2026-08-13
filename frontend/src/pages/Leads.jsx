@@ -75,12 +75,15 @@ export default function Leads() {
   const [savingRemind, setSavingRemind] = useState(false);
   const [fin, setFin] = useState(null);
   const [savingFin, setSavingFin] = useState(false);
+  const [hsConn, setHsConn] = useState(null);
+  const [syncingHs, setSyncingHs] = useState(false);
 
   const load = () => {
     api.get("/admin/leads").then(({ data }) => setLeads(data)).catch(() => setLeads([]));
     api.get("/admin/cards").then(({ data }) => setCards(data)).catch(() => {});
     api.get("/events").then(({ data }) => setEvents(data || [])).catch(() => {});
     api.get("/admin/team-members").then(({ data }) => setMembers(data || [])).catch(() => {});
+    api.get("/integrations/hubspot/status").then(({ data }) => setHsConn(data)).catch(() => setHsConn(null));
     Promise.all(["upcoming", "past", "cancelled"].map((f) => api.get("/admin/meetings", { params: { filter: f } }).then((r) => r.data).catch(() => [])))
       .then((lists) => {
         const map = {};
@@ -169,6 +172,19 @@ export default function Leads() {
   const patchLeadLocal = (id, patch) => {
     setLeads((ls) => ls.map((x) => x.id === id ? { ...x, ...patch } : x));
     setOpenLead((o) => o && o.id === id ? { ...o, ...patch } : o);
+  };
+
+  const syncHubspot = async (l) => {
+    setSyncingHs(true);
+    try {
+      const { data } = await api.post(`/admin/leads/${l.id}/sync-hubspot`);
+      patchLeadLocal(l.id, { crm_sync: data.crm_sync });
+      toast.success(t("hubspot.synced"));
+    } catch (e) {
+      const cs = e?.response?.data?.detail?.crm_sync;
+      if (cs) patchLeadLocal(l.id, { crm_sync: cs });
+      toast.error(e?.response?.data?.detail?.detail || t("hubspot.syncFailed"));
+    } finally { setSyncingHs(false); }
   };
 
   const saveFinancials = async (l) => {
@@ -457,6 +473,25 @@ export default function Leads() {
                     )}
                   </div>
                   ) : null}
+
+                  {/* HubSpot CRM sync */}
+                  {hsConn?.connected ? (() => {
+                    const cs = l.crm_sync || {}; const st = cs.status || "not_synced";
+                    const badge = { synced: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300", pending: "border-amber-400/30 bg-amber-400/10 text-amber-300", failed: "border-red-400/30 bg-red-400/10 text-red-300", not_synced: "border-white/15 bg-white/5 text-white/50" }[st];
+                    return (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-crm">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-wider text-[#D6A653]">HubSpot</p>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${badge}`} data-testid="crm-status">{t(`hubspot.state_${st}`)}</span>
+                      </div>
+                      {cs.last_synced_at ? <p className="mt-1 text-[11px] text-white/40" data-testid="crm-last-synced">{t("hubspot.lastSynced", { when: fmt(cs.last_synced_at) })}</p> : null}
+                      {st === "failed" && cs.last_error ? <p className="mt-1 text-[11px] text-red-300/70" data-testid="crm-error">{cs.last_error}</p> : null}
+                      <button onClick={() => syncHubspot(l)} disabled={syncingHs} className="mt-2 flex items-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 px-3 py-1.5 text-xs font-medium text-[#D6A653] hover:bg-[#D6A653]/20 disabled:opacity-60" data-testid="crm-sync-btn">
+                        {syncingHs ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />} {st === "failed" ? t("hubspot.retrySync") : t("hubspot.syncToHubspot")}
+                      </button>
+                    </div>
+                    );
+                  })() : null}
 
                   {/* follow-up reminder */}
                   <div id="lead-remind-section" className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-reminder">
