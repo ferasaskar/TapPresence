@@ -3,12 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { OwnerNav } from "@/components/admin/OwnerNav";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Loader2, ArrowLeft, CalendarDays, MapPin, Users, User, Search, TrendingUp, UserPlus, RefreshCw, CalendarCheck, Trophy, Coins, Pencil, Check } from "lucide-react";
+import { Loader2, ArrowLeft, CalendarDays, MapPin, Users, User, Search, TrendingUp, UserPlus, RefreshCw, CalendarCheck, Trophy, Coins, Pencil, Check, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/i18n/useLocale";
 
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) : "");
 const fmtDT = (iso) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
+const fmtMoney = (v, ccy) => { try { return `${ccy || ""} ${Number(v).toLocaleString()}`.trim(); } catch { return `${ccy || ""} ${v}`.trim(); } };
 const STAGES = ["new", "contacted", "qualified", "meeting", "opportunity", "customer", "not_interested"];
 const ALIAS = { meeting_booked: "meeting", converted: "customer", archived: "not_interested", won: "customer", lost: "not_interested", follow_up: "contacted" };
 const stageOf = (l) => { const s = ALIAS[(l.status || "new").toLowerCase()] || (l.status || "new").toLowerCase(); return STAGES.includes(s) ? s : "new"; };
@@ -123,6 +124,43 @@ export default function EventDetail() {
               <Kpi label={t("eventDash.followupsCompleted")} value={k.followups_completed} testid="kpi-followups-done" />
             </div>
 
+            {/* Financial performance */}
+            {(() => {
+              const f = dash.financials || {}; const NA = t("eventDash.notAvailable");
+              const ccy = f.currency || "";
+              return (
+              <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5" data-testid="event-financials">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-[#D6A653]"><DollarSign className="h-3.5 w-3.5" /> {t("eventDash.financials")}</p>
+                  <span className="text-[11px] text-white/35">{ccy}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <Kpi icon={DollarSign} label={t("eventDash.pipelineValue")} value={f.pipeline_value != null ? fmtMoney(f.pipeline_value, ccy) : NA} sub={f.pipeline_value != null ? t("eventDash.openOpps", { count: f.open_opportunities }) : ""} testid="fin-pipeline-value" />
+                  <Kpi icon={Coins} label={t("eventDash.attributedRevenue")} value={f.attributed_revenue != null ? fmtMoney(f.attributed_revenue, ccy) : NA} testid="fin-attributed-revenue" />
+                  <Kpi icon={Coins} label={t("eventDash.eventCost")} value={(f.event_cost != null && f.event_cost > 0) ? fmtMoney(f.event_cost, f.event_cost_currency || ccy) : NA} testid="fin-event-cost" />
+                  <Kpi icon={TrendingUp} label={t("eventDash.roi")} value={f.roi != null ? `${f.roi}%` : NA} sub={f.revenue_cost_multiple != null ? t("eventDash.revenueMultiple", { x: f.revenue_cost_multiple }) : ""} testid="fin-roi" />
+                </div>
+                {(f.pipeline_by_stage || []).length ? (
+                  <div className="mt-4 border-t border-white/8 pt-4" data-testid="fin-pipeline-by-stage">
+                    <p className="mb-2 text-[11px] uppercase tracking-wider text-white/45">{t("eventDash.pipelineValueByStage")}</p>
+                    <div className="space-y-1.5">
+                      {f.pipeline_by_stage.map((s) => (
+                        <div key={s.stage} className="flex items-center justify-between text-xs" data-testid={`fin-stage-${s.stage}`}>
+                          <span className="text-white/70">{sLabel(s.stage)}</span>
+                          <span className="text-white/85">{fmtMoney(s.value, ccy)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {(f.excluded && (f.excluded.pipeline_currency_mismatch || f.excluded.revenue_currency_mismatch)) ? (
+                  <p className="mt-3 text-[11px] text-amber-300/70" data-testid="fin-excluded">{t("eventDash.excludedMismatch", { count: f.excluded.pipeline_currency_mismatch + f.excluded.revenue_currency_mismatch })}</p>
+                ) : null}
+                <p className="mt-2 text-[11px] text-white/30">{t("eventDash.associatedNote")}</p>
+              </div>
+              );
+            })()}
+
             {/* Lead quality distribution */}
             <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5" data-testid="event-quality">
               <div className="mb-3 flex items-center justify-between">
@@ -158,6 +196,40 @@ export default function EventDetail() {
                       </div>
                     </button>
                   ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Top Opportunities (monetary) */}
+            {(dash.top_opportunities && dash.top_opportunities.length) ? (
+              <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5" data-testid="event-top-opportunities">
+                <p className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-wider text-[#D6A653]"><DollarSign className="h-3.5 w-3.5" /> {t("eventDash.topOpportunities")}</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-[11px] uppercase tracking-wider text-white/40">
+                      <th className="py-2 pr-3">{t("eventDash.contact")}</th>
+                      <th className="px-2">{t("eventDash.stage")}</th>
+                      <th className="px-2 text-right">{t("eventDash.value")}</th>
+                      <th className="hidden px-2 sm:table-cell">{t("eventDash.score")}</th>
+                      <th className="hidden px-2 sm:table-cell">{t("eventDash.capturedBy")}</th>
+                      <th className="hidden px-2 md:table-cell">{t("eventDash.expectedClose")}</th>
+                    </tr></thead>
+                    <tbody>
+                      {dash.top_opportunities.map((o) => (
+                        <tr key={o.id} onClick={() => navigate(`/leads?lead=${o.id}`)} className="cursor-pointer border-t border-white/6 text-white/80 hover:bg-white/[0.03]" data-testid={`top-opp-${o.id}`}>
+                          <td className="py-2 pr-3">
+                            <div className="font-medium text-white">{o.name}</div>
+                            {o.company ? <div className="text-[11px] text-white/45">{o.company}</div> : null}
+                          </td>
+                          <td className="px-2"><span className={`rounded-full border px-2 py-0.5 text-[10px] ${STAGE_BADGE[o.stage]}`}>{sLabel(o.stage)}</span></td>
+                          <td className="px-2 text-right font-medium text-emerald-300" data-testid={`top-opp-value-${o.id}`}>{fmtMoney(o.opportunity_value, o.opportunity_currency)}</td>
+                          <td className="hidden px-2 sm:table-cell">{o.score}</td>
+                          <td className="hidden px-2 text-white/60 sm:table-cell">{o.captured_by || "—"}</td>
+                          <td className="hidden px-2 text-white/60 md:table-cell">{o.expected_close_date ? fmtDate(o.expected_close_date) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : null}
@@ -230,9 +302,9 @@ export default function EventDetail() {
                     <span className="text-white/45">{t("eventDash.eventCost")}</span>
                     <span className="text-right text-white/85" data-testid="event-cost-value">{dash.cost.event_cost ? `${dash.cost.currency} ${Number(dash.cost.event_cost).toLocaleString()}` : t("eventDash.notSet")}</span>
                     <span className="text-white/45">{t("eventDash.attributedRevenue")}</span>
-                    <span className="text-right text-white/40">{t("eventDash.notAvailable")}</span>
+                    <span className="text-right text-white/85" data-testid="cost-attributed-revenue">{dash.cost.attributed_revenue != null ? fmtMoney(dash.cost.attributed_revenue, dash.financials.currency) : <span className="text-white/40">{t("eventDash.notAvailable")}</span>}</span>
                     <span className="text-white/45">{t("eventDash.roi")}</span>
-                    <span className="text-right text-white/40">{t("eventDash.notAvailable")}</span>
+                    <span className="text-right text-white/85" data-testid="cost-roi">{dash.cost.roi != null ? `${dash.cost.roi}%` : <span className="text-white/40">{t("eventDash.notAvailable")}</span>}</span>
                   </div>
                 )}
               </div>
@@ -262,6 +334,7 @@ export default function EventDetail() {
                       <th className="px-2">{t("leads.hot")}</th><th className="px-2">{t("eventDash.avgShort")}</th>
                       <th className="px-2">{t("eventDash.new")}</th><th className="px-2">{t("eventDash.returning")}</th>
                       <th className="px-2">{t("eventDash.meetings")}</th><th className="px-2">{t("eventDash.customers")}</th><th className="px-2">{t("eventDash.conv")}</th>
+                      <th className="px-2 text-right">{t("eventDash.colPipeline")}</th><th className="px-2 text-right">{t("eventDash.colRevenue")}</th>
                     </tr></thead>
                     <tbody>
                       {leaderboard.map((r) => (
@@ -270,6 +343,8 @@ export default function EventDetail() {
                           <td className="px-2 text-red-300">{r.hot_leads}</td><td className="px-2">{r.avg_score}</td>
                           <td className="px-2">{r.new}</td><td className="px-2">{r.returning}</td>
                           <td className="px-2">{r.meetings}</td><td className="px-2">{r.customers}</td><td className="px-2">{r.conversion_rate}%</td>
+                          <td className="px-2 text-right text-white/70" data-testid={`lb-pv-${r.user_id}`}>{r.pipeline_value != null ? fmtMoney(r.pipeline_value, dash.financials.currency) : "—"}</td>
+                          <td className="px-2 text-right text-emerald-300/80" data-testid={`lb-rev-${r.user_id}`}>{r.attributed_revenue != null ? fmtMoney(r.attributed_revenue, dash.financials.currency) : "—"}</td>
                         </tr>
                       ))}
                     </tbody>

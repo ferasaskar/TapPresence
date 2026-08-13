@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized, recalc_lead_score
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized, recalc_lead_score, require_ws_admin, _event_or_403
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -915,6 +915,148 @@ async def complete_lead_follow_up(lead_id: str, user: dict = Depends(get_current
         "$push": {"timeline": {"at": now, "event": "follow_up_completed", "by": user.get("id")}}})
     await recalc_lead_score(lead_id)
     return {"ok": True, "follow_up_completed_at": now}
+
+
+# ---------- Lead financials (Pipeline Value + Actual Revenue + Attribution) — owner/admin only ----------
+class LeadFinancialsIn(BaseModel):
+    opportunity_value: Optional[float] = None
+    opportunity_currency: Optional[str] = None
+    expected_close_date: Optional[str] = None
+    actual_revenue: Optional[float] = None
+    actual_revenue_currency: Optional[str] = None
+    revenue_recorded_at: Optional[str] = None
+    revenue_attribution_event_id: Optional[str] = None
+    revenue_attribution_type: Optional[str] = None  # event | organic | other
+
+
+def _money(v, ccy):
+    try:
+        return f"{(ccy or '').upper()} {float(v):,.0f}".strip()
+    except Exception:
+        return f"{(ccy or '').upper()} {v}".strip()
+
+
+async def _lead_ws_admin_or_403(lead_id: str, user: dict):
+    """Financial edits are sensitive → WORKSPACE_OWNER / WORKSPACE_ADMIN / SUPER_ADMIN only.
+    Tenant-scoped: require_ws_admin raises 403 for any user outside the lead's workspace."""
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    card = await db.digital_cards.find_one({"slug": lead.get("cardSlug")}, {"_id": 0, "workspace_id": 1})
+    ws_id = lead.get("workspace_id") or (card or {}).get("workspace_id")
+    if not ws_id:
+        raise HTTPException(status_code=403, detail="Not your lead")
+    await require_ws_admin(user, ws_id)
+    return lead, ws_id
+
+
+@api_router.patch("/admin/leads/{lead_id}/financials")
+async def update_lead_financials(lead_id: str, body: LeadFinancialsIn, user: dict = Depends(get_current_user)):
+    """Set / edit / clear a lead's opportunity value, actual revenue and revenue attribution.
+    Financial values NEVER affect the lead score. Audit entries are written for material changes."""
+    lead, ws_id = await _lead_ws_admin_or_403(lead_id, user)
+    raw = body.model_dump(exclude_unset=True)
+    now = datetime.now(timezone.utc).isoformat()
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "region": 1})
+    ws_ccy = (((ws or {}).get("region") or {}).get("default_currency") or "USD").upper()
+    upd, tl = {}, []
+
+    # ----- Opportunity value -----
+    if "opportunity_value" in raw:
+        newv = raw["opportunity_value"]
+        oldv = lead.get("opportunity_value")
+        if newv is None:
+            if oldv is not None:
+                tl.append({"at": now, "event": "opportunity_value_cleared", "by": user["id"],
+                           "detail": _money(oldv, lead.get("opportunity_currency") or ws_ccy)})
+            upd["opportunity_value"] = None
+            upd["opportunity_currency"] = ""
+        else:
+            if float(newv) < 0:
+                raise HTTPException(status_code=400, detail="Opportunity value must be positive")
+            ccy = (raw.get("opportunity_currency") or lead.get("opportunity_currency") or ws_ccy).upper()
+            upd["opportunity_value"] = float(newv)
+            upd["opportunity_currency"] = ccy
+            if oldv is None:
+                tl.append({"at": now, "event": "opportunity_value_updated", "by": user["id"], "detail": _money(newv, ccy)})
+            elif float(oldv) != float(newv):
+                tl.append({"at": now, "event": "opportunity_value_updated", "by": user["id"],
+                           "detail": f"{_money(oldv, lead.get('opportunity_currency') or ccy)} → {_money(newv, ccy)}"})
+    elif raw.get("opportunity_currency"):
+        upd["opportunity_currency"] = raw["opportunity_currency"].upper()
+
+    if "expected_close_date" in raw:
+        upd["expected_close_date"] = (raw["expected_close_date"] or "")[:10]
+
+    # ----- Actual revenue + attribution -----
+    if "actual_revenue" in raw and raw["actual_revenue"] is None:
+        if lead.get("actual_revenue") is not None:
+            tl.append({"at": now, "event": "revenue_cleared", "by": user["id"],
+                       "detail": _money(lead.get("actual_revenue"), lead.get("actual_revenue_currency") or ws_ccy)})
+        upd.update({"actual_revenue": None, "actual_revenue_currency": "", "revenue_recorded_at": "", "revenue_attribution": None})
+    else:
+        touch_rev = any(k in raw for k in ("actual_revenue", "actual_revenue_currency",
+                                           "revenue_attribution_event_id", "revenue_attribution_type", "revenue_recorded_at"))
+        if touch_rev:
+            amt = raw.get("actual_revenue", lead.get("actual_revenue"))
+            if amt is None:
+                raise HTTPException(status_code=400, detail="Enter a revenue amount before attributing it")
+            if float(amt) < 0:
+                raise HTTPException(status_code=400, detail="Revenue must be positive")
+            rccy = (raw.get("actual_revenue_currency") or lead.get("actual_revenue_currency")
+                    or lead.get("opportunity_currency") or ws_ccy).upper()
+            old_att = lead.get("revenue_attribution") or {}
+            att_type = raw.get("revenue_attribution_type") or old_att.get("type") or "organic"
+            if att_type not in ("event", "organic", "other"):
+                att_type = "organic"
+            att_event = raw["revenue_attribution_event_id"] if "revenue_attribution_event_id" in raw else old_att.get("event_id")
+            ev_name = ""
+            if att_type == "event":
+                if not att_event:
+                    raise HTTPException(status_code=400, detail="Select an event to attribute revenue to")
+                # Tenant scope: the attribution event must be accessible to this user (403 otherwise).
+                ev = await _event_or_403(att_event, user)
+                ev_name = ev.get("name") or "event"
+            else:
+                att_event = None
+            attribution = {"event_id": att_event, "type": att_type, "amount": float(amt),
+                           "currency": rccy, "recorded_at": now, "recorded_by": user["id"]}
+            upd["actual_revenue"] = float(amt)
+            upd["actual_revenue_currency"] = rccy
+            upd["revenue_recorded_at"] = raw.get("revenue_recorded_at") or lead.get("revenue_recorded_at") or now
+            upd["revenue_attribution"] = attribution
+
+            def _dest(evid, typ, name):
+                if typ == "event":
+                    return name
+                return "Organic" if typ == "organic" else "Other"
+            new_dest = _dest(att_event, att_type, ev_name)
+            old_amt = lead.get("actual_revenue")
+            if old_amt is None:
+                tl.append({"at": now, "event": "revenue_recorded", "by": user["id"],
+                           "detail": f"{_money(amt, rccy)} → {new_dest}"})
+            else:
+                if float(old_amt) != float(amt):
+                    tl.append({"at": now, "event": "revenue_updated", "by": user["id"],
+                               "detail": f"{_money(old_amt, lead.get('actual_revenue_currency') or rccy)} → {_money(amt, rccy)}"})
+                if old_att.get("event_id") != att_event or old_att.get("type") != att_type:
+                    old_name = ""
+                    if old_att.get("event_id"):
+                        oe = await db.events.find_one({"id": old_att["event_id"]}, {"_id": 0, "name": 1})
+                        old_name = (oe or {}).get("name") or "event"
+                    old_dest = _dest(old_att.get("event_id"), old_att.get("type") or "organic", old_name)
+                    tl.append({"at": now, "event": "revenue_attribution_changed", "by": user["id"],
+                               "detail": f"{old_dest} → {new_dest}"})
+
+    if upd:
+        upd["updated_at"] = now
+        upd["last_activity"] = now
+        ops = {"$set": upd}
+        if tl:
+            ops["$push"] = {"timeline": {"$each": tl}}
+        await db.leads.update_one({"id": lead_id}, ops)
+    # NOTE: lead score is intentionally NOT recalculated — financial values never affect scoring.
+    return await db.leads.find_one({"id": lead_id}, {"_id": 0})
 
 
 

@@ -2956,6 +2956,7 @@ class EventIn(BaseModel):
     timezone: str = ""
     event_cost: Optional[float] = None
     event_cost_currency: str = ""
+    currency: str = ""  # event reporting currency (financial aggregation)
 
 
 class EventUpdateIn(BaseModel):
@@ -2969,6 +2970,7 @@ class EventUpdateIn(BaseModel):
     timezone: Optional[str] = None
     event_cost: Optional[float] = None
     event_cost_currency: Optional[str] = None
+    currency: Optional[str] = None
 
 
 async def _event_or_403(event_id: str, user: dict):
@@ -2979,6 +2981,16 @@ async def _event_or_403(event_id: str, user: dict):
     if ws_ids != "ALL" and ev.get("workspace_id") not in ws_ids:
         raise HTTPException(403, "Not your event")
     return ev
+
+
+async def _event_reporting_currency(ev: dict) -> str:
+    """Single reporting currency for an event's financial aggregation. Financial values are only
+    summed into event totals when their own currency matches this (no FX conversion is performed)."""
+    ccy = (ev.get("currency") or ev.get("event_cost_currency") or "").strip().upper()
+    if ccy:
+        return ccy
+    ws = await db.workspaces.find_one({"id": ev.get("workspace_id")}, {"_id": 0, "region": 1})
+    return (((ws or {}).get("region") or {}).get("default_currency") or "USD").upper()
 
 
 # ---- Event analytics helpers (all derived from real persisted data) ----
@@ -3045,13 +3057,16 @@ async def create_event(body: EventIn, user: dict = Depends(current_user)):
         raise HTTPException(400, "Event name is required")
     ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "region": 1})
     tz = body.timezone.strip() or ((ws or {}).get("region") or {}).get("timezone") or "UTC"
+    ws_ccy = ((ws or {}).get("region") or {}).get("default_currency") or "USD"
+    report_ccy = (body.currency or body.event_cost_currency or ws_ccy).strip().upper()
     doc = {"id": str(uuid.uuid4()), "workspace_id": ws_id,
            "name": body.name.strip(), "location": body.location.strip(),
            "start_date": body.start_date.strip(), "end_date": body.end_date.strip(),
            "notes": body.notes.strip(), "campaign_code": body.campaign_code.strip(),
            "timezone": tz,
+           "currency": report_ccy,
            "event_cost": body.event_cost if body.event_cost is not None else None,
-           "event_cost_currency": (body.event_cost_currency or "").strip().upper(),
+           "event_cost_currency": (body.event_cost_currency or report_ccy).strip().upper(),
            "status": "active", "created_by": user["id"],
            "created_at": now_iso(), "updated_at": now_iso()}
     await db.events.insert_one(doc)
@@ -3096,6 +3111,8 @@ async def update_event(event_id: str, body: EventUpdateIn, user: dict = Depends(
         upd[k] = v.strip() if isinstance(v, str) else v
     if "event_cost_currency" in upd and isinstance(upd["event_cost_currency"], str):
         upd["event_cost_currency"] = upd["event_cost_currency"].upper()
+    if "currency" in upd and isinstance(upd["currency"], str):
+        upd["currency"] = upd["currency"].upper()
     if "status" in upd and upd["status"] not in ("active", "archived"):
         raise HTTPException(400, "Invalid status")
     upd["updated_at"] = now_iso()
@@ -3141,7 +3158,10 @@ async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
                                  "captured_by": 1, "captured_at": 1, "created_at": 1, "name": 1,
                                  "company": 1, "title": 1, "phone": 1, "email": 1,
                                  "next_follow_up": 1, "follow_up_completed_at": 1, "timeline": 1,
-                                 "lead_score": 1, "lead_temperature": 1, "lead_temperature_override": 1}).to_list(50000)
+                                 "lead_score": 1, "lead_temperature": 1, "lead_temperature_override": 1,
+                                 "opportunity_value": 1, "opportunity_currency": 1, "expected_close_date": 1,
+                                 "actual_revenue": 1, "actual_revenue_currency": 1,
+                                 "revenue_recorded_at": 1, "revenue_attribution": 1}).to_list(50000)
     lead_ids = [l["id"] for l in leads]
     by_lead = await _event_meetings_by_lead(lead_ids)
     total = len(leads)
@@ -3263,6 +3283,114 @@ async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
                   "next_follow_up": l.get("next_follow_up") or "", "follow_up_completed_at": l.get("follow_up_completed_at") or "",
                   "phone": l.get("phone") or "", "email": l.get("email") or ""} for l in top]
 
+    # -------- Financials (Pipeline Value + Attributed Revenue + ROI) --------
+    # Rules (honest, no fabrication, no FX conversion):
+    #  • Reporting currency = event.currency (falls back to cost currency / workspace default).
+    #  • OPEN pipeline stages = contacted/qualified/meeting/opportunity (excludes new, customer, not_interested).
+    #  • Pipeline Value (ASSOCIATED): sum opportunity_value of OPEN leads associated with THIS event,
+    #    counted only when the opportunity currency matches the reporting currency. A lead's opportunity
+    #    can appear in every event it is associated with (associated, NOT exclusive) — labelled as such.
+    #  • Attributed Revenue (EXCLUSIVE): sum actual_revenue whose revenue_attribution.event_id == this event
+    #    (explicit, user-selected) — one revenue record attributes to at most ONE event, so no double count.
+    #  • Amounts in a different currency are stored on the lead but EXCLUDED from event totals (never summed).
+    report_ccy = await _event_reporting_currency(ev)
+    OPEN_STAGES = ("contacted", "qualified", "meeting", "opportunity")
+    pipeline_value = 0.0
+    pv_by_stage = {s: 0.0 for s in OPEN_STAGES}
+    open_opp_count = 0
+    pv_excluded = 0
+    for l in leads:
+        ov = l.get("opportunity_value")
+        if ov is None:
+            continue
+        st = stage_of(l)
+        if st not in OPEN_STAGES:
+            continue
+        occ = (l.get("opportunity_currency") or report_ccy).upper()
+        if occ != report_ccy:
+            pv_excluded += 1
+            continue
+        pipeline_value += float(ov)
+        pv_by_stage[st] += float(ov)
+        open_opp_count += 1
+
+    attributed_revenue = 0.0
+    rev_count = 0
+    rev_excluded = 0
+    for l in leads:
+        ra = l.get("revenue_attribution") or {}
+        if ra.get("event_id") != event_id:
+            continue
+        amt = l.get("actual_revenue")
+        if amt is None:
+            continue
+        rcc = (l.get("actual_revenue_currency") or report_ccy).upper()
+        if rcc != report_ccy:
+            rev_excluded += 1
+            continue
+        attributed_revenue += float(amt)
+        rev_count += 1
+
+    ev_cost = ev.get("event_cost")
+    cost_ccy = (ev.get("event_cost_currency") or "").upper()
+    cost_usable = (ev_cost is not None and float(ev_cost) > 0 and (not cost_ccy or cost_ccy == report_ccy))
+    roi = None
+    rev_cost_multiple = None
+    if cost_usable and rev_count > 0:
+        roi = round((attributed_revenue - float(ev_cost)) / float(ev_cost) * 100, 1)
+        rev_cost_multiple = round(attributed_revenue / float(ev_cost), 2)
+
+    # Per-member pipeline / revenue (attributed to captured_by — same ownership as all leaderboard metrics)
+    for row in lb.values():
+        row["pipeline_value"] = 0.0
+        row["attributed_revenue"] = 0.0
+        row["_has_pv"] = False
+        row["_has_rev"] = False
+    for l in leads:
+        uid = l.get("captured_by") or "unknown"
+        if uid not in lb:
+            continue
+        ov = l.get("opportunity_value")
+        if ov is not None and stage_of(l) in OPEN_STAGES and (l.get("opportunity_currency") or report_ccy).upper() == report_ccy:
+            lb[uid]["pipeline_value"] += float(ov); lb[uid]["_has_pv"] = True
+        ra = l.get("revenue_attribution") or {}
+        if ra.get("event_id") == event_id and l.get("actual_revenue") is not None and (l.get("actual_revenue_currency") or report_ccy).upper() == report_ccy:
+            lb[uid]["attributed_revenue"] += float(l["actual_revenue"]); lb[uid]["_has_rev"] = True
+    for row in lb.values():
+        if not row.pop("_has_pv", False):
+            row["pipeline_value"] = None
+        if not row.pop("_has_rev", False):
+            row["attributed_revenue"] = None
+    leaderboard = sorted(lb.values(), key=lambda x: x["leads"], reverse=True)
+
+    # Top Opportunities (monetary) — exclude Not Interested and closed Customers (customer w/ recorded revenue)
+    opp_pool = [l for l in leads if l.get("opportunity_value") is not None
+                and stage_of(l) != "not_interested"
+                and not (stage_of(l) == "customer" and l.get("actual_revenue") is not None)]
+    opp_sorted = sorted(opp_pool, key=lambda l: float(l.get("opportunity_value") or 0), reverse=True)[:10]
+    top_opportunities = [{"id": l["id"], "name": l.get("name"), "company": l.get("company"), "title": l.get("title"),
+                          "score": int(l.get("lead_score") or 0), "stage": stage_of(l),
+                          "opportunity_value": l.get("opportunity_value"),
+                          "opportunity_currency": (l.get("opportunity_currency") or report_ccy).upper(),
+                          "expected_close_date": l.get("expected_close_date") or "",
+                          "captured_by": uname.get(l.get("captured_by"), ""),
+                          "next_follow_up": l.get("next_follow_up") or "",
+                          "follow_up_completed_at": l.get("follow_up_completed_at") or ""} for l in opp_sorted]
+
+    financials = {
+        "currency": report_ccy,
+        "pipeline_value": (pipeline_value if open_opp_count > 0 else None),
+        "open_opportunities": open_opp_count,
+        "pipeline_by_stage": [{"stage": s, "value": pv_by_stage[s]} for s in OPEN_STAGES if pv_by_stage[s] > 0],
+        "attributed_revenue": (attributed_revenue if rev_count > 0 else None),
+        "attributed_revenue_count": rev_count,
+        "event_cost": ev_cost,
+        "event_cost_currency": cost_ccy or report_ccy,
+        "roi": roi,
+        "revenue_cost_multiple": rev_cost_multiple,
+        "excluded": {"pipeline_currency_mismatch": pv_excluded, "revenue_currency_mismatch": rev_excluded},
+    }
+
     return {
         "event": {**ev, "days": _event_days(ev),
                   "created_by_name": (created_user or {}).get("name") or (created_user or {}).get("email") or ""},
@@ -3290,9 +3418,11 @@ async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
         "leaderboard": leaderboard,
         "quality": {**quality, "avg_score": avg_score},
         "top_leads": top_leads,
+        "top_opportunities": top_opportunities,
+        "financials": financials,
         "daily_trend": daily_trend,
-        "cost": {"event_cost": ev.get("event_cost"), "currency": ev.get("event_cost_currency") or "",
-                 "attributed_revenue": None, "roi": None},
+        "cost": {"event_cost": ev.get("event_cost"), "currency": ev.get("event_cost_currency") or report_ccy,
+                 "attributed_revenue": financials["attributed_revenue"], "roi": financials["roi"]},
     }
 
 
@@ -4349,6 +4479,8 @@ async def run_migration():
         await db.leads.create_index("event_id")
         await db.leads.create_index("timeline.event_id")
         await db.meetings.create_index("lead_id")
+        # Pipeline Value / Revenue Attribution V1 — exclusive revenue lookup per event
+        await db.leads.create_index("revenue_attribution.event_id")
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 
@@ -4376,6 +4508,15 @@ async def run_migration():
         }})
     await db.users.update_many({"language": {"$exists": False}},
                                {"$set": {"language": "en", "locale": "en-US", "timezone": "America/New_York"}})
+
+    # Backfill event reporting currency (financial aggregation) — non-destructive
+    try:
+        async for ev in db.events.find({"currency": {"$exists": False}}, {"_id": 0, "id": 1, "event_cost_currency": 1, "workspace_id": 1}):
+            ws = await db.workspaces.find_one({"id": ev.get("workspace_id")}, {"_id": 0, "region": 1})
+            ccy = (ev.get("event_cost_currency") or ((ws or {}).get("region") or {}).get("default_currency") or "USD").upper()
+            await db.events.update_one({"id": ev["id"]}, {"$set": {"currency": ccy}})
+    except Exception as e:
+        logger.warning(f"event currency backfill: {e}")
 
     # Promote existing admin -> SUPER_ADMIN + ensure a workspace, attach existing cards.
     admin_email = os.environ.get("ADMIN_EMAIL", "").lower()

@@ -5,10 +5,14 @@ import { OwnerNav } from "@/components/admin/OwnerNav";
 import { DateFilter } from "@/components/admin/DateFilter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Loader2, Search, Phone, Mail, MessageCircle, Sparkles, Trash2, User, CreditCard, Clock, Copy, X, ArrowLeft, CalendarDays, CalendarPlus, Bell, BellOff, Save, Building2, Globe, Tag, Check } from "lucide-react";
+import { Loader2, Search, Phone, Mail, MessageCircle, Sparkles, Trash2, User, CreditCard, Clock, Copy, X, ArrowLeft, CalendarDays, CalendarPlus, Bell, BellOff, Save, Building2, Globe, Tag, Check, DollarSign, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/i18n/useLocale";
+import { useAuth } from "@/context/AuthContext";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
+
+const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR"];
+const money = (v, ccy) => { try { return `${ccy || ""} ${Number(v).toLocaleString()}`.trim(); } catch { return `${ccy || ""} ${v}`.trim(); } };
 
 const STAGES = ["new", "contacted", "qualified", "meeting", "opportunity", "customer", "not_interested"];
 
@@ -35,6 +39,13 @@ const fmt = (iso) => new Date(iso).toLocaleString([], { month: "short", day: "nu
 export default function Leads() {
   const navigate = useNavigate();
   const { t } = useLocale();
+  const { user, memberships } = useAuth();
+  const canEditFin = (l) => {
+    if (!user) return false;
+    if (user.role === "SUPER_ADMIN") return true;
+    const wid = l?.workspace_id;
+    return (memberships || []).some((m) => (!wid || m.workspace_id === wid) && ["WORKSPACE_OWNER", "WORKSPACE_ADMIN"].includes(m.role));
+  };
   const sLabel = (st) => t(`leads.stage_${st}`, { defaultValue: st });
   const mLabel = (ms) => t(`leads.mstatus_${MSTATUS_KEY[ms] || "requested"}`, { defaultValue: ms });
   const evLabel = (e) => t(`leads.ev_${e}`, { defaultValue: e });
@@ -62,6 +73,8 @@ export default function Leads() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [remindWhen, setRemindWhen] = useState("");
   const [savingRemind, setSavingRemind] = useState(false);
+  const [fin, setFin] = useState(null);
+  const [savingFin, setSavingFin] = useState(false);
 
   const load = () => {
     api.get("/admin/leads").then(({ data }) => setLeads(data)).catch(() => setLeads([]));
@@ -121,6 +134,16 @@ export default function Leads() {
   const openDetail = async (l) => {
     setOpenLead(l); setDraft("");
     setEdit({ company: l.company || "", title: l.title || "", website: l.website || "", notes: l.notes || "", tags: (l.tags || []).join(", "), met_at: l.met_at || "", event: l.event || "" });
+    const att = l.revenue_attribution || {};
+    setFin({
+      opportunity_value: l.opportunity_value ?? "",
+      opportunity_currency: l.opportunity_currency || "AED",
+      expected_close_date: l.expected_close_date ? String(l.expected_close_date).slice(0, 10) : "",
+      actual_revenue: l.actual_revenue ?? "",
+      actual_revenue_currency: l.actual_revenue_currency || l.opportunity_currency || "AED",
+      revenue_recorded_at: l.revenue_recorded_at ? String(l.revenue_recorded_at).slice(0, 10) : "",
+      attribution: att.type === "event" && att.event_id ? att.event_id : (att.type === "other" ? "__other" : "__organic"),
+    });
     setRemindWhen(l.next_follow_up ? String(l.next_follow_up).slice(0, 16) : "");
     if (!l.read) { try { await api.patch(`/admin/leads/${l.id}`); setLeads((ls) => ls.map((x) => x.id === l.id ? { ...x, read: true } : x)); } catch (_) {} }
   };
@@ -146,6 +169,37 @@ export default function Leads() {
   const patchLeadLocal = (id, patch) => {
     setLeads((ls) => ls.map((x) => x.id === id ? { ...x, ...patch } : x));
     setOpenLead((o) => o && o.id === id ? { ...o, ...patch } : o);
+  };
+
+  const saveFinancials = async (l) => {
+    setSavingFin(true);
+    const payload = {
+      opportunity_value: fin.opportunity_value === "" ? null : Number(fin.opportunity_value),
+      opportunity_currency: fin.opportunity_currency,
+      expected_close_date: fin.expected_close_date || "",
+    };
+    if (fin.actual_revenue === "" || fin.actual_revenue === null) {
+      payload.actual_revenue = null;
+    } else {
+      payload.actual_revenue = Number(fin.actual_revenue);
+      payload.actual_revenue_currency = fin.actual_revenue_currency;
+      if (fin.revenue_recorded_at) payload.revenue_recorded_at = new Date(fin.revenue_recorded_at + "T00:00:00").toISOString();
+      if (fin.attribution === "__organic") { payload.revenue_attribution_type = "organic"; payload.revenue_attribution_event_id = null; }
+      else if (fin.attribution === "__other") { payload.revenue_attribution_type = "other"; payload.revenue_attribution_event_id = null; }
+      else { payload.revenue_attribution_type = "event"; payload.revenue_attribution_event_id = fin.attribution; }
+    }
+    try {
+      const { data } = await api.patch(`/admin/leads/${l.id}/financials`, payload);
+      patchLeadLocal(l.id, {
+        opportunity_value: data.opportunity_value, opportunity_currency: data.opportunity_currency,
+        expected_close_date: data.expected_close_date, actual_revenue: data.actual_revenue,
+        actual_revenue_currency: data.actual_revenue_currency, revenue_recorded_at: data.revenue_recorded_at,
+        revenue_attribution: data.revenue_attribution, timeline: data.timeline,
+      });
+      toast.success(t("leads.financialsSaved"));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t("leads.couldNotUpdate"));
+    } finally { setSavingFin(false); }
   };
 
   const saveFields = async (l) => {
@@ -251,6 +305,7 @@ export default function Leads() {
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${STAGE_BADGE[st]}`} data-testid={`lead-stage-${l.id}`}>{sLabel(st)}</span>
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${TEMP_BADGE[effTemp(l)]}`} data-testid={`lead-temp-${l.id}`}>{TEMP_ICON[effTemp(l)]}{t(`leads.${effTemp(l)}`)}{typeof l.lead_score === "number" ? ` ${l.lead_score}` : ""}{l.lead_temperature_override ? " ·M" : ""}</span>
                         {m ? <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/60">{mLabel(m.status)}</span> : null}
+                        {l.opportunity_value != null ? <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] text-emerald-300" data-testid={`lead-value-${l.id}`}>{money(l.opportunity_value, l.opportunity_currency)}</span> : null}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/50">
                         {l.company || l.title ? <span className="flex items-center gap-1 text-white/60"><Building2 className="h-3 w-3" />{[l.title, l.company].filter(Boolean).join(" · ")}</span> : null}
@@ -342,6 +397,64 @@ export default function Leads() {
                     <button onClick={() => saveFields(l)} disabled={savingEdit} className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 px-3 py-1.5 text-xs font-medium text-[#D6A653] hover:bg-[#D6A653]/20 disabled:opacity-60" data-testid="detail-save-fields">
                       {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} {t("leads.saveDetails")}
                     </button>
+                  </div>
+                  ) : null}
+
+                  {/* Deal & Revenue (financials) */}
+                  {fin ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-financials">
+                    <p className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-wider text-[#D6A653]"><DollarSign className="h-3.5 w-3.5" /> {t("leads.financials")}</p>
+                    {canEditFin(l) ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="col-span-1 text-[11px] text-white/45">{t("leads.opportunityValue")}
+                            <input type="number" min="0" step="any" value={fin.opportunity_value} onChange={(e) => setFin((o) => ({ ...o, opportunity_value: e.target.value }))} placeholder="—" className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white placeholder:text-white/25 focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-opportunity-value" />
+                          </label>
+                          <label className="col-span-1 text-[11px] text-white/45">{t("leads.currency")}
+                            <select value={fin.opportunity_currency} onChange={(e) => setFin((o) => ({ ...o, opportunity_currency: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-opportunity-currency">
+                              {CURRENCIES.map((c) => <option key={c} value={c} className="bg-[#0A0B0D]">{c}</option>)}
+                            </select>
+                          </label>
+                          <label className="col-span-2 text-[11px] text-white/45">{t("leads.expectedClose")}
+                            <input type="date" value={fin.expected_close_date} onChange={(e) => setFin((o) => ({ ...o, expected_close_date: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-expected-close" />
+                          </label>
+                        </div>
+                        <div className="mt-3 border-t border-white/8 pt-3">
+                          <p className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/45"><TrendingUp className="h-3 w-3" /> {t("leads.recordRevenue")}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.actualRevenue")}
+                              <input type="number" min="0" step="any" value={fin.actual_revenue} onChange={(e) => setFin((o) => ({ ...o, actual_revenue: e.target.value }))} placeholder="—" className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white placeholder:text-white/25 focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-revenue-value" />
+                            </label>
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.currency")}
+                              <select value={fin.actual_revenue_currency} onChange={(e) => setFin((o) => ({ ...o, actual_revenue_currency: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-revenue-currency">
+                                {CURRENCIES.map((c) => <option key={c} value={c} className="bg-[#0A0B0D]">{c}</option>)}
+                              </select>
+                            </label>
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.revenueDate")}
+                              <input type="date" value={fin.revenue_recorded_at} onChange={(e) => setFin((o) => ({ ...o, revenue_recorded_at: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-revenue-date" />
+                            </label>
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.attributeTo")}
+                              <select value={fin.attribution} onChange={(e) => setFin((o) => ({ ...o, attribution: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-attribution">
+                                <option value="__organic" className="bg-[#0A0B0D]">{t("leads.noEventOrganic")}</option>
+                                <option value="__other" className="bg-[#0A0B0D]">{t("leads.other")}</option>
+                                {events.map((e) => <option key={e.id} value={e.id} className="bg-[#0A0B0D]">{e.name}</option>)}
+                              </select>
+                            </label>
+                          </div>
+                        </div>
+                        <button onClick={() => saveFinancials(l)} disabled={savingFin} className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 px-3 py-1.5 text-xs font-medium text-[#D6A653] hover:bg-[#D6A653]/20 disabled:opacity-60" data-testid="fin-save">
+                          {savingFin ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} {t("leads.saveFinancials")}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-y-1 text-xs" data-testid="detail-financials-readonly">
+                        <span className="text-white/45">{t("leads.opportunityValue")}</span>
+                        <span className="text-right text-white/85">{l.opportunity_value != null ? money(l.opportunity_value, l.opportunity_currency) : t("leads.finNotSet")}</span>
+                        <span className="text-white/45">{t("leads.actualRevenue")}</span>
+                        <span className="text-right text-white/85">{l.actual_revenue != null ? money(l.actual_revenue, l.actual_revenue_currency) : t("leads.finNotSet")}</span>
+                        <p className="col-span-2 mt-2 text-[11px] text-white/35">{t("leads.finAdminOnly")}</p>
+                      </div>
+                    )}
                   </div>
                   ) : null}
 
