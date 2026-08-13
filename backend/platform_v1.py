@@ -56,7 +56,7 @@ if STRIPE_SECRET_KEY:
 import asyncio
 import resend
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY") or ""
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL") or ""
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
@@ -192,6 +192,11 @@ async def send_localized(to: str, kind: str, lang: str, cta_url: str, **ctx) -> 
 async def send_email(to: str, subject: str, html: str) -> bool:
     """Send a transactional email via Resend (non-blocking). Returns False if not configured/failed."""
     if not RESEND_API_KEY:
+        logger.error("[email] not sent: RESEND_API_KEY is not configured")
+        return False
+    if not SENDER_EMAIL:
+        # Fail clearly rather than silently falling back to a resend.dev test sender in production.
+        logger.error("[email] not sent: SENDER_EMAIL is not configured (refusing default resend.dev fallback)")
         return False
     try:
         await asyncio.to_thread(resend.Emails.send, {
