@@ -48,6 +48,8 @@ PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
 import stripe
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY") or ""
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_MODE = os.environ.get("STRIPE_MODE", "test")
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
@@ -1076,6 +1078,8 @@ async def get_config():
             "error_monitoring": _configured("SENTRY_DSN"),
         },
         "public_app_url": PUBLIC_APP_URL,
+        "stripe_mode": STRIPE_MODE,
+        "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY,
         "languages": ["en", "ar", "es"],
     }
 
