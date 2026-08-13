@@ -3076,6 +3076,7 @@ async def get_event(event_id: str, user: dict = Depends(current_user)):
         ms_l = by_lead.get(l["id"]) or []
         l["has_meeting"] = bool(ms_l)
         l["meeting_status"] = (ms_l[0].get("status") if ms_l else "")
+        l["effective_temperature"] = effective_temperature(l)
     ev["lead_count"] = len(leads)
     return {"event": ev, "leads": leads, "lead_count": len(leads)}
 
@@ -3137,8 +3138,10 @@ async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
     tz = ev.get("timezone") or "UTC"
     leads = await db.leads.find(_event_lead_query(event_id),
                                 {"_id": 0, "id": 1, "status": 1, "source": 1, "scanner_type": 1,
-                                 "captured_by": 1, "captured_at": 1, "created_at": 1,
-                                 "next_follow_up": 1, "follow_up_completed_at": 1, "timeline": 1}).to_list(50000)
+                                 "captured_by": 1, "captured_at": 1, "created_at": 1, "name": 1,
+                                 "company": 1, "title": 1, "phone": 1, "email": 1,
+                                 "next_follow_up": 1, "follow_up_completed_at": 1, "timeline": 1,
+                                 "lead_score": 1, "lead_temperature": 1, "lead_temperature_override": 1}).to_list(50000)
     lead_ids = [l["id"] for l in leads]
     by_lead = await _event_meetings_by_lead(lead_ids)
     total = len(leads)
@@ -3224,6 +3227,42 @@ async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
     created_user = await db.users.find_one({"id": ev.get("created_by")}, {"_id": 0, "name": 1, "email": 1})
     conversion_rate = round(customers * 100 / total, 1) if total else 0
 
+    # Lead-quality distribution + averages (effective temperature honours manual override)
+    def eff_temp(l):
+        ov = l.get("lead_temperature_override")
+        return ov if ov in ("hot", "warm", "cold") else (l.get("lead_temperature") or "cold")
+    quality = {"hot": 0, "warm": 0, "cold": 0}
+    score_sum = 0
+    for l in leads:
+        quality[eff_temp(l)] += 1
+        score_sum += int(l.get("lead_score") or 0)
+    avg_score = round(score_sum / total, 1) if total else 0
+
+    # Leaderboard: add hot_leads + avg_score per member
+    for row in lb.values():
+        row["hot_leads"] = 0
+        row["_score_sum"] = 0
+    for l in leads:
+        uid = l.get("captured_by") or "unknown"
+        if uid in lb:
+            if eff_temp(l) == "hot":
+                lb[uid]["hot_leads"] += 1
+            lb[uid]["_score_sum"] += int(l.get("lead_score") or 0)
+    for row in lb.values():
+        row["avg_score"] = round(row["_score_sum"] / row["leads"], 1) if row["leads"] else 0
+        row.pop("_score_sum", None)
+    leaderboard = sorted(lb.values(), key=lambda x: x["leads"], reverse=True)
+
+    # Top leads to follow up (exclude Customer + Not Interested; effective temp order, recency tiebreak)
+    open_leads = [l for l in leads if stage_of(l) not in ("customer", "not_interested")]
+    _trank = {"hot": 3, "warm": 2, "cold": 1}
+    top = sorted(open_leads, key=lambda l: (int(l.get("lead_score") or 0), l.get("captured_at") or l.get("created_at") or ""), reverse=True)[:10]
+    top_leads = [{"id": l["id"], "name": l.get("name"), "company": l.get("company"), "title": l.get("title"),
+                  "score": int(l.get("lead_score") or 0), "temperature": eff_temp(l),
+                  "captured_by": uname.get(l.get("captured_by"), ""),
+                  "next_follow_up": l.get("next_follow_up") or "", "follow_up_completed_at": l.get("follow_up_completed_at") or "",
+                  "phone": l.get("phone") or "", "email": l.get("email") or ""} for l in top]
+
     return {
         "event": {**ev, "days": _event_days(ev),
                   "created_by_name": (created_user or {}).get("name") or (created_user or {}).get("email") or ""},
@@ -3249,6 +3288,8 @@ async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
                        "meetings_to_customers": meetings_to_customers},
         "followups": fu,
         "leaderboard": leaderboard,
+        "quality": {**quality, "avg_score": avg_score},
+        "top_leads": top_leads,
         "daily_trend": daily_trend,
         "cost": {"event_cost": ev.get("event_cost"), "currency": ev.get("event_cost_currency") or "",
                  "attributed_revenue": None, "roi": None},
@@ -3556,6 +3597,157 @@ async def _resolve_scan_event(user: dict, event_id: str):
     return ev
 
 
+
+# ------------------------------------------------------------------ Lead Scoring (deterministic, explainable, v1)
+LEAD_SCORE_VERSION = "v1"
+# Max contributions: contact 20 + seniority 20 + engagement 30 + pipeline 25 + completeness 5 = 100
+_SENIORITY_TOP = ["founder", "co-founder", "cofounder", "owner", "ceo", "chief", "c.e.o", "president",
+                  "managing director", "manager director", "partner", "proprietor",
+                  "مؤسس", "شريك مؤسس", "مالك", "رئيس تنفيذي", "المدير التنفيذي", "مدير تنفيذي", "مدير عام", "شريك"]
+_SENIORITY_MID = ["vp", "vice president", "director", "head of", "head ", "chief of staff",
+                  "نائب رئيس", "نائب الرئيس", "مدير", "رئيس قسم", "رئيس"]
+_SENIORITY_LOW = ["manager", "lead", "senior", "مسؤول", "قائد"]
+_PIPELINE_POINTS = {"new": 0, "contacted": 5, "qualified": 12, "meeting": 18, "opportunity": 22,
+                    "customer": 25, "not_interested": 0}
+_STAGE_ALIAS = {"meeting_booked": "meeting", "converted": "customer", "archived": "not_interested",
+                "won": "customer", "lost": "not_interested", "follow_up": "contacted"}
+
+
+def _norm_stage_score(s):
+    s = (s or "new").strip().lower()
+    s = _STAGE_ALIAS.get(s, s)
+    return s if s in _PIPELINE_POINTS else "new"
+
+
+def _seniority_points(title):
+    t = re.sub(r"\s+", " ", (title or "").strip().lower())
+    if not t:
+        return 0, ""
+    for kw in _SENIORITY_TOP:
+        if kw in t:
+            return 20, "senior_decision_maker"
+    for kw in _SENIORITY_MID:
+        if kw in t:
+            return 14, "senior_role"
+    for kw in _SENIORITY_LOW:
+        if kw in t:
+            return 8, "mid_role"
+    return 0, ""
+
+
+def compute_lead_score(lead: dict, active_meetings: int = 0) -> dict:
+    """Deterministic 0–100 lead-quality score with an explainable breakdown. Safe with missing data.
+    Quality only — follow-up urgency is intentionally NOT a factor."""
+    bd = []
+    # A. Contact quality (max 20)
+    cq = 0
+    if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", (lead.get("email") or "").strip()):
+        cq += 4
+    if len(re.sub(r"\D", "", lead.get("phone") or "")) >= 7:
+        cq += 4
+    if (lead.get("company") or "").strip():
+        cq += 4
+    if (lead.get("title") or "").strip():
+        cq += 3
+    if (lead.get("linkedin") or "").strip():
+        cq += 5
+    if cq:
+        bd.append({"code": "contact_quality", "points": cq})
+    # B. Seniority (max 20)
+    sen, sen_code = _seniority_points(lead.get("title"))
+    if sen:
+        bd.append({"code": sen_code, "points": sen})
+    # C. Sales engagement (max 30): meeting 15 + follow-up completed 5 + returning/multi capped 10
+    eng = 0
+    if active_meetings > 0:
+        eng += 15
+        bd.append({"code": "meeting_booked", "points": 15})
+    if (lead.get("follow_up_completed_at") or ""):
+        eng += 5
+        bd.append({"code": "follow_up_completed", "points": 5})
+    tl = lead.get("timeline") or []
+    scan_events = [t for t in tl if t.get("event") in ("badge_scanned", "card_scanned", "badge_rescanned")]
+    distinct_events = len({t.get("event_id") for t in scan_events if t.get("event_id")})
+    interactions = len(scan_events)
+    ret = min(10, max(0, (max(distinct_events, interactions) - 1)) * 4)  # capped at 10
+    if ret:
+        eng += ret
+        bd.append({"code": "multiple_interactions", "points": ret})
+    # D. Pipeline progress (max 25)
+    stage = _norm_stage_score(lead.get("status"))
+    pp = _PIPELINE_POINTS[stage]
+    if pp:
+        bd.append({"code": f"stage_{stage}", "points": pp})
+    # F. Data completeness (max 5)
+    comp = min(5, sum(1 for f in ("address", "city", "website", "notes") if (lead.get(f) or "").strip()))
+    if comp:
+        bd.append({"code": "complete_info", "points": comp})
+
+    total = cq + sen + eng + pp + comp
+    # Not Interested must never read as a hot/warm quality lead regardless of other signals
+    if stage == "not_interested":
+        total = min(total, 20)
+    total = max(0, min(100, total))
+    temp = "hot" if total >= 75 else "warm" if total >= 45 else "cold"
+    return {"lead_score": total, "lead_temperature": temp, "lead_score_breakdown": bd,
+            "lead_score_version": LEAD_SCORE_VERSION, "lead_score_updated_at": now_iso()}
+
+
+async def _active_meeting_count(lead_id: str) -> int:
+    meets = await db.meetings.find({"lead_id": lead_id}, {"_id": 0, "id": 1, "status": 1}).to_list(500)
+    seen, n = set(), 0
+    for m in meets:
+        if m.get("id") in seen:
+            continue
+        seen.add(m.get("id"))
+        if m.get("status") not in ("cancelled", "declined"):
+            n += 1
+    return n
+
+
+async def recalc_lead_score(lead_id: str):
+    """Single source of truth. Recomputes + persists the calculated score. Never touches manual override."""
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        return None
+    res = compute_lead_score(lead, await _active_meeting_count(lead_id))
+    await db.leads.update_one({"id": lead_id}, {"$set": res})
+    return res
+
+
+def effective_temperature(lead: dict) -> str:
+    ov = lead.get("lead_temperature_override")
+    return ov if ov in ("hot", "warm", "cold") else (lead.get("lead_temperature") or "cold")
+
+
+class TemperatureIn(BaseModel):
+    temperature: str  # hot | warm | cold | auto
+
+
+@platform_router.post("/admin/leads/{lead_id}/temperature")
+async def set_lead_temperature(lead_id: str, body: TemperatureIn, user: dict = Depends(current_user)):
+    """Manual override of lead quality. 'auto' clears the override (back to calculated). Preserves calc score."""
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    slugs = await _owned_slugs(user)
+    if lead.get("cardSlug") not in slugs and user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Not your lead")
+    t = (body.temperature or "").lower()
+    if t == "auto":
+        await db.leads.update_one({"id": lead_id}, {"$set": {
+            "lead_temperature_override": None, "lead_temperature_override_by": None,
+            "lead_temperature_override_at": None, "updated_at": now_iso()}})
+    elif t in ("hot", "warm", "cold"):
+        await db.leads.update_one({"id": lead_id}, {"$set": {
+            "lead_temperature_override": t, "lead_temperature_override_by": user["id"],
+            "lead_temperature_override_at": now_iso(), "updated_at": now_iso()}})
+    else:
+        raise HTTPException(400, "Invalid temperature")
+    return await db.leads.find_one({"id": lead_id}, {"_id": 0})
+
+
+
 @platform_router.post("/scan/confirm")
 async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
     """Persist a reviewed scan as a CRM lead scoped to one of the user's own cards.
@@ -3611,6 +3803,7 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
         upd["tags"] = tags
         await db.leads.update_one({"id": existing["id"]}, {
             "$set": upd, "$push": {"timeline": _interaction("badge_rescanned")}})
+        await recalc_lead_score(existing["id"])
         await db.notifications.insert_one({
             "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "lead_interaction",
             "card_slug": existing.get("cardSlug"), "scope": "card",
@@ -3648,6 +3841,7 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
         "read": False, "created_at": now, "updated_at": now, "last_activity": now,
     }
     await db.leads.insert_one(lead)
+    await recalc_lead_score(lead["id"])
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
         "card_slug": body.cardSlug, "scope": "card",
@@ -3655,7 +3849,7 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
         "body": (f"at {event_name}" if event_name else f"via {source}"),
         "read": False, "created_at": now,
     })
-    lead.pop("_id", None)
+    lead = await db.leads.find_one({"id": lead["id"]}, {"_id": 0})
     return {"ok": True, "lead": lead}
 
 
@@ -4157,6 +4351,14 @@ async def run_migration():
         await db.meetings.create_index("lead_id")
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
+
+    # Backfill lead scores for any leads not yet scored under the current version (safe, bounded, preview)
+    try:
+        cursor = db.leads.find({"lead_score_version": {"$ne": LEAD_SCORE_VERSION}}, {"_id": 0, "id": 1}).limit(20000)
+        async for l in cursor:
+            await recalc_lead_score(l["id"])
+    except Exception as e:
+        logger.warning(f"lead score backfill: {e}")
 
     # Seed plans + regional prices + markets
     for p in DEFAULT_PLANS:

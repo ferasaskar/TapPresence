@@ -40,6 +40,7 @@ export default function EventDetail() {
   const [stage, setStage] = useState("all");
   const [method, setMethod] = useState("all");
   const [nr, setNr] = useState("all");
+  const [tempF, setTempF] = useState("all");
   const [lbSort, setLbSort] = useState("leads");
   const [editCost, setEditCost] = useState(false);
   const [costForm, setCostForm] = useState({ event_cost: "", event_cost_currency: "AED" });
@@ -65,9 +66,10 @@ export default function EventDetail() {
     if (stage !== "all") list = list.filter((l) => stageOf(l) === stage);
     if (method !== "all") list = list.filter((l) => (l.source || "inquiry") === method);
     if (nr !== "all") list = list.filter((l) => (l.new_returning || "new") === nr);
+    if (tempF !== "all") list = list.filter((l) => (l.effective_temperature || l.lead_temperature || "cold") === tempF);
     if (q.trim()) { const s = q.toLowerCase(); list = list.filter((l) => [l.name, l.email, l.company, l.title].some((v) => (v || "").toLowerCase().includes(s))); }
     return list;
-  }, [leads, stage, method, nr, q]);
+  }, [leads, stage, method, nr, tempF, q]);
 
   const leaderboard = useMemo(() => {
     if (!dash) return [];
@@ -120,6 +122,45 @@ export default function EventDetail() {
               <Kpi label={t("eventDash.followupsDue")} value={k.followups_due + k.followups_overdue} sub={k.followups_overdue ? t("eventDash.overdue", { count: k.followups_overdue }) : ""} testid="kpi-followups-due" />
               <Kpi label={t("eventDash.followupsCompleted")} value={k.followups_completed} testid="kpi-followups-done" />
             </div>
+
+            {/* Lead quality distribution */}
+            <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5" data-testid="event-quality">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs uppercase tracking-wider text-[#D6A653]">{t("eventDash.leadQuality")}</p>
+                <span className="text-xs text-white/50">{t("eventDash.avgScore")}: <b className="text-white/80">{dash.quality.avg_score}</b></span>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {["hot", "warm", "cold"].map((tt) => (
+                  <button key={tt} onClick={() => setTempF(tempF === tt ? "all" : tt)} data-testid={`quality-${tt}`}
+                    className={`rounded-xl border p-3 text-center transition-all ${tempF === tt ? "border-[#D6A653] bg-[#D6A653]/10" : "border-white/10 bg-white/[0.02] hover:border-white/25"}`}>
+                    <div className={`text-xs uppercase tracking-wider ${tt === "hot" ? "text-red-300" : tt === "warm" ? "text-amber-300" : "text-sky-300"}`}>{tt === "hot" ? "🔥 " : ""}{t(`leads.${tt}`)}</div>
+                    <div className="mt-1 text-2xl font-light text-white">{dash.quality[tt]}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Top leads to follow up */}
+            {dash.top_leads.length ? (
+              <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5" data-testid="event-top-leads">
+                <p className="mb-3 text-xs uppercase tracking-wider text-[#D6A653]">{t("eventDash.topLeads")}</p>
+                <div className="space-y-2">
+                  {dash.top_leads.map((l) => (
+                    <button key={l.id} onClick={() => navigate(`/leads?lead=${l.id}`)} data-testid={`top-lead-${l.id}`}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.02] p-3 text-left transition-all hover:border-[#D6A653]/40">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-white">{l.name}</p>
+                        <p className="truncate text-xs text-white/50">{[l.title, l.company].filter(Boolean).join(" · ") || l.captured_by}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {l.next_follow_up && !l.follow_up_completed_at ? <span className="text-[11px] text-amber-300">{t("eventDash.followUpSet")}</span> : null}
+                        <span className={`rounded-full border px-2 py-0.5 text-[11px] ${l.temperature === "hot" ? "text-red-300 border-red-400/40 bg-red-400/10" : l.temperature === "warm" ? "text-amber-300 border-amber-400/40 bg-amber-400/10" : "text-sky-300 border-sky-400/40 bg-sky-400/10"}`}>{l.temperature === "hot" ? "🔥 " : ""}{l.score}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid gap-6 lg:grid-cols-2">
               {/* Pipeline distribution */}
@@ -205,6 +246,8 @@ export default function EventDetail() {
                   <SelectTrigger className="h-8 w-36 text-xs" data-testid="lb-sort"><SelectValue /></SelectTrigger>
                   <SelectContent className="aria-pop">
                     <SelectItem value="leads">{t("eventDash.sortLeads")}</SelectItem>
+                    <SelectItem value="hot_leads">{t("eventDash.sortHot")}</SelectItem>
+                    <SelectItem value="avg_score">{t("eventDash.sortAvgScore")}</SelectItem>
                     <SelectItem value="meetings">{t("eventDash.sortMeetings")}</SelectItem>
                     <SelectItem value="customers">{t("eventDash.sortCustomers")}</SelectItem>
                     <SelectItem value="conversion_rate">{t("eventDash.sortConversion")}</SelectItem>
@@ -216,6 +259,7 @@ export default function EventDetail() {
                   <table className="w-full text-sm">
                     <thead><tr className="text-left text-[11px] uppercase tracking-wider text-white/40">
                       <th className="py-2 pr-3">{t("eventDash.member")}</th><th className="px-2">{t("eventDash.leads")}</th>
+                      <th className="px-2">{t("leads.hot")}</th><th className="px-2">{t("eventDash.avgShort")}</th>
                       <th className="px-2">{t("eventDash.new")}</th><th className="px-2">{t("eventDash.returning")}</th>
                       <th className="px-2">{t("eventDash.meetings")}</th><th className="px-2">{t("eventDash.customers")}</th><th className="px-2">{t("eventDash.conv")}</th>
                     </tr></thead>
@@ -223,6 +267,7 @@ export default function EventDetail() {
                       {leaderboard.map((r) => (
                         <tr key={r.user_id} className="border-t border-white/6 text-white/80" data-testid={`lb-row-${r.user_id}`}>
                           <td className="py-2 pr-3 text-white">{r.name}</td><td className="px-2">{r.leads}</td>
+                          <td className="px-2 text-red-300">{r.hot_leads}</td><td className="px-2">{r.avg_score}</td>
                           <td className="px-2">{r.new}</td><td className="px-2">{r.returning}</td>
                           <td className="px-2">{r.meetings}</td><td className="px-2">{r.customers}</td><td className="px-2">{r.conversion_rate}%</td>
                         </tr>
@@ -241,6 +286,7 @@ export default function EventDetail() {
                 <Select value={stage} onValueChange={setStage}><SelectTrigger className="h-9 text-xs" data-testid="event-lead-filter-stage"><SelectValue placeholder={t("leads.pipelineStage")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("eventDash.allStages")}</SelectItem>{STAGES.map((s) => <SelectItem key={s} value={s}>{sLabel(s)}</SelectItem>)}</SelectContent></Select>
                 <Select value={method} onValueChange={setMethod}><SelectTrigger className="h-9 text-xs" data-testid="event-lead-filter-method"><SelectValue placeholder={t("leads.source")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allSources")}</SelectItem>{dash.capture_methods.map((c) => <SelectItem key={c.key} value={c.key}>{capLabel(c.key)}</SelectItem>)}</SelectContent></Select>
                 <Select value={nr} onValueChange={setNr}><SelectTrigger className="h-9 text-xs" data-testid="event-lead-filter-nr"><SelectValue placeholder={t("eventDash.newReturning")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("eventDash.allContacts")}</SelectItem><SelectItem value="new">{t("eventDash.newContacts")}</SelectItem><SelectItem value="returning">{t("eventDash.returning")}</SelectItem></SelectContent></Select>
+                <Select value={tempF} onValueChange={setTempF}><SelectTrigger className="h-9 text-xs" data-testid="event-lead-filter-temp"><SelectValue placeholder={t("leads.quality")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allQuality")}</SelectItem><SelectItem value="hot">🔥 {t("leads.hot")}</SelectItem><SelectItem value="warm">{t("leads.warm")}</SelectItem><SelectItem value="cold">{t("leads.cold")}</SelectItem></SelectContent></Select>
               </div>
               {filtered.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-white/12 py-14 text-center text-white/50" data-testid="event-leads-empty">{t("events.noLeads")}</div>
@@ -255,6 +301,7 @@ export default function EventDetail() {
                           <div className="flex items-center gap-2">
                             <p className="truncate font-medium text-white">{l.name}</p>
                             <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${l.new_returning === "returning" ? "border-sky-400/40 bg-sky-400/10 text-sky-300" : "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"}`}>{l.new_returning === "returning" ? t("eventDash.returning") : t("eventDash.new")}</span>
+                            {(() => { const tt = l.effective_temperature || l.lead_temperature || "cold"; return <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${tt === "hot" ? "border-red-400/40 bg-red-400/10 text-red-300" : tt === "warm" ? "border-amber-400/40 bg-amber-400/10 text-amber-300" : "border-sky-400/40 bg-sky-400/10 text-sky-300"}`} data-testid={`event-lead-temp-${l.id}`}>{tt === "hot" ? "🔥 " : ""}{typeof l.lead_score === "number" ? l.lead_score : ""}</span>; })()}
                           </div>
                           <p className="truncate text-xs text-white/50">{[l.title, l.company].filter(Boolean).join(" · ") || l.email || l.phone}</p>
                           <p className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px] text-white/40">

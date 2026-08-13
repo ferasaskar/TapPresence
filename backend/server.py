@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized, recalc_lead_score
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -864,6 +864,7 @@ async def update_lead_fields(lead_id: str, body: LeadFieldsIn, user: dict = Depe
     upd["updated_at"] = now
     upd["last_activity"] = now
     await db.leads.update_one({"id": lead_id}, {"$set": upd})
+    await recalc_lead_score(lead_id)
     return await db.leads.find_one({"id": lead_id}, {"_id": 0})
 
 
@@ -912,6 +913,7 @@ async def complete_lead_follow_up(lead_id: str, user: dict = Depends(get_current
     await db.leads.update_one({"id": lead_id}, {
         "$set": {"follow_up_completed_at": now, "next_follow_up": "", "updated_at": now, "last_activity": now},
         "$push": {"timeline": {"at": now, "event": "follow_up_completed", "by": user.get("id")}}})
+    await recalc_lead_score(lead_id)
     return {"ok": True, "follow_up_completed_at": now}
 
 
@@ -947,6 +949,7 @@ async def set_lead_status(lead_id: str, body: Dict[str, Any], user: dict = Depen
         raise HTTPException(status_code=400, detail="Invalid status")
     now = datetime.now(timezone.utc).isoformat()
     await db.leads.update_one({"id": lead_id}, {"$set": {"status": st, "updated_at": now, "last_activity": now}})
+    await recalc_lead_score(lead_id)
     return {"ok": True}
 
 
@@ -1348,6 +1351,7 @@ async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Hea
     }
     await db.meetings.insert_one(dict(meeting))
     await db.leads.update_one({"id": lead_id}, {"$push": {"timeline": {"at": now, "event": "meeting_requested" if approval else "meeting_booked", "detail": mt["title"]}}})
+    await recalc_lead_score(lead_id)
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "meeting_booked",
         "card_slug": slug, "scope": "card",
@@ -1830,6 +1834,7 @@ async def manage_cancel(token: str):
                                  "$push": {"history": {"at": now, "event": "cancelled", "by": "guest"}}})
     if m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
+        await recalc_lead_score(m["lead_id"])
     await sync_meeting_calendar(m["id"])
     await _send_meeting_emails({**m, "status": "cancelled"}, "cancelled")
     return {"ok": True}

@@ -26,6 +26,9 @@ const MSTATUS_KEY = { requested: "requested", time_proposed: "time_proposed", sc
 
 
 const norm = (s) => { const v = (s || "new").toLowerCase(); return LEGACY_STAGE[v] || v; };
+const TEMP_BADGE = { hot: "text-red-300 border-red-400/40 bg-red-400/10", warm: "text-amber-300 border-amber-400/40 bg-amber-400/10", cold: "text-sky-300 border-sky-400/40 bg-sky-400/10" };
+const TEMP_ICON = { hot: "🔥", warm: "", cold: "" };
+const effTemp = (l) => { const o = l.lead_temperature_override; return (o === "hot" || o === "warm" || o === "cold") ? o : (l.lead_temperature || "cold"); };
 const digits = (p) => (p || "").replace(/[^\d+]/g, "").replace(/^\+/, "");
 const fmt = (iso) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
@@ -47,6 +50,8 @@ export default function Leads() {
   const [card, setCard] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [capturedBy, setCapturedBy] = useState("all");
+  const [temp, setTemp] = useState("all");
+  const [sortBy, setSortBy] = useState("recent");
   const [dateRange, setDateRange] = useState({ preset: "all", start: null, end: null });
   const [openLead, setOpenLead] = useState(null);
   const [draft, setDraft] = useState("");
@@ -98,14 +103,20 @@ export default function Leads() {
     if (card !== "all") list = list.filter((l) => l.cardSlug === card);
     if (eventFilter !== "all") list = list.filter((l) => (eventFilter === "__none" ? !l.event_id && !l.event : l.event_id === eventFilter));
     if (capturedBy !== "all") list = list.filter((l) => (l.captured_by || "") === capturedBy);
+    if (temp !== "all") list = list.filter((l) => effTemp(l) === temp);
     if (dateRange?.start) {
       const s = new Date(dateRange.start).getTime();
       const e = new Date(dateRange.end).getTime();
       list = list.filter((l) => { const ts = new Date(l.created_at).getTime(); return ts >= s && ts <= e; });
     }
     if (q.trim()) { const s = q.toLowerCase(); list = list.filter((l) => [l.name, l.email, l.phone].some((v) => (v || "").toLowerCase().includes(s))); }
-    return [...list].sort((a, b) => new Date(b.last_activity || b.created_at) - new Date(a.last_activity || a.created_at));
-  }, [leads, tab, source, card, eventFilter, capturedBy, dateRange, q, mByLead]);
+    const arr = [...list];
+    if (sortBy === "score_desc") arr.sort((a, b) => (b.lead_score || 0) - (a.lead_score || 0));
+    else if (sortBy === "score_asc") arr.sort((a, b) => (a.lead_score || 0) - (b.lead_score || 0));
+    else if (sortBy === "followup") arr.sort((a, b) => (a.next_follow_up || "9999").localeCompare(b.next_follow_up || "9999"));
+    else arr.sort((a, b) => new Date(b.last_activity || b.created_at) - new Date(a.last_activity || a.created_at));
+    return arr;
+  }, [leads, tab, source, card, eventFilter, capturedBy, temp, sortBy, dateRange, q, mByLead]);
 
   const openDetail = async (l) => {
     setOpenLead(l); setDraft("");
@@ -165,6 +176,14 @@ export default function Leads() {
     catch { toast.error(t("leads.couldNotUpdate")); } finally { setSavingRemind(false); }
   };
 
+  const setTemperature = async (l, temperature) => {
+    try {
+      const { data } = await api.post(`/admin/leads/${l.id}/temperature`, { temperature });
+      patchLeadLocal(l.id, { lead_temperature_override: data.lead_temperature_override, lead_score: data.lead_score, lead_temperature: data.lead_temperature });
+      toast.success(t("leads.qualityUpdated"));
+    } catch { toast.error(t("leads.couldNotUpdate")); }
+  };
+
   const multiCard = cards.length > 1;
   const QA = ({ icon: Icon, href, onClick, label, testId }) => {
     const cls = "flex h-9 w-9 items-center justify-center rounded-lg border border-white/12 bg-white/[0.02] text-white/70 transition-colors hover:border-[#D6A653]/50 hover:text-white";
@@ -208,6 +227,8 @@ export default function Leads() {
           {members.length > 1 ? <Select value={capturedBy} onValueChange={setCapturedBy}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-capturedby"><SelectValue placeholder={t("leads.capturedBy")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allMembers")}</SelectItem>{members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select> : null}
           {multiCard ? <Select value={card} onValueChange={setCard}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-card"><SelectValue placeholder={t("leads.card")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allCards")}</SelectItem>{cards.map((c) => <SelectItem key={c.slug} value={c.slug}>/{c.slug}</SelectItem>)}</SelectContent></Select> : null}
           <div className="col-span-2 sm:col-span-1" data-testid="leads-filter-date"><DateFilter value={dateRange} onChange={setDateRange} testId="leads-date-filter" allowAll /></div>
+          <Select value={temp} onValueChange={setTemp}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-temp"><SelectValue placeholder={t("leads.quality")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allQuality")}</SelectItem><SelectItem value="hot">🔥 {t("leads.hot")}</SelectItem><SelectItem value="warm">{t("leads.warm")}</SelectItem><SelectItem value="cold">{t("leads.cold")}</SelectItem></SelectContent></Select>
+          <Select value={sortBy} onValueChange={setSortBy}><SelectTrigger className="h-9 text-xs" data-testid="leads-sort"><SelectValue /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="recent">{t("leads.sortRecent")}</SelectItem><SelectItem value="score_desc">{t("leads.sortScoreDesc")}</SelectItem><SelectItem value="score_asc">{t("leads.sortScoreAsc")}</SelectItem><SelectItem value="followup">{t("leads.sortFollowup")}</SelectItem></SelectContent></Select>
         </div>
 
         {leads === null ? (
@@ -228,6 +249,7 @@ export default function Leads() {
                         <span className="font-medium text-white">{l.name}</span>
                         {!l.read ? <span className="rounded-full bg-[#D6A653] px-1.5 py-0.5 text-[9px] font-semibold text-[#050607]">{t("leads.new")}</span> : null}
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${STAGE_BADGE[st]}`} data-testid={`lead-stage-${l.id}`}>{sLabel(st)}</span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${TEMP_BADGE[effTemp(l)]}`} data-testid={`lead-temp-${l.id}`}>{TEMP_ICON[effTemp(l)]}{t(`leads.${effTemp(l)}`)}{typeof l.lead_score === "number" ? ` ${l.lead_score}` : ""}{l.lead_temperature_override ? " ·M" : ""}</span>
                         {m ? <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/60">{mLabel(m.status)}</span> : null}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/50">
@@ -333,6 +355,30 @@ export default function Leads() {
                       {l.next_follow_up ? <button onClick={() => clearReminder(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg border border-white/12 px-3 py-1.5 text-xs text-white/60 hover:text-white disabled:opacity-60" data-testid="reminder-clear"><BellOff className="h-3.5 w-3.5" /> {t("leads.clearReminder")}</button> : null}
                       {l.next_follow_up && !l.follow_up_completed_at ? <button onClick={() => completeFollowUp(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-400/20 disabled:opacity-60" data-testid="reminder-complete"><Check className="h-3.5 w-3.5" /> {t("leads.markFollowUpDone")}</button> : null}
                       {l.follow_up_completed_at ? <span className="flex items-center gap-1 text-xs text-emerald-300" data-testid="reminder-done"><Check className="h-3.5 w-3.5" /> {t("leads.followUpDone")}</span> : null}
+                    </div>
+                  </div>
+
+                  {/* lead quality (score) */}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-quality">
+                    <div className="flex items-center justify-between">
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-medium uppercase tracking-wider ${TEMP_BADGE[effTemp(l)]}`} data-testid="detail-temp">{TEMP_ICON[effTemp(l)]}{t(`leads.${effTemp(l)}`)} — {l.lead_score ?? 0}/100</span>
+                      {l.lead_temperature_override ? <span className="text-[10px] uppercase tracking-wider text-white/45">{t("leads.manual")}</span> : <span className="text-[10px] uppercase tracking-wider text-white/35">{t("leads.automatic")}</span>}
+                    </div>
+                    {(l.lead_score_breakdown || []).length ? (
+                      <ul className="mt-3 space-y-1" data-testid="detail-quality-why">
+                        <li className="text-[11px] uppercase tracking-wider text-[#D6A653]">{t("leads.whyThisLead")}</li>
+                        {(l.lead_score_breakdown || []).map((b, i) => (
+                          <li key={i} className="flex items-center justify-between text-xs text-white/65"><span>{t(`leads.score_${b.code}`, { defaultValue: b.code.replace(/_/g, " ") })}</span><span className="text-white/80">+{b.points}</span></li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {["hot", "warm", "cold", "auto"].map((tt) => (
+                        <button key={tt} onClick={() => setTemperature(l, tt)} data-testid={`detail-temp-${tt}`}
+                          className={`rounded-lg border px-2.5 py-1 text-[11px] ${(tt === "auto" && !l.lead_temperature_override) || l.lead_temperature_override === tt ? "border-[#D6A653]/60 bg-[#D6A653]/15 text-[#D6A653]" : "border-white/12 text-white/60 hover:text-white"}`}>
+                          {tt === "auto" ? t("leads.useAutomatic") : t(`leads.${tt}`)}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
