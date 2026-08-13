@@ -95,7 +95,23 @@
     "dupBody": "يوجد بالفعل عميل بنفس البريد أو الهاتف على هذه البطاقة.",
     "dupUpdate": "تحديث الحالي",
     "dupCreateAnyway": "إنشاء على أي حال",
-    "dupUpdated": "تم تحديث العميل الحالي"
+    "dupUpdated": "تم تحديث العميل الحالي",
+    "modeBadge": "شارة فعالية",
+    "modeCard": "بطاقة عمل",
+    "badgeRead": "تمت قراءة الشارة — راجع التفاصيل",
+    "scanBadge": "مسح الشارة",
+    "badgeReviewIntro": "راجع البيانات المستخرجة وصححها قبل الحفظ. الحقول الفارغة لم تكن مطبوعة بوضوح.",
+    "fLinkedin": "لينكدإن / الملف",
+    "fBadgeId": "رقم الشارة",
+    "eventLabel": "الفعالية",
+    "newEvent": "فعالية جديدة",
+    "selectEvent": "اختر فعالية",
+    "noEvent": "بدون فعالية",
+    "savedTitle": "تم حفظ جهة الاتصال",
+    "followUpNow": "المتابعة الآن",
+    "openLeadFollowUp": "فتح العميل وضبط المتابعة",
+    "scanNext": "مسح التالي",
+    "dupPrevEvent": "تمت مقابلته سابقًا في: {{event}}"
   },
   "meetings": {
     "title": "الاجتماعات",
@@ -248,7 +264,16 @@
     "source_meeting_booking": "حجز اجتماع",
     "source_business_card_scan": "بطاقة عمل",
     "source_badge_scan": "شارة فعالية",
-    "source_qr_scan": "رمز QR"
+    "source_qr_scan": "رمز QR",
+    "sourceEventBadge": "شارة فعالية",
+    "eventFilter": "الفعالية",
+    "allEvents": "كل الفعاليات",
+    "noEvent": "بدون فعالية",
+    "capturedBy": "التقطه",
+    "allMembers": "الجميع",
+    "ev_badge_scanned": "تم مسح الشارة",
+    "ev_badge_rescanned": "تم المسح مجددًا",
+    "ev_card_scanned": "تم مسح البطاقة"
   },
   "analytics": {
     "title": "التحليلات",
@@ -313,7 +338,8 @@
     "signatures": "التواقيع",
     "integrations": "التكاملات",
     "billing": "الفوترة",
-    "referral": "الإحالات"
+    "referral": "الإحالات",
+    "events": "الفعاليات"
   },
   "team": {
     "title": "الفريق والشركة",
@@ -1035,5 +1061,26 @@
     "st_DEACTIVATED": "معطّلة",
     "st_LOST": "مفقودة",
     "st_REPLACED": "مستبدلة"
+  },
+  "events": {
+    "title": "الفعاليات",
+    "subtitle": "المؤتمرات والفعاليات التي تلتقط فيها العملاء المحتملين",
+    "new": "فعالية جديدة",
+    "empty": "لا توجد فعاليات بعد. أنشئ واحدة لبدء التقاط عملاء الشارات.",
+    "nameRequired": "اسم الفعالية مطلوب",
+    "created": "تم إنشاء الفعالية",
+    "createFailed": "تعذّر إنشاء الفعالية",
+    "namePlaceholder": "مثال: جيتكس جلوبال 2026",
+    "locationPlaceholder": "مثال: مركز دبي التجاري العالمي",
+    "startDate": "تاريخ البدء",
+    "endDate": "تاريخ الانتهاء",
+    "notesPlaceholder": "ملاحظات (اختياري)",
+    "create": "إنشاء الفعالية",
+    "leadsCount": "{{count}} عميل",
+    "backToEvents": "العودة إلى الفعاليات",
+    "notFound": "الفعالية غير موجودة",
+    "capturedLeads": "العملاء الملتقطون",
+    "noLeads": "لم يتم التقاط أي عملاء لهذه الفعالية بعد.",
+    "capturedBy": "التقطه {{name}}"
   }
 }

@@ -95,7 +95,23 @@
     "dupBody": "Ya existe un lead con el mismo correo o teléfono en esta tarjeta.",
     "dupUpdate": "Actualizar existente",
     "dupCreateAnyway": "Crear de todos modos",
-    "dupUpdated": "Lead existente actualizado"
+    "dupUpdated": "Lead existente actualizado",
+    "modeBadge": "Credencial de evento",
+    "modeCard": "Tarjeta de visita",
+    "badgeRead": "Credencial leída — revisa los datos",
+    "scanBadge": "Escanear credencial",
+    "badgeReviewIntro": "Revisa y corrige los datos extraídos antes de guardar. Los campos vacíos no estaban claramente impresos.",
+    "fLinkedin": "LinkedIn / Perfil",
+    "fBadgeId": "ID de credencial",
+    "eventLabel": "Evento",
+    "newEvent": "Nuevo evento",
+    "selectEvent": "Selecciona un evento",
+    "noEvent": "Sin evento",
+    "savedTitle": "Contacto guardado",
+    "followUpNow": "Haz seguimiento ahora",
+    "openLeadFollowUp": "Abrir contacto y programar seguimiento",
+    "scanNext": "Escanear siguiente",
+    "dupPrevEvent": "Conocido previamente en: {{event}}"
   },
   "meetings": {
     "title": "Reuniones",
@@ -248,7 +264,16 @@
     "source_meeting_booking": "Reserva de reunión",
     "source_business_card_scan": "Tarjeta de visita",
     "source_badge_scan": "Credencial de evento",
-    "source_qr_scan": "Código QR"
+    "source_qr_scan": "Código QR",
+    "sourceEventBadge": "Credencial de evento",
+    "eventFilter": "Evento",
+    "allEvents": "Todos los eventos",
+    "noEvent": "Sin evento",
+    "capturedBy": "Captado por",
+    "allMembers": "Todos",
+    "ev_badge_scanned": "Credencial escaneada",
+    "ev_badge_rescanned": "Escaneado de nuevo",
+    "ev_card_scanned": "Tarjeta escaneada"
   },
   "analytics": {
     "title": "Analíticas",
@@ -313,7 +338,8 @@
     "signatures": "Firmas",
     "integrations": "Integraciones",
     "billing": "Facturación",
-    "referral": "Referidos"
+    "referral": "Referidos",
+    "events": "Eventos"
   },
   "team": {
     "title": "Equipo y empresa",
@@ -1035,5 +1061,26 @@
     "st_DEACTIVATED": "Desactivada",
     "st_LOST": "Perdida",
     "st_REPLACED": "Reemplazada"
+  },
+  "events": {
+    "title": "Eventos",
+    "subtitle": "Conferencias y eventos donde captas contactos",
+    "new": "Nuevo evento",
+    "empty": "Aún no hay eventos. Crea uno para empezar a captar contactos por credencial.",
+    "nameRequired": "El nombre del evento es obligatorio",
+    "created": "Evento creado",
+    "createFailed": "No se pudo crear el evento",
+    "namePlaceholder": "p. ej. GITEX GLOBAL 2026",
+    "locationPlaceholder": "p. ej. Dubai World Trade Centre",
+    "startDate": "Fecha de inicio",
+    "endDate": "Fecha de fin",
+    "notesPlaceholder": "Notas (opcional)",
+    "create": "Crear evento",
+    "leadsCount": "{{count}} contactos",
+    "backToEvents": "Volver a eventos",
+    "notFound": "Evento no encontrado",
+    "capturedLeads": "Contactos captados",
+    "noLeads": "Aún no se han captado contactos para este evento.",
+    "capturedBy": "Captado por {{name}}"
   }
 }

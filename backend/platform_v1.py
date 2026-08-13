@@ -2945,6 +2945,94 @@ async def campaign_stats(campaign_id: str, user: dict = Depends(current_user)):
     leads = await db.leads.count_documents({"campaign": code})
     return {"campaign": camp, "events": events, "leads": leads}
 
+# ------------------------------------------------------------------ Events (Event Badge Scanner V1)
+class EventIn(BaseModel):
+    name: str
+    location: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    notes: str = ""
+    campaign_code: str = ""
+
+
+class EventUpdateIn(BaseModel):
+    name: Optional[str] = None
+    location: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    campaign_code: Optional[str] = None
+
+
+async def _event_or_403(event_id: str, user: dict):
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    ws_ids = await workspace_ids_for(user)
+    if ws_ids != "ALL" and ev.get("workspace_id") not in ws_ids:
+        raise HTTPException(403, "Not your event")
+    return ev
+
+
+@platform_router.get("/events")
+async def list_events(user: dict = Depends(current_user)):
+    ws_ids = await workspace_ids_for(user)
+    q = {} if ws_ids == "ALL" else {"workspace_id": {"$in": ws_ids}}
+    events = await db.events.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for e in events:
+        e["lead_count"] = await db.leads.count_documents({"event_id": e["id"]})
+    return events
+
+
+@platform_router.post("/events")
+async def create_event(body: EventIn, user: dict = Depends(current_user)):
+    ms = await memberships_for(user["id"])
+    ws_id = ms[0]["workspace_id"] if ms else None
+    if not ws_id:
+        raise HTTPException(400, "No workspace")
+    if not body.name.strip():
+        raise HTTPException(400, "Event name is required")
+    doc = {"id": str(uuid.uuid4()), "workspace_id": ws_id,
+           "name": body.name.strip(), "location": body.location.strip(),
+           "start_date": body.start_date.strip(), "end_date": body.end_date.strip(),
+           "notes": body.notes.strip(), "campaign_code": body.campaign_code.strip(),
+           "status": "active", "created_by": user["id"],
+           "created_at": now_iso(), "updated_at": now_iso()}
+    await db.events.insert_one(doc)
+    doc.pop("_id", None)
+    doc["lead_count"] = 0
+    return doc
+
+
+@platform_router.get("/events/{event_id}")
+async def get_event(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    leads = await db.leads.find({"event_id": event_id}, {"_id": 0}).sort("created_at", -1).to_list(3000)
+    # resolve captured_by names for the leads list
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(500) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    for l in leads:
+        l["captured_by_name"] = uname.get(l.get("captured_by"), "")
+    ev["lead_count"] = len(leads)
+    return {"event": ev, "leads": leads, "lead_count": len(leads)}
+
+
+@platform_router.patch("/events/{event_id}")
+async def update_event(event_id: str, body: EventUpdateIn, user: dict = Depends(current_user)):
+    await _event_or_403(event_id, user)
+    upd = {k: (v.strip() if isinstance(v, str) else v) for k, v in body.model_dump().items() if v is not None}
+    if "status" in upd and upd["status"] not in ("active", "archived"):
+        raise HTTPException(400, "Invalid status")
+    upd["updated_at"] = now_iso()
+    await db.events.update_one({"id": event_id}, {"$set": upd})
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    ev["lead_count"] = await db.leads.count_documents({"event_id": event_id})
+    return ev
+
+
+
 # ------------------------------------------------------------------ AI follow-up (provider-abstracted)
 class FollowupIn(BaseModel):
     lead_name: str
@@ -3047,7 +3135,10 @@ async def _user_entitlements(user: dict) -> dict:
     return await resolve_entitlements(ms[0]["workspace_id"])
 
 
-SCAN_SOURCES = {"business_card_scan", "badge_scan", "qr_scan"}
+SCAN_SOURCES = {"business_card_scan", "badge_scan", "event_badge_scan", "qr_scan"}
+# Scanner "type" the user picked in the UI → canonical lead source.
+SCANNER_TYPE_SOURCE = {"business_card": "business_card_scan", "event_badge": "event_badge_scan"}
+_BADGE_SOURCES = {"badge_scan", "event_badge_scan"}
 
 
 class ScanIn(BaseModel):
@@ -3091,6 +3182,7 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
     _ent, _period = await enforce_quota(user, _ws_id, "scanner")
     await incr_usage(user["id"], "scanner", _period)
     source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
+    is_badge = source in _BADGE_SOURCES
     image_b64 = _strip_data_url(body.image_base64)
     if not image_b64:
         raise HTTPException(400, "No image provided")
@@ -3099,25 +3191,50 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
     if not key:
         return {"configured": False, "message": "Card scanning is Not Configured", "draft": {}}
 
-    empty = {"name": "", "title": "", "company": "", "email": "", "phone": "",
-             "website": "", "address": "", "city": "", "country": "", "language": "en", "notes": ""}
+    base_keys = ["name", "title", "company", "email", "phone", "website",
+                 "address", "city", "country", "language", "notes"]
+    badge_keys = ["first_name", "last_name", "linkedin", "badge_id", "event_name", "booth"]
+    keys = base_keys + (badge_keys if is_badge else [])
+    empty = {k: "" for k in keys}
+    empty["language"] = "en"
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-        sys = (
-            "You are an OCR + information-extraction engine for business cards and event badges. "
-            "Read ALL text in the image (any language / script, including Arabic and Latin-accented) "
-            "and return ONLY a compact JSON object with these exact keys: "
-            "name, title, company, email, phone, website, address, city, country, language, notes. "
-            "Rules: format phone in international E.164 form when a country can be inferred (e.g. +9715...); "
-            "keep the original spelling and script for name/company; "
-            "'language' is the ISO-639-1 code of the card's primary language (en, ar, es, ...); "
-            "'notes' may hold any extra text (tagline, second phone). "
-            "Use empty strings for anything not present. Output JSON only — no prose, no code fences."
-        )
+        if is_badge:
+            sys = (
+                "You are an OCR + information-extraction engine specialised in CONFERENCE / EVENT BADGES. "
+                "Read ALL printed text in the image in any language or script (including Arabic, mixed "
+                "Arabic/English, and Latin-accented). Badges may be horizontal or vertical, may contain a "
+                "QR code, sponsor/company logos, and only partial information. "
+                "Return ONLY a compact JSON object with these exact keys: "
+                "name, first_name, last_name, title, company, email, phone, website, linkedin, badge_id, "
+                "event_name, booth, address, city, country, language, notes. "
+                "Rules: 'name' is the attendee's full printed name; also split it into first_name / last_name "
+                "when possible. 'company' is the attendee's own organisation; 'booth' only if a booth/stand "
+                "number or hall is printed. 'event_name' only if the event/conference title is printed on the "
+                "badge. 'linkedin' only if a LinkedIn/profile URL or handle is visibly printed. 'badge_id' only "
+                "if an attendee/badge ID is printed. Format phone in international E.164 form when a country can "
+                "be inferred. Keep the original spelling and script for name/company. 'language' is the ISO-639-1 "
+                "code of the badge's primary language (en, ar, es, ...). "
+                "CRITICAL: DO NOT guess or hallucinate. If a field is not clearly present, return an EMPTY string "
+                "for it. Output JSON only — no prose, no code fences."
+            )
+            prompt = "Extract the attendee details from this event badge image as JSON. Return empty strings for anything not clearly printed."
+        else:
+            sys = (
+                "You are an OCR + information-extraction engine for business cards and event badges. "
+                "Read ALL text in the image (any language / script, including Arabic and Latin-accented) "
+                "and return ONLY a compact JSON object with these exact keys: "
+                "name, title, company, email, phone, website, address, city, country, language, notes. "
+                "Rules: format phone in international E.164 form when a country can be inferred (e.g. +9715...); "
+                "keep the original spelling and script for name/company; "
+                "'language' is the ISO-639-1 code of the card's primary language (en, ar, es, ...); "
+                "'notes' may hold any extra text (tagline, second phone). "
+                "Use empty strings for anything not present. Output JSON only — no prose, no code fences."
+            )
+            prompt = "Extract the contact details from this card/badge image as JSON."
         chat = LlmChat(api_key=key, session_id=f"scan-{uuid.uuid4()}",
                        system_message=sys).with_model("openai", "gpt-5.4")
-        msg = UserMessage(text="Extract the contact details from this card/badge image as JSON.",
-                          file_contents=[ImageContent(image_base64=image_b64)])
+        msg = UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)])
         resp = await chat.send_message(msg)
         data = _parse_scan_json(str(resp))
     except Exception as e:
@@ -3125,7 +3242,9 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
         raise HTTPException(502, "Could not read the card. Please retake the photo and try again.")
 
     draft = {**empty, **{k: (str(data.get(k, "")).strip() if data.get(k) is not None else "")
-                          for k in empty}}
+                          for k in keys}}
+    if is_badge and not draft.get("name") and (draft.get("first_name") or draft.get("last_name")):
+        draft["name"] = " ".join([draft.get("first_name", ""), draft.get("last_name", "")]).strip()
     if draft["language"] not in SUPPORTED_LANGUAGES:
         draft["language"] = "en" if not draft["language"] else draft["language"][:2].lower()
     await db.ai_usage.insert_one({
@@ -3139,12 +3258,18 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
 class ScanConfirmIn(BaseModel):
     cardSlug: str
     source: str = "business_card_scan"
+    scanner_type: str = ""            # business_card | event_badge (drives canonical source)
     name: str
+    first_name: str = ""
+    last_name: str = ""
     title: str = ""
     company: str = ""
     email: str = ""
     phone: str = ""
     website: str = ""
+    linkedin: str = ""
+    badge_id: str = ""
+    booth: str = ""
     address: str = ""
     city: str = ""
     country: str = ""
@@ -3152,8 +3277,10 @@ class ScanConfirmIn(BaseModel):
     interest: str = ""
     notes: str = ""
     event: str = ""
+    event_id: str = ""
     campaign: str = ""
     force: bool = False
+    update_lead_id: str = ""          # when set: append this scan to an existing contact
 
 
 import re as _re
@@ -3168,10 +3295,16 @@ def _norm_phone(p):
     return d[-9:] if len(d) >= 7 else ""
 
 
-async def find_duplicate_lead(card_slug, email, phone, exclude_id=None):
-    """Lightweight dedupe within the SAME card: match by normalized email or phone (last 9 digits)."""
+def _norm_text(s):
+    return _re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+async def find_duplicate_lead(card_slug, email, phone, exclude_id=None, name="", company=""):
+    """Lightweight dedupe within the SAME card. Matches by normalized email OR phone (last 9
+    digits) OR a strong full-name + company match (both non-empty, exact after normalization)."""
     ne, np = _norm_email(email), _norm_phone(phone)
-    if not ne and not np:
+    nn, nc = _norm_text(name), _norm_text(company)
+    if not ne and not np and not (nn and nc):
         return None
     cands = await db.leads.find({"cardSlug": card_slug}, {"_id": 0}).to_list(3000)
     for l in cands:
@@ -3181,16 +3314,35 @@ async def find_duplicate_lead(card_slug, email, phone, exclude_id=None):
             return l
         if np and _norm_phone(l.get("phone")) == np:
             return l
+        if nn and nc and _norm_text(l.get("name")) == nn and _norm_text(l.get("company")) == nc:
+            return l
     return None
+
+
+async def _resolve_scan_event(user: dict, event_id: str):
+    """Return (event_doc | None). Enforces tenant ownership of the event."""
+    if not event_id:
+        return None
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    ws_ids = await workspace_ids_for(user)
+    if ws_ids != "ALL" and ev.get("workspace_id") not in ws_ids:
+        raise HTTPException(403, "Event belongs to another workspace")
+    return ev
 
 
 @platform_router.post("/scan/confirm")
 async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
-    """Persist a reviewed scan as a CRM lead scoped to one of the user's own cards."""
+    """Persist a reviewed scan as a CRM lead scoped to one of the user's own cards.
+    When update_lead_id is provided, append this scan (and its event interaction) to the
+    existing contact instead of creating a duplicate."""
     ent = await _user_entitlements(user)
     if not ent.get("scanner"):
         raise HTTPException(403, "Scanner is not available on your plan")
-    source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
+    # canonical source: scanner_type wins when provided (event_badge → event_badge_scan)
+    source = SCANNER_TYPE_SOURCE.get(body.scanner_type) or (body.source if body.source in SCAN_SOURCES else "business_card_scan")
+    scanner_type = body.scanner_type or ("event_badge" if source in _BADGE_SOURCES else "business_card")
     if not body.name.strip():
         raise HTTPException(400, "A name is required")
     slugs = await _owned_slugs(user)
@@ -3199,30 +3351,85 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
     card = await db.digital_cards.find_one({"slug": body.cardSlug}, {"_id": 0})
     if not card:
         raise HTTPException(404, "Card not found")
-    # Duplicate guard — let the user decide (update existing vs. save anyway) instead of silent dupes.
+
+    ev_doc = await _resolve_scan_event(user, body.event_id.strip())
+    event_name = (ev_doc.get("name") if ev_doc else "") or body.event.strip()
+    event_id = ev_doc.get("id") if ev_doc else ""
+    now = now_iso()
+
+    def _interaction(kind: str):
+        return {"at": now, "event": kind, "detail": event_name or (card.get("identity", {}) or {}).get("fullName", ""),
+                "event_name": event_name, "event_id": event_id, "captured_by": user["id"],
+                "captured_by_name": user.get("name") or user.get("email", ""),
+                "scanner_type": scanner_type, "source": source}
+
+    # ---- Append to an existing contact (repeat encounter / user chose "update existing")
+    if body.update_lead_id.strip():
+        existing = await db.leads.find_one({"id": body.update_lead_id.strip()}, {"_id": 0})
+        if not existing:
+            raise HTTPException(404, "Lead not found")
+        if existing.get("cardSlug") not in slugs and user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(403, "Not your lead")
+        upd = {"updated_at": now, "last_activity": now}
+        # fill only blank fields — never overwrite data the user already has
+        for k, v in {"email": body.email, "phone": body.phone, "company": body.company,
+                     "title": body.title, "website": body.website, "linkedin": body.linkedin}.items():
+            if v and v.strip() and not (existing.get(k) or "").strip():
+                upd[k] = v.strip()
+        if event_name:
+            upd["event"] = event_name
+        if event_id:
+            upd["event_id"] = event_id
+        tags = list(existing.get("tags") or [])
+        for tg in (["scanned"] + (["event"] if event_name else [])):
+            if tg not in tags:
+                tags.append(tg)
+        upd["tags"] = tags
+        await db.leads.update_one({"id": existing["id"]}, {
+            "$set": upd, "$push": {"timeline": _interaction("badge_rescanned")}})
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "lead_interaction",
+            "card_slug": existing.get("cardSlug"), "scope": "card",
+            "title": f"Scanned again: {existing.get('name')}",
+            "body": (f"at {event_name}" if event_name else f"via {source}"),
+            "read": False, "created_at": now,
+        })
+        lead = await db.leads.find_one({"id": existing["id"]}, {"_id": 0})
+        return {"ok": True, "lead": lead, "updated": True}
+
+    # ---- Duplicate guard — let the user decide (update existing vs. save anyway)
     if not body.force:
-        dup = await find_duplicate_lead(body.cardSlug, body.email, body.phone)
+        dup = await find_duplicate_lead(body.cardSlug, body.email, body.phone,
+                                        name=body.name, company=body.company)
         if dup:
             return {"ok": False, "duplicate": dup}
+
     lang = body.language if body.language in SUPPORTED_LANGUAGES else "en"
+    full_name = body.name.strip()
     lead = {
         "id": str(uuid.uuid4()), "cardSlug": body.cardSlug, "workspace_id": card.get("workspace_id"),
-        "name": body.name.strip(), "email": body.email.strip(), "phone": body.phone.strip(),
+        "name": full_name, "first_name": body.first_name.strip(), "last_name": body.last_name.strip(),
+        "email": body.email.strip(), "phone": body.phone.strip(),
         "company": body.company.strip(), "title": body.title.strip(),
-        "website": body.website.strip(), "message": body.notes.strip(), "interest": body.interest.strip(),
+        "website": body.website.strip(), "linkedin": body.linkedin.strip(),
+        "badge_id": body.badge_id.strip(), "booth": body.booth.strip(),
+        "message": body.notes.strip(), "interest": body.interest.strip(),
         "address": body.address.strip(), "city": body.city.strip(), "country": body.country.strip(),
-        "language": lang, "source": source, "campaign": body.campaign.strip(), "event": body.event.strip(), "consent": True,
-        "status": "new", "tags": ["scanned"] + (["event"] if body.event.strip() else []), "notes": body.notes.strip(),
-        "met_at": now_iso(), "next_follow_up": "",
+        "language": lang, "source": source, "scanner_type": scanner_type,
+        "campaign": body.campaign.strip(), "event": event_name, "event_id": event_id, "consent": True,
+        "status": "new", "tags": ["scanned"] + (["event"] if event_name else []), "notes": body.notes.strip(),
+        "met_at": now, "captured_at": now, "next_follow_up": "",
         "scanned": True, "captured_by": user["id"],
-        "read": False, "created_at": now_iso(), "updated_at": now_iso(), "last_activity": now_iso(),
+        "timeline": [_interaction("badge_scanned" if scanner_type == "event_badge" else "card_scanned")],
+        "read": False, "created_at": now, "updated_at": now, "last_activity": now,
     }
     await db.leads.insert_one(lead)
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
         "card_slug": body.cardSlug, "scope": "card",
-        "title": f"Scanned lead: {lead['name']}", "body": f"via {source}",
-        "read": False, "created_at": now_iso(),
+        "title": f"Scanned lead: {lead['name']}",
+        "body": (f"at {event_name}" if event_name else f"via {source}"),
+        "read": False, "created_at": now,
     })
     lead.pop("_id", None)
     return {"ok": True, "lead": lead}

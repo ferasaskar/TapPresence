@@ -789,7 +789,8 @@ async def delete_card(card_id: str, user: dict = Depends(get_current_user)):
 
 
 @api_router.get("/admin/leads")
-async def list_leads(slug: str = None, user: dict = Depends(get_current_user)):
+async def list_leads(slug: str = None, event_id: str = None, source: str = None,
+                     captured_by: str = None, user: dict = Depends(get_current_user)):
     # Tenant isolation: only leads on cards the caller can access.
     q = await _card_query(user)
     cards = await db.digital_cards.find(q, {"_id": 0, "slug": 1}).to_list(5000)
@@ -800,8 +801,28 @@ async def list_leads(slug: str = None, user: dict = Depends(get_current_user)):
         lq = {"cardSlug": slug}
     else:
         lq = {"cardSlug": {"$in": slugs}}
-    leads = await db.leads.find(lq, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    if event_id:
+        lq["event_id"] = event_id
+    if source and source != "all":
+        lq["source"] = source
+    if captured_by and captured_by != "all":
+        lq["captured_by"] = captured_by
+    leads = await db.leads.find(lq, {"_id": 0}).sort("created_at", -1).to_list(2000)
     return leads
+
+
+@api_router.get("/admin/team-members")
+async def team_members(user: dict = Depends(get_current_user)):
+    """People who can capture leads in the caller's workspaces (for the 'Captured by' filter)."""
+    if user.get("role") == "SUPER_ADMIN":
+        ms = await db.memberships.find({}, {"_id": 0}).to_list(5000)
+    else:
+        my = await db.memberships.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
+        ws_ids = [m["workspace_id"] for m in my]
+        ms = await db.memberships.find({"workspace_id": {"$in": ws_ids}}, {"_id": 0}).to_list(5000)
+    uids = list({m["user_id"] for m in ms})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(5000)
+    return [{"id": u["id"], "name": u.get("name") or u.get("email") or u["id"]} for u in users]
 
 
 async def _lead_or_403(lead_id: str, user: dict):

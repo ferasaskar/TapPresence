@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 34 — Event Badge Scanner V1 (backend + frontend) end-to-end tested. Backend: 19/19 pytest cases pass (Events CRUD, tenant isolation 403, GITEX seed present, /api/scan/card OCR for EN+AR badges via OpenAI Vision, /api/scan/confirm badge lead with event association, duplicate detection returns existing lead, update-existing appends timeline (badge_rescanned), business-card regression source=business_card_scan, /api/admin/leads event_id/source filters, /api/admin/team-members). Frontend: full scanner flow works — Badge mode selected → upload EN badge via scan-file-input → GPT-5.4 correctly extracts 'SARAH THOMPSON / NOVATECH SOLUTIONS / Chief Marketing Officer' (matches expected) → GITEX event picked → target card 'Feras Askar' picked → save → scan-saved step visible with Call/WhatsApp/Email follow-up. Arabic badge extracts 'Ahmed Al-Farsi / Gulf Digital LLC'. Duplicate flow: scan-duplicate panel appears with same email; clicking scan-dup-update runs and shows 'Existing lead updated' toast + scan-saved step. /leads page shows all 5 filters (leads-filter-source/event/capturedby/card/date) and the new badge lead with 'event badge scan' source pill, 'Scanned again' timestamp. /events page lists GITEX (1 lead) + TEST_iter34_event (1 lead). Business Card mode hides event picker (regression OK). Arabic locale via ariadni_lang=ar flips html dir=rtl with no horizontal overflow. Mobile 430x900: /admin no overflow, nav-scan visible, scanner dialog no overflow (428=428). Tenant isolation UI: work@gmail.com /events shows empty state — no GITEX or TEST_iter34 leaked.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ScanCardDialog Save button", "issue": "scan-save button remains ENABLED when required name field is emptied in the review step (TEST 9). Backend correctly rejects with 400 'A name is required', but the client-side validation is missing so the user only sees the error via toast on submit instead of a disabled button + inline error. Add disabled={saving || !draft.name.trim()} to scan-save, and mark scan-field-name required.", "selector": "[data-testid=\"scan-save\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter34_event_scanner.py", "/app/test_reports/pytest/iter34.xml"],
+  "action_items": [
+    "(Optional/low priority) Guard scan-save with client-side name-required check: disabled={saving || !draft.name.trim()} and add aria-invalid on scan-field-name when empty. Backend already enforces 400, so this is a UX polish rather than a correctness bug."
+  ],
+  "critical_code_review_comments": [
+    "platform_v1.py is now 4013 lines — approaching maintenance risk. Consider splitting Events/Scanner/Followup routes into separate modules.",
+    "ScanCardDialog.jsx (446 lines) mixes camera, upload, event picker, duplicate handling and follow-up UI. Extract EventPicker + ReviewForm + SavedStep sub-components for testability.",
+    "Duplicate detection is card-scoped (find_duplicate_lead queries by cardSlug); a user with multiple cards will not see cross-card duplicates. Documented behavior — matches PRD.",
+    "scan_confirm returns 200 with ok=false when a duplicate is found — semantically fine but non-2xx would be more RESTful. Not blocking; keep as-is for UX flow simplicity."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter34_event_scanner.py"],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN) and work@gmail.com / mohammed (tenant isolation).",
+  "seed_data_creation": "Created event TEST_iter34_event (workspace ARIADNI HQ, dates 2026-01-10 to 2026-01-12, later PATCHed location=Riyadh). Created badge leads on feras-askar: (a) TEST_iter34_<ts> Sarah Thompson (event=TEST_iter34_event, source=event_badge_scan) with a rescan timeline entry, and (b) TEST_iter34_bc_<ts> Regression Co (source=business_card_scan). Also created a UI-driven badge lead ui_iter34_<ts>@novatech.test on feras-askar tied to GITEX GLOBAL 2026 (rescanned once via 'Update existing').",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Event Badge Scanner V1 is fully functional. Only minor UX nit: scan-save should be disabled when draft.name is blank (backend already returns 400). AI extraction quality (OpenAI GPT-5.4) is high — EN badge returns full triple (name/company/title) and AR badge returns Latin transliteration + English company. Duplicate detection is card-scoped (email OR phone-last-9 OR name+company). Timeline entries: 'badge_scanned' on first save, 'badge_rescanned' on update-existing. work@gmail.com correctly sees zero events and 403 on cross-tenant event GET. Frontend RTL uses localStorage key 'ariadni_lang' (not 'tp_locale'). Mobile 430x900 is clean. Test file: /app/backend/tests/test_iter34_event_scanner.py, junit XML: /app/test_reports/pytest/iter34.xml.",
+  "rca of the issue": "N/A — no functional bugs. Only cosmetic UX gap: ScanCardDialog.jsx scan-save button (line ~411) has disabled={saving} but should also gate on !draft.name.trim() to mirror backend's mandatory-name rule and avoid the 'looks-clickable-then-toast-error' pattern."
+}

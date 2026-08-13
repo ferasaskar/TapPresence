@@ -9,7 +9,7 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useLocale } from "@/i18n/useLocale";
 import {
   Home, CreditCard, CalendarDays, BarChart3, Settings as SettingsIcon, ScanLine, LogOut,
-  ShieldCheck, Users, Mail, Plug, Receipt, Gift, Inbox, Smartphone, Menu, X, Building2, User,
+  ShieldCheck, Users, Mail, Plug, Receipt, Gift, Inbox, Smartphone, Menu, X, Building2, User, Ticket,
 } from "lucide-react";
 
 const TpMark = ({ className = "" }) => (
@@ -56,6 +56,7 @@ export const OwnerNav = ({ active }) => {
     { key: "cards", label: t("nav.cards"), icon: CreditCard, onClick: () => navigate("/admin") },
     { key: "leads", label: t("nav.leads"), icon: Inbox, onClick: () => navigate("/leads") },
     { key: "scanner", label: t("nav.scanner"), icon: ScanLine, onClick: () => setScanOpen(true) },
+    { key: "events", label: t("nav.events"), icon: Ticket, onClick: () => navigate("/events") },
     { key: "meetings", label: t("nav.meetings"), icon: CalendarDays, onClick: () => navigate("/meetings") },
     { key: "analytics", label: t("nav.analytics"), icon: BarChart3, onClick: () => (primary ? setAnalyticsCard(primary) : navigate("/dashboard")) },
     { key: "signatures", label: t("nav.signatures"), icon: Mail, onClick: () => navigate("/signatures") },

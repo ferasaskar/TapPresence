@@ -13,6 +13,8 @@ import IndustryStudio from "@/pages/IndustryStudio";
 import Signatures from "@/pages/Signatures";
 import IntegrationHub from "@/pages/IntegrationHub";
 import Leads from "@/pages/Leads";
+import Events from "@/pages/Events";
+import EventDetail from "@/pages/EventDetail";
 import Landing from "@/pages/Landing";
 import IndustryShowcase from "@/pages/IndustryShowcase";
 import CreateCard from "@/pages/CreateCard";
@@ -93,6 +95,8 @@ function App() {
             <Route path="/signatures" element={<ProtectedRoute><Signatures /></ProtectedRoute>} />
             <Route path="/integrations" element={<ProtectedRoute><IntegrationHub /></ProtectedRoute>} />
             <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
+            <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
+            <Route path="/events/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute><CreateCard /></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
             <Route path="/referral" element={<ProtectedRoute><Referral /></ProtectedRoute>} />

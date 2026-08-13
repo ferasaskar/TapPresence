@@ -38,11 +38,15 @@ export default function Leads() {
   const [params, setParams] = useSearchParams();
   const [leads, setLeads] = useState(null);
   const [cards, setCards] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [members, setMembers] = useState([]);
   const [mByLead, setMByLead] = useState({});
   const [tab, setTab] = useState("all");
   const [q, setQ] = useState("");
   const [source, setSource] = useState("all");
   const [card, setCard] = useState("all");
+  const [eventFilter, setEventFilter] = useState("all");
+  const [capturedBy, setCapturedBy] = useState("all");
   const [dateRange, setDateRange] = useState({ preset: "all", start: null, end: null });
   const [openLead, setOpenLead] = useState(null);
   const [draft, setDraft] = useState("");
@@ -57,6 +61,8 @@ export default function Leads() {
   const load = () => {
     api.get("/admin/leads").then(({ data }) => setLeads(data)).catch(() => setLeads([]));
     api.get("/admin/cards").then(({ data }) => setCards(data)).catch(() => {});
+    api.get("/events").then(({ data }) => setEvents(data || [])).catch(() => {});
+    api.get("/admin/team-members").then(({ data }) => setMembers(data || [])).catch(() => {});
     Promise.all(["upcoming", "past", "cancelled"].map((f) => api.get("/admin/meetings", { params: { filter: f } }).then((r) => r.data).catch(() => [])))
       .then((lists) => {
         const map = {};
@@ -90,6 +96,8 @@ export default function Leads() {
     if (tab !== "all") list = list.filter((l) => stageOf(l) === tab);
     if (source !== "all") list = list.filter((l) => (l.source || "inquiry") === source);
     if (card !== "all") list = list.filter((l) => l.cardSlug === card);
+    if (eventFilter !== "all") list = list.filter((l) => (eventFilter === "__none" ? !l.event_id && !l.event : l.event_id === eventFilter));
+    if (capturedBy !== "all") list = list.filter((l) => (l.captured_by || "") === capturedBy);
     if (dateRange?.start) {
       const s = new Date(dateRange.start).getTime();
       const e = new Date(dateRange.end).getTime();
@@ -97,7 +105,7 @@ export default function Leads() {
     }
     if (q.trim()) { const s = q.toLowerCase(); list = list.filter((l) => [l.name, l.email, l.phone].some((v) => (v || "").toLowerCase().includes(s))); }
     return [...list].sort((a, b) => new Date(b.last_activity || b.created_at) - new Date(a.last_activity || a.created_at));
-  }, [leads, tab, source, card, dateRange, q, mByLead]);
+  }, [leads, tab, source, card, eventFilter, capturedBy, dateRange, q, mByLead]);
 
   const openDetail = async (l) => {
     setOpenLead(l); setDraft("");
@@ -189,7 +197,9 @@ export default function Leads() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("leads.search")} className="h-9 w-full rounded-lg border border-white/12 bg-[#0A0B0D] pl-9 pr-3 text-sm text-white placeholder:text-white/30 focus:border-[#D6A653]/50 focus:outline-none" data-testid="leads-search" />
           </div>
-          <Select value={source} onValueChange={setSource}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-source"><SelectValue placeholder={t("leads.source")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allSources")}</SelectItem><SelectItem value="inquiry">{t("leads.inquiry")}</SelectItem><SelectItem value="meeting_booking">{t("leads.meetingBooking")}</SelectItem><SelectItem value="business_card_scan">{t("leads.sourceBusinessCard")}</SelectItem><SelectItem value="badge_scan">{t("leads.sourceBadge")}</SelectItem><SelectItem value="qr_scan">{t("leads.sourceQr")}</SelectItem></SelectContent></Select>
+          <Select value={source} onValueChange={setSource}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-source"><SelectValue placeholder={t("leads.source")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allSources")}</SelectItem><SelectItem value="inquiry">{t("leads.inquiry")}</SelectItem><SelectItem value="meeting_booking">{t("leads.meetingBooking")}</SelectItem><SelectItem value="event_badge_scan">{t("leads.sourceEventBadge")}</SelectItem><SelectItem value="business_card_scan">{t("leads.sourceBusinessCard")}</SelectItem><SelectItem value="badge_scan">{t("leads.sourceBadge")}</SelectItem><SelectItem value="qr_scan">{t("leads.sourceQr")}</SelectItem></SelectContent></Select>
+          <Select value={eventFilter} onValueChange={setEventFilter}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-event"><SelectValue placeholder={t("leads.eventFilter")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allEvents")}</SelectItem><SelectItem value="__none">{t("leads.noEvent")}</SelectItem>{events.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select>
+          {members.length > 1 ? <Select value={capturedBy} onValueChange={setCapturedBy}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-capturedby"><SelectValue placeholder={t("leads.capturedBy")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allMembers")}</SelectItem>{members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select> : null}
           {multiCard ? <Select value={card} onValueChange={setCard}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-card"><SelectValue placeholder={t("leads.card")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allCards")}</SelectItem>{cards.map((c) => <SelectItem key={c.slug} value={c.slug}>/{c.slug}</SelectItem>)}</SelectContent></Select> : null}
           <div className="col-span-2 sm:col-span-1" data-testid="leads-filter-date"><DateFilter value={dateRange} onChange={setDateRange} testId="leads-date-filter" allowAll /></div>
         </div>

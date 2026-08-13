@@ -95,7 +95,23 @@
     "dupBody": "A lead with the same email or phone already exists on this card.",
     "dupUpdate": "Update existing",
     "dupCreateAnyway": "Create anyway",
-    "dupUpdated": "Existing lead updated"
+    "dupUpdated": "Existing lead updated",
+    "modeBadge": "Event Badge",
+    "modeCard": "Business Card",
+    "badgeRead": "Badge read — review the details",
+    "scanBadge": "Scan badge",
+    "badgeReviewIntro": "Review and correct the extracted details before saving. Empty fields were not clearly printed.",
+    "fLinkedin": "LinkedIn / Profile",
+    "fBadgeId": "Badge ID",
+    "eventLabel": "Event",
+    "newEvent": "New event",
+    "selectEvent": "Select an event",
+    "noEvent": "No event",
+    "savedTitle": "Contact saved",
+    "followUpNow": "Follow up now",
+    "openLeadFollowUp": "Open lead & set follow-up",
+    "scanNext": "Scan next",
+    "dupPrevEvent": "Previously met at: {{event}}"
   },
   "meetings": {
     "title": "Meetings",
@@ -248,7 +264,16 @@
     "source_meeting_booking": "Meeting booking",
     "source_business_card_scan": "Business card",
     "source_badge_scan": "Event badge",
-    "source_qr_scan": "QR code"
+    "source_qr_scan": "QR code",
+    "sourceEventBadge": "Event badge",
+    "eventFilter": "Event",
+    "allEvents": "All events",
+    "noEvent": "No event",
+    "capturedBy": "Captured by",
+    "allMembers": "Everyone",
+    "ev_badge_scanned": "Badge scanned",
+    "ev_badge_rescanned": "Scanned again",
+    "ev_card_scanned": "Card scanned"
   },
   "analytics": {
     "title": "Analytics",
@@ -313,7 +338,8 @@
     "signatures": "Signatures",
     "integrations": "Integrations",
     "billing": "Billing",
-    "referral": "Referral"
+    "referral": "Referral",
+    "events": "Events"
   },
   "team": {
     "title": "Team & Company",
@@ -1035,5 +1061,26 @@
     "st_DEACTIVATED": "Deactivated",
     "st_LOST": "Lost",
     "st_REPLACED": "Replaced"
+  },
+  "events": {
+    "title": "Events",
+    "subtitle": "Conferences and events where you capture leads",
+    "new": "New event",
+    "empty": "No events yet. Create one to start capturing badge leads.",
+    "nameRequired": "Event name is required",
+    "created": "Event created",
+    "createFailed": "Could not create event",
+    "namePlaceholder": "e.g. GITEX GLOBAL 2026",
+    "locationPlaceholder": "e.g. Dubai World Trade Centre",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "notesPlaceholder": "Notes (optional)",
+    "create": "Create event",
+    "leadsCount": "{{count}} leads",
+    "backToEvents": "Back to events",
+    "notFound": "Event not found",
+    "capturedLeads": "Captured leads",
+    "noLeads": "No leads captured yet for this event.",
+    "capturedBy": "Captured by {{name}}"
   }
 }
