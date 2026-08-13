@@ -1,5 +1,15 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## GOOGLE CALENDAR LEAST-PRIVILEGE SCOPE CHANGE (2026-06, preview only) — calendar.events → calendar.app.created
+Replaced the sensitive Calendar scope with the non-sensitive `calendar.app.created`; TapPresence now writes booking events to a dedicated **"TapPresence Bookings"** secondary calendar instead of the user's primary. Google Sign-In (`openid email profile`) and Google Wallet (service-account `wallet_object.issuer`) UNCHANGED. Booking/meeting/Stripe/billing/referral/pricing logic UNCHANGED.
+- `server.py`: `GCAL_SCOPE="openid email https://www.googleapis.com/auth/calendar.app.created"` + `GCAL_CALENDAR_NAME`. New `_gcal_ensure_calendar()` (reuse stored calendar_id → else reuse app-created calendar by name → else create; idempotent, no duplicates; stores `calendar_id` on the connection). `sync_meeting_calendar()` now targets `/calendars/{calendar_id}/events` (never `primary`), no-ops if no calendar_id. Callback checks `calendar.app.created` granted + ensures the secondary calendar. `status` endpoint requires `calendar.app.created` + `calendar_id`.
+- Migration: existing `calendar.events` connections now report `connected:false, needs_reconnect:true, reason:calendar_permission_missing` → existing Settings "Reconnect needed" UX prompts reconnect. Old events already in a user's primary calendar are left untouched (not deleted). New bookings go to the new secondary calendar after reconnect.
+- Privacy disclosure (en/es/ar `privacy.gcal.body`) updated to reflect the new scope + dedicated calendar + "does not read your primary calendar".
+- Tests: runtime scope verified (has calendar.app.created, no calendar.events); mocked-Google proof of create-one / reuse-no-duplicate / event create-update-delete on the secondary calendar / primary never touched / no event reads; sign-in + wallet unchanged; booking regression green.
+- **Google Cloud Console action required (user):** swap the requested scope on the OAuth consent screen from `calendar.events` to `calendar.app.created` (non-sensitive — should drop the sensitive-scope verification requirement); keep Calendar API enabled; existing users must reconnect (scope changed). Files: backend/server.py, frontend i18n en/es/ar.json.
+
+
+
 ## TRANSACTIONAL EMAIL — REMAINING WORK COMPLETED (2026-06, preview only, delivery-verified)
 All built on the single existing Resend integration + shared `_email_shell` (no second provider; Resend key & SENDER_EMAIL unchanged). Stripe/billing/pricing/trial-rules/referral-eligibility UNCHANGED — email layer only reacts to existing state.
 - **Localization EN/AR/ES:** `_email_shell(lang=)` now renders Arabic RTL (dir="rtl", right-aligned) and EN/ES LTR. Added `EMAIL_MSGS` + `build_email`/`send_localized` in platform_v1 for auth/trial/referral/invite; booking emails localized in server.py via `_MEET_TX`/`_MEET_L` using the same shell. Language source: user/owner account `language`. Dates use a language-neutral format (no English month names). Verified: AR verify (dir=rtl), ES reset/trial delivered.

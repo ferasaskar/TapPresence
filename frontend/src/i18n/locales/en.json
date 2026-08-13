@@ -612,7 +612,7 @@
     },
     "gcal": {
       "title": "Google Calendar Integration",
-      "body": "TapPresence optionally connects to Google Calendar to support meeting booking. When a user connects their Google account, TapPresence uses the Google Calendar calendar.events permission only to create, reschedule, and delete calendar events for meetings booked through TapPresence. Users can disconnect Google Calendar at any time.",
+      "body": "TapPresence optionally connects to Google Calendar to support meeting booking. When a user connects their Google account, TapPresence creates a dedicated \"TapPresence Bookings\" calendar and uses the limited Google Calendar permission (calendar.app.created) only to create, reschedule, and delete events for meetings booked through TapPresence. TapPresence does not read or access your primary calendar or any other events. Users can disconnect Google Calendar at any time.",
       "linkLabel": "Read our Privacy Policy:"
     },
     "stats": [

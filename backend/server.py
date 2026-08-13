@@ -1497,7 +1497,8 @@ GCAL_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or ""
 GCAL_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or ""
 GCAL_REDIRECT_URI = os.environ.get("GOOGLE_CALENDAR_REDIRECT_URI") or ""
 # Minimum scope needed to create/update/delete events (+ openid/email to label the connection).
-GCAL_SCOPE = "openid email https://www.googleapis.com/auth/calendar.events"
+GCAL_SCOPE = "openid email https://www.googleapis.com/auth/calendar.app.created"
+GCAL_CALENDAR_NAME = "TapPresence Bookings"
 GCAL_ACTIVE_STATUSES = {"scheduled", "rescheduled", "confirmed"}
 
 
@@ -1573,10 +1574,48 @@ def _gcal_event_body(m: dict) -> dict:
     return body
 
 
+async def _gcal_ensure_calendar(user_id: str, access_token: str):
+    """Create/reuse the dedicated 'TapPresence Bookings' secondary calendar for this user.
+    With the calendar.app.created scope the app can ONLY see/manage calendars it created, so
+    listing + name match is safe and never touches the user's primary or unrelated calendars.
+    Returns the calendar_id (or None on failure). Idempotent — never creates duplicates."""
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    conn = await db.google_calendar_connections.find_one({"user_id": user_id}, {"_id": 0, "calendar_id": 1})
+    async with _httpx.AsyncClient(timeout=15) as cx:
+        # 1) reuse stored id if it still exists
+        stored = (conn or {}).get("calendar_id")
+        if stored:
+            rc = await cx.get(f"https://www.googleapis.com/calendar/v3/calendars/{stored}", headers=headers)
+            if rc.status_code == 200:
+                return stored
+        # 2) reuse an app-created calendar with our name (calendarList only returns app-created ones)
+        rl = await cx.get("https://www.googleapis.com/calendar/v3/users/me/calendarList",
+                          headers=headers, params={"minAccessRole": "owner"})
+        if rl.status_code == 200:
+            for item in (rl.json() or {}).get("items", []):
+                if item.get("summary") == GCAL_CALENDAR_NAME and item.get("id"):
+                    cid = item["id"]
+                    await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"calendar_id": cid}})
+                    return cid
+        # 3) create it
+        rc = await cx.post("https://www.googleapis.com/calendar/v3/calendars", headers=headers,
+                           json={"summary": GCAL_CALENDAR_NAME,
+                                 "description": "Meetings booked through your TapPresence card.",
+                                 "timeZone": "UTC"})
+        if rc.status_code in (200, 201):
+            cid = (rc.json() or {}).get("id")
+            if cid:
+                await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"calendar_id": cid}})
+                return cid
+        logging.error(f"[gcal] ensure calendar failed user={user_id} http={rc.status_code}")
+    return None
+
+
 async def sync_meeting_calendar(meeting_id: str):
-    """Create/update/delete the Google Calendar event on the OWNER's calendar for a TapPresence meeting.
-    No-op if the owner hasn't connected Calendar. Only touches events this app created (stored google_event_id).
-    Never raises to the caller — a Calendar hiccup must never break booking."""
+    """Create/update/delete the Google Calendar event on the OWNER's dedicated 'TapPresence Bookings'
+    secondary calendar for a TapPresence meeting. No-op if the owner hasn't connected Calendar (or has
+    no app-created calendar yet). Only touches events this app created (stored google_event_id).
+    Never reads the user's primary or unrelated calendars. Never raises to the caller."""
     try:
         m = await db.meetings.find_one({"id": meeting_id}, {"_id": 0})
         if not m or not _gcal_configured():
@@ -1584,9 +1623,12 @@ async def sync_meeting_calendar(meeting_id: str):
         owner = m.get("owner_user_id")
         if not owner:
             return
-        conn = await db.google_calendar_connections.find_one({"user_id": owner}, {"_id": 0, "revoked": 1})
+        conn = await db.google_calendar_connections.find_one({"user_id": owner}, {"_id": 0, "revoked": 1, "calendar_id": 1})
         if not conn or conn.get("revoked"):
             return
+        cal_id = conn.get("calendar_id")
+        if not cal_id:
+            return  # legacy/primary connection before the least-privilege migration — needs reconnect; no-op
         try:
             at = await _gcal_access_token(owner)
         except _NeedsReconnect:
@@ -1595,7 +1637,7 @@ async def sync_meeting_calendar(meeting_id: str):
             return
         headers = {"Authorization": f"Bearer {at}", "Content-Type": "application/json"}
         eid = m.get("google_event_id")
-        base = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        base = f"https://www.googleapis.com/calendar/v3/calendars/{_urlparse.quote(cal_id)}/events"
         async def _flag_if_denied(resp):
             if resp.status_code in (401, 403):
                 await db.google_calendar_connections.update_one({"user_id": owner}, {"$set": {"needs_reconnect": True}})
@@ -1637,11 +1679,12 @@ async def gcal_status(user: dict = Depends(get_current_user)):
     conn = await db.google_calendar_connections.find_one({"user_id": user["id"]}, {"_id": 0})
     if not conn:
         return {"configured": True, "connected": False}
-    scope_ok = "calendar.events" in (conn.get("scope") or "")
-    needs = bool(conn.get("revoked")) or bool(conn.get("needs_reconnect")) or not scope_ok
+    scope_ok = "calendar.app.created" in (conn.get("scope") or "")
+    has_cal = bool(conn.get("calendar_id"))
+    needs = bool(conn.get("revoked")) or bool(conn.get("needs_reconnect")) or not scope_ok or not has_cal
     reason = "calendar_permission_missing" if not scope_ok else ("reauth_required" if needs else None)
     return {"configured": True,
-            "connected": (not conn.get("revoked", False)) and scope_ok and not conn.get("needs_reconnect", False),
+            "connected": (not conn.get("revoked", False)) and scope_ok and has_cal and not conn.get("needs_reconnect", False),
             "needs_reconnect": needs, "reason": reason, "email": conn.get("email"),
             "connected_at": conn.get("connected_at")}
 
@@ -1695,8 +1738,8 @@ async def gcal_callback(code: Optional[str] = None, state: Optional[str] = None,
         return RedirectResponse(f"{dest}&calendar=error&reason=network")
     now = datetime.now(timezone.utc)
     granted_scope = t.get("scope", "") or ""
-    if "calendar.events" not in granted_scope:
-        logging.error(f"[gcal] calendar.events scope NOT granted user={user_id} (granted='{granted_scope}')")
+    if "calendar.app.created" not in granted_scope:
+        logging.error(f"[gcal] calendar.app.created scope NOT granted user={user_id} (granted='{granted_scope}')")
         return RedirectResponse(f"{dest}&calendar=error&reason=calendar_permission_denied")
     existing = await db.google_calendar_connections.find_one({"user_id": user_id}, {"_id": 0, "refresh_token": 1})
     if not refresh_tok and not (existing and existing.get("refresh_token")):
@@ -1709,6 +1752,11 @@ async def gcal_callback(code: Optional[str] = None, state: Optional[str] = None,
         setd["refresh_token"] = refresh_tok  # only present on first consent / prompt=consent
     await db.google_calendar_connections.update_one({"user_id": user_id},
         {"$set": setd, "$setOnInsert": {"connected_at": now.isoformat()}}, upsert=True)
+    # Create/reuse the dedicated 'TapPresence Bookings' secondary calendar (never duplicates).
+    cal_id = await _gcal_ensure_calendar(user_id, access_tok)
+    if not cal_id:
+        await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"needs_reconnect": True}})
+        return RedirectResponse(f"{dest}&calendar=error&reason=calendar_create_failed")
     return RedirectResponse(f"{dest}&calendar=connected")
 
 

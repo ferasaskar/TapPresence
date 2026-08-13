@@ -612,7 +612,7 @@
     },
     "gcal": {
       "title": "تكامل Google Calendar",
-      "body": "يتصل TapPresence اختيارياً بتقويم Google لدعم حجز الاجتماعات. عند ربط المستخدم لحساب Google الخاص به، يستخدم TapPresence إذن Google Calendar (calendar.events) فقط لإنشاء أحداث التقويم وإعادة جدولتها وحذفها للاجتماعات المحجوزة عبر TapPresence. يمكن للمستخدمين قطع الاتصال بتقويم Google في أي وقت.",
+      "body": "يتصل TapPresence اختيارياً بتقويم Google لدعم حجز الاجتماعات. عند ربط المستخدم لحساب Google الخاص به، يُنشئ TapPresence تقويماً مخصصاً باسم \"TapPresence Bookings\" ويستخدم إذن Google Calendar المحدود (calendar.app.created) فقط لإنشاء أحداث الاجتماعات المحجوزة عبر TapPresence وإعادة جدولتها وحذفها. لا يقرأ TapPresence تقويمك الرئيسي أو أي أحداث أخرى ولا يصل إليها. يمكن للمستخدمين قطع الاتصال بتقويم Google في أي وقت.",
       "linkLabel": "اطّلع على سياسة الخصوصية:"
     },
     "stats": [
