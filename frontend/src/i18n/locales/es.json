@@ -568,6 +568,7 @@
     ]
   },
   "billing": {
+    "taxNote": "Los impuestos se calculan al finalizar la compra",
     "title": "Facturación y plan",
     "subtitle": "Gestiona tu suscripción, uso y plan.",
     "loadError": "No se pudo cargar la información de facturación.",

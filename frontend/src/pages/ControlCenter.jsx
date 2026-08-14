@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import UsageCostControl from "./UsageCostControl";
+import TaxRevenue from "./TaxRevenue";
 import { DateFilter, buildRange } from "@/components/admin/DateFilter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { toast } from "sonner";
 import {
   LayoutDashboard, Users, Building2, CreditCard, TrendingUp, Tags, SlidersHorizontal, Gift,
   LayoutTemplate, Flag, Plug, Activity, ShieldAlert, ScrollText, Settings as SettingsIcon,
-  ExternalLink, LogOut, ShieldCheck, Menu, X, Search, Loader2, CheckCircle2, XCircle, AlertTriangle, Ticket, Gauge,
+  ExternalLink, LogOut, ShieldCheck, Menu, X, Search, Loader2, CheckCircle2, XCircle, AlertTriangle, Ticket, Gauge, Landmark,
 } from "lucide-react";
 
 const cget = (p, params) => api.get(`/admin/control${p}`, { params }).then((r) => r.data);
@@ -22,6 +23,7 @@ const SECTIONS = [
   { key: "subscriptions", label: "Subscriptions", icon: CreditCard },
   { key: "revenue", label: "Revenue & Analytics", icon: TrendingUp },
   { key: "usage", label: "Usage & Cost Control", icon: Gauge },
+  { key: "tax", label: "Tax & Global Revenue", icon: Landmark },
   { key: "plans", label: "Plans & Pricing", icon: Tags },
   { key: "promotions", label: "Promotions", icon: Ticket },
   { key: "product", label: "Product & Entitlements", icon: SlidersHorizontal },
@@ -849,7 +851,7 @@ const RadioPill = ({ on, onClick, children, testId }) => <button onClick={onClic
 const ActBtn = ({ onClick, busy, children, tone, testId }) => <button onClick={onClick} disabled={busy} data-testid={testId} className={`rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 ${tone === "danger" ? "border-red-500/40 text-red-300 hover:bg-red-500/10" : tone === "ok" ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10" : "border-white/15 text-white/70 hover:bg-white/5"}`}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}</button>;
 const HRow = ({ k, v, ok, warn }) => <div className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2.5"><span className="text-sm text-white/70">{k}</span><StatePill ok={ok} warn={warn} labelOk={v} labelBad={v} /></div>;
 
-const RENDER = { overview: Overview, customers: Customers, companies: Companies, subscriptions: Subscriptions, revenue: Revenue, usage: UsageCostControl, plans: Plans, promotions: Promotions, product: Product, referrals: Referrals, templates: Templates, flags: Flags, integrations: Integrations, health: Health, security: Security, audit: Audit, settings: ControlSettings };
+const RENDER = { overview: Overview, customers: Customers, companies: Companies, subscriptions: Subscriptions, revenue: Revenue, usage: UsageCostControl, tax: TaxRevenue, plans: Plans, promotions: Promotions, product: Product, referrals: Referrals, templates: Templates, flags: Flags, integrations: Integrations, health: Health, security: Security, audit: Audit, settings: ControlSettings };
 
 export default function ControlCenter() {
   const { section = "overview" } = useParams();

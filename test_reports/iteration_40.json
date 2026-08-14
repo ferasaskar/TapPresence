@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 40 — Global Tax Readiness (Stripe-native, no custom tax engine). Backend + frontend fully validated. 12/12 pytest cases pass (checkout tax-safety on Stripe Test mode, session config verification via Stripe SDK expand, no-fallback code review, commercial config stripe_tax_code persistence, /admin/control/tax/overview 200/403/401 role gating, /billing regression, /admin/control/usage/{overview,config} regression). Tax capture unit script re-run and all 7 assertions pass. Frontend: /control/tax renders Tax & Global Revenue section (data-testid ctrl-tax with all KPIs, revenue-by-country, US-by-state, transactions), control-nav-tax nav item visible, correct empty-state messaging in preview. i18n verified: 'Taxes calculated at checkout' translates to Arabic (RTL, dir=rtl) and Spanish on both landing (landing-tax-note) and Billing (billing-tax-note); no pre-checkout tax %.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter40_tax_global.py",
+    "/app/test_reports/pytest/iter40_results.xml",
+    "/app/scripts/test_tax_capture.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "billing_checkout (platform_v1.py L929-1003): confirmed exactly ONE stripe.checkout.Session.create with automatic_tax=True, billing_address_collection='required', tax_id_collection.enabled=True; on stripe.error.StripeError raises HTTPException(503) with controlled message. No degraded no-tax fallback exists — verified by string count in test_only_one_session_create_call.",
+    "product tax_code (txcd_10103001) is read from commercial config and injected into line_items[0].price_data.product_data.tax_code — Stripe Session product.tax_code is not returned on retrieve() so tested indirectly via GET/PUT of /admin/commercial and code inspection.",
+    "_mask_tax_id keeps only trailing 4 chars (e.g. '•••0003') — never stores the full VAT/TRN. _map_tax_status distinguishes calculated / no_tax_due / location_required / calculation_failed / unavailable (never silently claims 'no tax').",
+    "_record_tax_from_session / _record_tax_from_invoice store base_amount, discount_amount, tax_amount, total_amount separately so revenue = total - tax (verified by test_tax_capture.py 'net = total-tax excludes tax from revenue').",
+    "GET /admin/control/tax/overview correctly super-admin gated (require_super), returns per-currency totals without cross-currency FX summing, exposes tax_id_masked (never raw), and marks collected tax as NOT-revenue in the response note.",
+    "billing_tax_records unique index on source_id (cs:<id> / inv:<id>) → idempotent upsert on webhook retries. Indexes on created_at and country present."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter40_tax_global.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100%"},
+  "test_credentials": "SUPER_ADMIN admin@ariadni.id / Ariadni@2026. Throwaway non-admin auto-registered per run (TEST_tax_*@example.com / TestPass@123).",
+  "seed_data_creation": "None. Test creates ephemeral Stripe test-mode Checkout Sessions (pro/year and team/year 5 seats) — these are Stripe-side objects, no DB records unless completed. A throwaway non-admin account is created for the 403 test (not cleaned up; safe as it owns no cards).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 40 GA-ready: Stripe Tax is enabled on the preview sandbox so automatic_tax initializes and checkout returns cs_test_... successfully. billing_tax_records will be empty in preview until a real hosted-checkout payment completes — /control/tax empty-state is correct. To force-populate for demo, complete a Stripe test payment with 4242... using the returned checkout_url; the webhook _record_tax_from_session (checkout.session.completed) + _record_tax_from_invoice (invoice.paid) will persist the row and the Overview KPIs light up. Note: Stripe Session.retrieve does not expose product.tax_code via API, so tax_code is verified via /admin/commercial GET/PUT + code inspection (not via Stripe session).",
+  "rca of the issue": "N/A — no bugs found."
+}

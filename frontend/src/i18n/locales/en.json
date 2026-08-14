@@ -567,6 +567,7 @@
     ]
   },
   "billing": {
+    "taxNote": "Taxes calculated at checkout",
     "title": "Billing & Plan",
     "subtitle": "Manage your subscription, usage and plan.",
     "loadError": "Could not load billing information.",

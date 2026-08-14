@@ -240,6 +240,8 @@ export default function Billing() {
               {interval === "year" ? <span className="text-xs text-[#D6A653]">{t("billing.saveBadge", { pct: pricing.pro_annual_savings_pct })}</span> : null}
             </div>
 
+            <p className="mt-3 text-center text-[12px] text-white/45" data-testid="billing-tax-note">{t("billing.taxNote")}</p>
+
             {/* plan comparison */}
             <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="billing-plans">
               {plans.filter((p) => !(p.id === "trial" && !data.trial_eligible)).map((p) => {

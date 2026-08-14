@@ -120,6 +120,8 @@ export default function PricingSection() {
         })}
       </div>
 
+      <p className="mt-4 text-center text-[12px] text-white/45" data-testid="landing-tax-note">{t("billing.taxNote")}</p>
+
       {data.referral?.enabled ? (
         <p className="mt-8 text-center text-[13px] text-[#8A8F97]" data-testid="landing-referral-note">
           {t("landing.pricing.referralNote", { referred: data.referral.referred_discount_month_pct, max: data.referral.max_reward_discount_pct })}

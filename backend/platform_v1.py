@@ -581,6 +581,7 @@ DEFAULT_COMMERCIAL_CONFIG = {
         "reward_months": 1,
     },
     "default_market": "USD",
+    "stripe_tax_code": "txcd_10103001",
     "regional_pricing": {
         "USD": {"symbol": "$", "pro_month": 9.99, "pro_year": 99.99, "team_seat_month": 5.0, "team_seat_year": 50.0},
         "AED": {"symbol": "AED ", "pro_month": 36.99, "pro_year": 369.99, "team_seat_month": 18.0, "team_seat_year": 180.0},
@@ -942,6 +943,8 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
     unit_amount = int(round(amount * 100))
     if unit_amount <= 0:
         raise HTTPException(400, "This plan is not available for self-service checkout")
+    # SaaS product tax code (Stripe Tax decides taxability from this + customer location + your registrations).
+    tax_code = (cfg.get("stripe_tax_code") or "txcd_10103001").strip()
     # Trial eligibility is server-side & persistent (never based on current status alone).
     ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
     sub = (ws or {}).get("subscription") or {}
@@ -949,7 +952,7 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
     line_items = [{
         "price_data": {
             "currency": currency,
-            "product_data": {"name": product_name},
+            "product_data": {"name": product_name, "tax_code": tax_code},
             "unit_amount": unit_amount,
             "recurring": {"interval": body.interval},
             "tax_behavior": "exclusive",
@@ -974,15 +977,22 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
         metadata=meta,
         allow_promotion_codes=True,
     )
+    # TAX-SAFE checkout: automatic tax + required billing address + native tax-ID (VAT/TRN) collection.
+    # There is intentionally NO silent no-tax fallback — if the tax-ready session cannot be created
+    # (e.g. Stripe Tax not activated on the account), we fail with a controlled error and NEVER charge
+    # the customer under a degraded, tax-disabled path.
     try:
         session = stripe.checkout.Session.create(
-            **base_kwargs, automatic_tax={"enabled": True}, billing_address_collection="required")
-    except stripe.error.StripeError:
-        # Stripe Tax not enabled on the account (sandbox) — create without automatic tax
-        try:
-            session = stripe.checkout.Session.create(**base_kwargs)
-        except stripe.error.StripeError as e:
-            raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+            **base_kwargs,
+            automatic_tax={"enabled": True},
+            billing_address_collection="required",
+            tax_id_collection={"enabled": True},
+        )
+    except stripe.error.StripeError as e:
+        logger.error("[checkout] tax-ready session creation failed ws=%s code=%s type=%s",
+                     ws_id, getattr(e, "code", None), type(e).__name__)
+        raise HTTPException(503, "Checkout is temporarily unavailable while tax configuration is being verified. "
+                                 "Please try again shortly.")
     await db.payment_transactions.insert_one({
         "id": str(uuid.uuid4()), "session_id": session.id, "user_id": user["id"], "ws_id": ws_id,
         "plan": body.plan, "interval": body.interval, "seats": seats, "market": market,
@@ -1043,10 +1053,96 @@ async def _handle_completed_session(session_obj, event_id):
         except stripe.error.StripeError:
             stripe_sub = {"id": sub_id, "status": "active", "customer": session_obj.get("customer")}
     await _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, market, source="stripe", event_id=event_id)
+    await _record_tax_from_session(session_obj, ws_id, event_id)
     await db.payment_transactions.update_one(
         {"session_id": session_obj.get("id"), "payment_status": {"$ne": "paid"}},
         {"$set": {"status": "completed", "payment_status": "paid",
                   "stripe_subscription_id": sub_id, "updated_at": now_iso()}})
+
+
+def _mask_tax_id(v: str) -> str:
+    """Never store/expose a full tax ID. Keep only a trailing hint for admin recognition."""
+    v = (v or "").strip()
+    return ("•••" + v[-4:]) if len(v) > 4 else "•••"
+
+
+def _map_tax_status(raw: str, tax_amount) -> str:
+    """Distinguish real states — never claim 'no tax' when we simply don't know."""
+    if raw in ("complete", "collected"):
+        return "calculated" if (tax_amount or 0) > 0 else "no_tax_due"
+    if raw == "failed":
+        return "calculation_failed"
+    if raw in ("requires_location_inputs", "not_collecting"):
+        return "location_required"
+    if raw is None:
+        return "unavailable"
+    return str(raw)
+
+
+async def _upsert_tax_record(rec: dict):
+    await db.billing_tax_records.update_one({"source_id": rec["source_id"]}, {"$set": rec}, upsert=True)
+
+
+async def _record_tax_from_session(session_obj, ws_id, event_id):
+    """Capture authoritative tax/amount/location from a completed Checkout Session (no revenue inflation:
+    collected tax is stored separately from base subscription amount)."""
+    try:
+        cd = session_obj.get("customer_details") or {}
+        addr = cd.get("address") or {}
+        td = session_obj.get("total_details") or {}
+        at = session_obj.get("automatic_tax") or {}
+        tax_amount = td.get("amount_tax")
+        tax_ids = cd.get("tax_ids") or []
+        tid = tax_ids[0] if tax_ids else {}
+        country = addr.get("country")
+        rec = {
+            "source_id": f"cs:{session_obj.get('id')}", "kind": "checkout",
+            "workspace_id": ws_id, "country": country, "state": addr.get("state"),
+            "postal_code": addr.get("postal_code"),
+            "currency": (session_obj.get("currency") or "").upper(),
+            "base_amount": session_obj.get("amount_subtotal"),
+            "discount_amount": td.get("amount_discount"),
+            "tax_amount": tax_amount, "total_amount": session_obj.get("amount_total"),
+            "tax_status": _map_tax_status(at.get("status"), tax_amount),
+            "tax_id_type": tid.get("type"), "tax_id_masked": _mask_tax_id(tid.get("value")) if tid else None,
+            "stripe_customer_id": session_obj.get("customer"),
+            "stripe_subscription_id": session_obj.get("subscription"),
+            "created_at": now_iso(),
+        }
+        await _upsert_tax_record(rec)
+        # Mirror non-sensitive authoritative tax location onto the workspace subscription for reporting.
+        mirror = {"subscription.tax_country": country, "subscription.tax_status": rec["tax_status"],
+                  "subscription.tax_id_present": bool(tid), "subscription.tax_updated_at": now_iso()}
+        await db.workspaces.update_one({"id": ws_id}, {"$set": mirror})
+    except Exception as e:
+        logger.warning("[tax] session capture soft-fail: %s", type(e).__name__)
+
+
+async def _record_tax_from_invoice(inv, ws_id, event_id):
+    try:
+        at = inv.get("automatic_tax") or {}
+        tax_amount = inv.get("tax")
+        addr = inv.get("customer_address") or {}
+        tids = inv.get("customer_tax_ids") or []
+        tid = tids[0] if tids else {}
+        disc = inv.get("total_discount_amounts") or []
+        rec = {
+            "source_id": f"inv:{inv.get('id')}", "kind": "invoice",
+            "workspace_id": ws_id, "country": addr.get("country"), "state": addr.get("state"),
+            "postal_code": addr.get("postal_code"),
+            "currency": (inv.get("currency") or "").upper(),
+            "base_amount": inv.get("subtotal"),
+            "discount_amount": sum(d.get("amount", 0) for d in disc) if disc else 0,
+            "tax_amount": tax_amount, "total_amount": inv.get("total"),
+            "tax_status": _map_tax_status(at.get("status"), tax_amount),
+            "tax_id_type": tid.get("type"), "tax_id_masked": _mask_tax_id(tid.get("value")) if tid else None,
+            "stripe_customer_id": inv.get("customer"),
+            "stripe_subscription_id": inv.get("subscription"),
+            "created_at": now_iso(),
+        }
+        await _upsert_tax_record(rec)
+    except Exception as e:
+        logger.warning("[tax] invoice capture soft-fail: %s", type(e).__name__)
 
 
 @platform_router.get("/payments/status/{session_id}")
@@ -1091,6 +1187,7 @@ async def stripe_webhook(request: Request):
                 await _sync_ws_from_stripe_sub(ws["id"], stripe_sub, sub.get("plan", "pro"),
                     sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
                     source="stripe", event_id=eid)
+                await _record_tax_from_invoice(obj, ws["id"], eid)
     elif t == "customer.subscription.deleted":
         ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": obj.get("id")}, {"_id": 0, "id": 1})
         if ws:
@@ -2371,6 +2468,7 @@ class CommercialConfigIn(BaseModel):
     plans: Optional[dict] = None
     referral: Optional[dict] = None
     default_market: Optional[str] = None
+    stripe_tax_code: Optional[str] = None
     regional_pricing: Optional[dict] = None
     fx_rates: Optional[dict] = None
     manual_price_markets: Optional[list] = None
@@ -5905,6 +6003,87 @@ async def generate_event_recap(event_id: str, body: EventRecapIn, request: Reque
     return {"recap": recap, "stale": False, "cached": False}
 
 
+# ------------------------------------------------------------------ Super Admin: Tax & Global Revenue
+def _minor(v):
+    return int(v or 0)
+
+
+@platform_router.get("/admin/control/tax/overview")
+async def tax_overview(start: str = None, end: str = None, user: dict = Depends(current_user)):
+    """Global tax/revenue reporting from Stripe-authoritative billing_tax_records.
+    Collected sales-tax/VAT is reported SEPARATELY and never counted as TapPresence revenue.
+    Amounts are in Stripe minor units, grouped per currency (no cross-currency FX summing)."""
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    q = {"created_at": {"$gte": start_i, "$lte": end_i}}
+    rows = await db.billing_tax_records.find(q, {"_id": 0}).sort("created_at", -1).to_list(20000)
+
+    def _acc():
+        return {"base_subscription": 0, "discount": 0, "tax_collected": 0, "total_charged": 0, "count": 0}
+
+    by_currency, by_country, by_state = {}, {}, {}
+    customers, countries, status_counts = set(), set(), {}
+    for r in rows:
+        cur = r.get("currency") or "USD"
+        base = _minor(r.get("base_amount"))
+        disc = _minor(r.get("discount_amount"))
+        tax = _minor(r.get("tax_amount"))
+        total = _minor(r.get("total_amount"))
+        c = by_currency.setdefault(cur, _acc())
+        c["base_subscription"] += base
+        c["discount"] += disc
+        c["tax_collected"] += tax
+        c["total_charged"] += total
+        c["count"] += 1
+        country = r.get("country") or "??"
+        ck = f"{country}|{cur}"
+        cc = by_country.setdefault(ck, {"country": country, "currency": cur, **_acc(), "customers": set()})
+        cc["base_subscription"] += base
+        cc["discount"] += disc
+        cc["tax_collected"] += tax
+        cc["total_charged"] += total
+        cc["count"] += 1
+        if r.get("workspace_id"):
+            cc["customers"].add(r["workspace_id"])
+            customers.add(r["workspace_id"])
+        if country and country != "??":
+            countries.add(country)
+        st = r.get("tax_status") or "unavailable"
+        status_counts[st] = status_counts.get(st, 0) + 1
+        if country == "US" and r.get("state"):
+            sk = f"{r['state']}|{cur}"
+            ss = by_state.setdefault(sk, {"state": r["state"], "currency": cur, "tax_collected": 0, "total_charged": 0, "count": 0})
+            ss["tax_collected"] += tax
+            ss["total_charged"] += total
+            ss["count"] += 1
+
+    by_country_out = []
+    for v in by_country.values():
+        v["customers"] = len(v["customers"])
+        v["net_subscription"] = v["total_charged"] - v["tax_collected"]
+        by_country_out.append(v)
+    by_country_out.sort(key=lambda x: x["total_charged"], reverse=True)
+    for cur, v in by_currency.items():
+        v["net_subscription"] = v["total_charged"] - v["tax_collected"]
+
+    transactions = [{
+        "workspace_id": r.get("workspace_id"), "country": r.get("country"), "state": r.get("state"),
+        "currency": r.get("currency"), "base_amount": _minor(r.get("base_amount")),
+        "discount_amount": _minor(r.get("discount_amount")), "tax_amount": _minor(r.get("tax_amount")),
+        "total_amount": _minor(r.get("total_amount")), "tax_status": r.get("tax_status"),
+        "tax_id_type": r.get("tax_id_type"), "tax_id_masked": r.get("tax_id_masked"),
+        "kind": r.get("kind"), "created_at": r.get("created_at"),
+    } for r in rows[:200]]
+
+    return {"range": {"start": start_i, "end": end_i},
+            "totals_by_currency": by_currency,
+            "paying_customers": len(customers), "countries": sorted(countries),
+            "country_count": len(countries), "by_country": by_country_out,
+            "by_state_us": sorted(by_state.values(), key=lambda x: x["total_charged"], reverse=True),
+            "tax_status_breakdown": status_counts, "transactions": transactions,
+            "note": "Collected tax is reported separately and is NOT TapPresence revenue. Estimated where Stripe status is not 'complete'."}
+
+
 # ------------------------------------------------------------------ migration
 async def run_migration():
     """Idempotent, non-destructive. Preserves existing users/cards/URLs."""
@@ -5947,6 +6126,10 @@ async def run_migration():
             [("feature", 1), ("scope_type", 1), ("scope_id", 1), ("period", 1)], unique=True)
         await db.usage_overrides.create_index(
             [("feature", 1), ("scope_type", 1), ("scope_id", 1)], unique=True)
+        # Global Tax Readiness — Stripe-authoritative tax/revenue records
+        await db.billing_tax_records.create_index("source_id", unique=True)
+        await db.billing_tax_records.create_index([("created_at", -1)])
+        await db.billing_tax_records.create_index([("country", 1)])
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 
