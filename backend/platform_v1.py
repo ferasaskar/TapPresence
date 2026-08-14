@@ -203,9 +203,11 @@ async def send_email(to: str, subject: str, html: str) -> bool:
             "from": SENDER_EMAIL, "to": [to], "subject": subject, "html": html,
         })
         logger.info(f"[email] sent '{subject}' to {to}")
+        await meter_usage("email", quantity=1, result="success", source="resend", paid=True)
         return True
     except Exception as e:
         logger.error(f"[email] send failed to {to} ('{subject}'): {e}")
+        await meter_usage("email", quantity=1, result="failed", source="resend", paid=False)
         return False
 
 
@@ -2152,10 +2154,14 @@ async def card_wallet_pass(slug: str, platform: str, user: dict = Depends(curren
             logging.error(f"[gwallet] object upsert failed ({type(e).__name__}); embedding full object in JWT")
             sync = "jwt_inline"
             token = _gw_save_jwt([obj])
+        await meter_usage("wallet_pass", user_id=user["id"], workspace_id=card.get("workspace_id"),
+                          quantity=1, result="success", source="wallet:google", paid=True)
         return {"configured": True, "platform": "google", "pass_data": pass_data,
                 "object_id": obj_id, "class_id": class_id, "sync": sync,
                 "save_url": f"https://pay.google.com/gp/v/save/{token}"}
     # Apple (unchanged): the signed .pkpass would be produced by the provider adapter here.
+    await meter_usage("wallet_pass", user_id=user["id"], workspace_id=card.get("workspace_id"),
+                      quantity=1, result="success", source=f"wallet:{platform}", paid=True)
     return {"configured": True, "platform": platform, "pass_data": pass_data,
             "pass_url": f"{PUBLIC_APP_URL}/api/cards/{slug}/wallet/{platform}/download"}
 
@@ -3616,6 +3622,7 @@ async def ai_followup(body: FollowupIn, request: Request, user: dict = Depends(c
     _ms = await memberships_for(user["id"])
     _ws_id = _ms[0]["workspace_id"] if _ms else None
     _ent, _period = await enforce_quota(user, _ws_id, "ai")
+    _usage_handle = await usage_guard("ai_followup", user, _ws_id)
     provider = "template"
     text = _draft_followup(body)
     key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
@@ -3644,6 +3651,12 @@ async def ai_followup(body: FollowupIn, request: Request, user: dict = Depends(c
         "channel": body.channel, "tone": body.tone, "language": body.language, "created_at": now_iso(),
     })
     await incr_usage(user["id"], "ai", _period)
+    # Usage & Cost Control: only a real provider call incurs cost. A template fallback releases the reservation.
+    _real = provider != "template"
+    if not _real:
+        await release_usage_handle(_usage_handle)
+    await meter_usage("ai_followup", user_id=user["id"], workspace_id=_ws_id, quantity=1,
+                      result="success", source="ai_followup", paid=_real)
     _used = await get_usage(user["id"], "ai", _period)
     return {"provider": provider, "channel": body.channel, "language": body.language, "draft": text,
             "rtl": body.language in RTL_LANGUAGES, "usage": {"used": _used, "limit": _ent.get("ai_limit"), "period": _period},
@@ -3669,6 +3682,7 @@ _BADGE_SOURCES = {"badge_scan", "event_badge_scan"}
 class ScanIn(BaseModel):
     image_base64: str
     source: str = "business_card_scan"
+    event_id: str = ""
 
 
 def _strip_data_url(b64: str) -> str:
@@ -3708,12 +3722,17 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
     await incr_usage(user["id"], "scanner", _period)
     source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
     is_badge = source in _BADGE_SOURCES
+    _feature_key = "event_badge_scan" if is_badge else "business_card_scan"
+    # Usage & Cost Control gate (no-op unless a Super Admin has enabled a limit for this feature).
+    _usage_handle = await usage_guard(_feature_key, user, _ws_id, body.event_id.strip())
     image_b64 = _strip_data_url(body.image_base64)
     if not image_b64:
+        await release_usage_handle(_usage_handle)
         raise HTTPException(400, "No image provided")
 
     key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
     if not key:
+        await release_usage_handle(_usage_handle)
         return {"configured": False, "message": "Card scanning is Not Configured", "draft": {}}
 
     base_keys = ["name", "title", "company", "email", "phone", "website",
@@ -3764,6 +3783,9 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
         data = _parse_scan_json(str(resp))
     except Exception as e:
         logger.warning(f"scan_card LLM error: {e}")
+        await release_usage_handle(_usage_handle)
+        await meter_usage(_feature_key, user_id=user["id"], workspace_id=_ws_id,
+                          event_id=body.event_id.strip(), quantity=1, result="failed", source="scanner", paid=False)
         raise HTTPException(502, "Could not read the card. Please retake the photo and try again.")
 
     draft = {**empty, **{k: (str(data.get(k, "")).strip() if data.get(k) is not None else "")
@@ -3776,6 +3798,8 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
         "id": str(uuid.uuid4()), "user_id": user["id"], "provider": "openai:gpt-5.4",
         "channel": "scanner", "tone": source, "language": draft.get("language", "en"), "created_at": now_iso(),
     })
+    await meter_usage(_feature_key, user_id=user["id"], workspace_id=_ws_id,
+                      event_id=body.event_id.strip(), quantity=1, result="success", source="scanner", paid=True)
     return {"configured": True, "source": source, "draft": draft,
             "note": "Review and edit before saving. No lead is created until you confirm."}
 
@@ -4680,6 +4704,9 @@ async def crm_sync_lead(ws_id: str, lead: dict, provider: str = "hubspot") -> di
         state.update({"status": "failed", "last_error": "needs_reconnect", "retry_count": state["retry_count"] + 1})
     except Exception as e:
         state.update({"status": "failed", "last_error": str(e)[:200], "retry_count": state["retry_count"] + 1})
+    await meter_usage("crm_sync", user_id=lead.get("captured_by"), workspace_id=ws_id, quantity=1,
+                      result=("success" if state.get("status") == "synced" else "failed"),
+                      source=f"crm:{provider}", paid=(state.get("status") == "synced"))
     await _persist_crm_state(lead["id"], state)
     return state
 
@@ -4973,6 +5000,680 @@ async def admin_set_regional_price(plan_id: str, market: str, body: dict, user: 
     return await db.plans.find_one({"id": plan_id}, {"_id": 0})
 
 
+# ==================================================================
+# USAGE & COST CONTROL (SUPER_ADMIN) — additive metering + cost engine + limit engine
+# Reuses existing metering/quota/audit. NO arbitrary limits are activated: enforcement is
+# globally OFF per feature by default, so existing customer behavior is 100% preserved until
+# a Super Admin explicitly enables a limit. Estimated costs are labelled ESTIMATED everywhere.
+# ==================================================================
+from pymongo import ReturnDocument as _ReturnDoc
+
+# Feature catalog — the single source of truth for what is measured. `default_unit_cost` is an
+# EXAMPLE only (Super-Admin editable); never treated as authoritative vendor pricing.
+USAGE_FEATURES = [
+    {"key": "business_card_scan", "name": "Business Card AI Scanner", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.02, "cost_unit": "per scan"},
+    {"key": "event_badge_scan", "name": "Event Badge AI Scanner", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.02, "cost_unit": "per scan"},
+    {"key": "ai_followup", "name": "AI Follow-up / Draft", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.03, "cost_unit": "per AI request"},
+    {"key": "ai_lead_insight", "name": "AI Lead Insights", "category": "AI", "metered": False, "placeholder": True,
+     "enforceable": True, "default_unit_cost": 0.03, "cost_unit": "per AI request"},
+    {"key": "ai_event_recap", "name": "AI Event Recap", "category": "AI", "metered": False, "placeholder": True,
+     "enforceable": True, "default_unit_cost": 0.05, "cost_unit": "per AI request"},
+    {"key": "email", "name": "Transactional Emails", "category": "Email", "metered": True,
+     "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per email"},
+    {"key": "crm_sync", "name": "CRM Sync", "category": "CRM", "metered": True,
+     "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per API call"},
+    {"key": "wallet_pass", "name": "Wallet Pass Creation", "category": "Wallet", "metered": True,
+     "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per pass"},
+    {"key": "card_view", "name": "Public Card Views", "category": "Traffic", "metered": False,
+     "aggregate": ("analytics_events", "view"), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per view"},
+    {"key": "qr_scan", "name": "QR Scans", "category": "Traffic", "metered": False,
+     "aggregate": ("analytics_events", "scan"), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per scan"},
+    {"key": "lead_captured", "name": "Leads Captured", "category": "Analytics", "metered": False,
+     "aggregate": ("leads", None), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per lead"},
+    {"key": "meeting", "name": "Meetings", "category": "Analytics", "metered": False,
+     "aggregate": ("meetings", None), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per meeting"},
+]
+_USAGE_FEATURE_MAP = {f["key"]: f for f in USAGE_FEATURES}
+USAGE_PLANS = ["trial", "pro", "team", "enterprise"]
+LIMIT_MODES = ["unlimited", "monthly", "disabled", "custom"]
+LIMIT_SCOPES = ["per_user", "per_workspace", "per_event", "unlimited"]
+HARD_BEHAVIORS = ["block", "flag", "overage"]
+
+
+def _default_feature_config(meta: dict) -> dict:
+    return {
+        "unit_cost": float(meta.get("default_unit_cost", 0.0)),
+        "currency": "USD",
+        "effective_from": now_iso(),
+        "enforcement_enabled": False,          # OFF by default — preserves existing behavior
+        "scope": "per_user",
+        "plan_limits": {p: {"mode": "unlimited", "limit": None} for p in USAGE_PLANS},
+        "soft_pct": 80,
+        "hard_behavior": "flag",               # non-blocking default even if later enabled
+    }
+
+
+def _default_usage_config() -> dict:
+    return {"id": "global",
+            "features": {f["key"]: _default_feature_config(f) for f in USAGE_FEATURES},
+            "cost_history": []}
+
+
+async def get_usage_config() -> dict:
+    """Single source of truth for cost/limit config. Seeds + backfills newly added features."""
+    doc = await db.usage_config.find_one({"id": "global"}, {"_id": 0})
+    if not doc:
+        doc = _default_usage_config()
+        await db.usage_config.insert_one(dict(doc))
+        return doc
+    feats = doc.get("features") or {}
+    changed = False
+    for f in USAGE_FEATURES:
+        if f["key"] not in feats:
+            feats[f["key"]] = _default_feature_config(f)
+            changed = True
+        else:
+            base = _default_feature_config(f)
+            for k, v in base.items():
+                if k not in feats[f["key"]]:
+                    feats[f["key"]][k] = v
+                    changed = True
+    doc["features"] = feats
+    doc.setdefault("cost_history", [])
+    if changed:
+        await db.usage_config.update_one({"id": "global"}, {"$set": {"features": feats}}, upsert=True)
+    return doc
+
+
+def _calendar_period() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+async def _usage_period_for_ws(ws_id: Optional[str]) -> str:
+    """Billing-cycle-aware period key (req 12). Uses the real Stripe current_period_end when present
+    (so the allowance window follows the customer's actual cycle); calendar month otherwise.
+    Historical usage_events are NEVER deleted on reset — only the meter key changes."""
+    if not ws_id:
+        return _calendar_period()
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = (ws or {}).get("subscription") or {}
+    cpe = sub.get("current_period_end")
+    if cpe and sub.get("provider") == "stripe":
+        return f"cycle:{str(cpe)[:10]}"
+    return _calendar_period()
+
+
+async def _reserve_usage(feature: str, scope_type: str, scope_id: str, period: str, limit) -> bool:
+    """Atomic conditional reservation (req 13). Safe under concurrency: uses find_one_and_update with
+    a count<limit guard so simultaneous requests can never exceed the enabled limit."""
+    key = {"feature": feature, "scope_type": scope_type, "scope_id": scope_id, "period": period}
+    if limit is None:
+        await db.usage_meters.update_one(key, {"$inc": {"count": 1}}, upsert=True)
+        return True
+    if limit <= 0:
+        return False
+    doc = await db.usage_meters.find_one_and_update(
+        {**key, "count": {"$lt": limit}}, {"$inc": {"count": 1}}, return_document=_ReturnDoc.AFTER)
+    if doc:
+        return True
+    try:
+        await db.usage_meters.insert_one({**key, "count": 1})
+        return True
+    except Exception:
+        doc = await db.usage_meters.find_one_and_update(
+            {**key, "count": {"$lt": limit}}, {"$inc": {"count": 1}}, return_document=_ReturnDoc.AFTER)
+        return bool(doc)
+
+
+async def _release_usage(feature: str, scope_type: str, scope_id: str, period: str):
+    await db.usage_meters.update_one(
+        {"feature": feature, "scope_type": scope_type, "scope_id": scope_id, "period": period, "count": {"$gt": 0}},
+        {"$inc": {"count": -1}})
+
+
+async def _resolve_feature_limit(fcfg: dict, plan: str, scope_type: str, scope_id: str):
+    """Returns (limit:int|None, mode, is_override). Customer override wins over plan limit."""
+    ov = await db.usage_overrides.find_one(
+        {"feature": fcfg["_key"], "scope_type": scope_type, "scope_id": scope_id}, {"_id": 0})
+    if ov:
+        mode = ov.get("mode", "unlimited")
+        lim = None if mode == "unlimited" else (0 if mode == "disabled" else ov.get("limit"))
+        return lim, mode, True
+    pl = (fcfg.get("plan_limits") or {}).get(plan) or {"mode": "unlimited", "limit": None}
+    mode = pl.get("mode", "unlimited")
+    lim = None if mode == "unlimited" else (0 if mode == "disabled" else pl.get("limit"))
+    return lim, mode, False
+
+
+async def usage_guard(feature_key: str, user: dict, ws_id: Optional[str], event_id: str = "") -> dict:
+    """Enforcement entry point for metered features. Returns a reservation handle.
+    NO-OP (enforced False) when the feature's enforcement is disabled — this preserves ALL existing
+    behavior until a Super Admin turns a limit on. Raises 429 only for block-mode hard limits."""
+    handle = {"enforced": False, "reserved": False, "feature": feature_key,
+              "scope_type": None, "scope_id": None, "period": None}
+    if user.get("role") == "SUPER_ADMIN":
+        return handle
+    try:
+        cfg = await get_usage_config()
+        fcfg = dict((cfg.get("features") or {}).get(feature_key) or {})
+        if not fcfg or not fcfg.get("enforcement_enabled"):
+            return handle
+        fcfg["_key"] = feature_key
+        scope = fcfg.get("scope", "per_user")
+        if scope == "unlimited":
+            return handle
+        if scope == "per_user":
+            scope_type, scope_id = "user", user["id"]
+        elif scope == "per_workspace":
+            scope_type, scope_id = "workspace", ws_id
+        elif scope == "per_event":
+            if not event_id:
+                return handle  # no event context → cannot enforce per-event; don't block
+            scope_type, scope_id = "event", event_id
+        else:
+            return handle
+        if not scope_id:
+            return handle
+        ent = await resolve_entitlements(ws_id) if ws_id else {}
+        plan = ent.get("plan") if ent.get("plan") in USAGE_PLANS else None
+        if plan is None:
+            return handle  # grandfathered/unknown plan → no arbitrary block
+        limit, mode, _isov = await _resolve_feature_limit(fcfg, plan, scope_type, scope_id)
+        if mode == "unlimited" or limit is None:
+            return handle
+        period = await _usage_period_for_ws(ws_id)
+        handle.update({"enforced": True, "scope_type": scope_type, "scope_id": scope_id, "period": period})
+        behavior = fcfg.get("hard_behavior", "flag")
+        if behavior == "block":
+            ok = await _reserve_usage(feature_key, scope_type, scope_id, period, limit)
+            if not ok:
+                meta = _USAGE_FEATURE_MAP.get(feature_key, {})
+                raise HTTPException(429, f"You've reached your {meta.get('name', feature_key)} allowance for this period.")
+            handle["reserved"] = True
+        # flag / overage → allow through (recorded via meter_usage); Super Admin sees the flag
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"usage_guard soft-fail {feature_key}: {e}")
+        return handle
+    return handle
+
+
+async def release_usage_handle(handle: dict):
+    if handle and handle.get("reserved"):
+        try:
+            await _release_usage(handle["feature"], handle["scope_type"], handle["scope_id"], handle["period"])
+        except Exception as e:
+            logger.warning(f"release_usage_handle: {e}")
+
+
+async def meter_usage(feature_key: str, user_id: Optional[str] = None, workspace_id: Optional[str] = None,
+                      event_id: str = "", plan: Optional[str] = None, quantity: int = 1,
+                      result: str = "success", source: str = "app", paid: bool = True):
+    """Central metering — records ONE usage_event with estimated cost. Best-effort (never breaks the
+    caller). Cost is charged only for successful, provider-incurring operations (req 13/14)."""
+    try:
+        meta = _USAGE_FEATURE_MAP.get(feature_key, {})
+        cfg = await get_usage_config()
+        fcfg = (cfg.get("features") or {}).get(feature_key) or {}
+        unit_cost = float(fcfg.get("unit_cost", 0.0)) if (paid and result == "success") else 0.0
+        if plan is None and workspace_id:
+            ws = await db.workspaces.find_one({"id": workspace_id}, {"_id": 0, "subscription": 1, "plan": 1})
+            plan = ((ws or {}).get("subscription") or {}).get("plan") or (ws or {}).get("plan")
+        period = await _usage_period_for_ws(workspace_id)
+        await db.usage_events.insert_one({
+            "id": str(uuid.uuid4()), "feature": feature_key, "category": meta.get("category", "Other"),
+            "user_id": user_id, "workspace_id": workspace_id, "event_id": event_id or None,
+            "plan": plan, "quantity": int(quantity), "unit_cost": unit_cost,
+            "cost": round(unit_cost * int(quantity), 6), "currency": fcfg.get("currency", "USD"),
+            "result": result, "source": source, "period": period, "created_at": now_iso(),
+        })
+    except Exception as e:
+        logger.warning(f"meter_usage soft-fail {feature_key}: {e}")
+
+
+# ------------------------------------------------------------------ Super-Admin: Usage & Cost Control API
+def _usage_range(start: Optional[str], end: Optional[str]):
+    if end:
+        end_i = end if len(end) > 10 else end + "T23:59:59.999999+00:00"
+    else:
+        end_i = now_iso()
+    if start:
+        start_i = start if len(start) > 10 else start + "T00:00:00+00:00"
+    else:
+        start_i = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    return start_i, end_i
+
+
+def _status_for_pct(pct):
+    if pct is None:
+        return "normal"
+    if pct >= 100:
+        return "critical"
+    if pct >= 80:
+        return "high"
+    if pct >= 50:
+        return "watch"
+    return "normal"
+
+
+@platform_router.get("/admin/control/usage/config")
+async def usage_config_get(user: dict = Depends(current_user)):
+    _require_super(user)
+    cfg = await get_usage_config()
+    feats = cfg.get("features") or {}
+    out = []
+    for f in USAGE_FEATURES:
+        fc = feats.get(f["key"], {})
+        out.append({**{k: f.get(k) for k in ("key", "name", "category", "metered", "enforceable", "cost_unit", "placeholder")},
+                    "config": fc})
+    return {"features": out, "plans": USAGE_PLANS, "limit_modes": LIMIT_MODES,
+            "limit_scopes": LIMIT_SCOPES, "hard_behaviors": HARD_BEHAVIORS,
+            "cost_history": (cfg.get("cost_history") or [])[-100:]}
+
+
+class UsageFeatureConfigIn(BaseModel):
+    unit_cost: Optional[float] = None
+    currency: Optional[str] = None
+    enforcement_enabled: Optional[bool] = None
+    scope: Optional[str] = None
+    plan_limits: Optional[dict] = None
+    soft_pct: Optional[int] = None
+    hard_behavior: Optional[str] = None
+
+
+@platform_router.put("/admin/control/usage/config/{feature}")
+async def usage_config_set(feature: str, body: UsageFeatureConfigIn, user: dict = Depends(current_user)):
+    _require_super(user)
+    if feature not in _USAGE_FEATURE_MAP:
+        raise HTTPException(404, "Unknown feature")
+    cfg = await get_usage_config()
+    feats = cfg.get("features") or {}
+    fc = dict(feats.get(feature) or _default_feature_config(_USAGE_FEATURE_MAP[feature]))
+    before = dict(fc)
+    patch = {k: v for k, v in body.dict().items() if v is not None}
+    if "scope" in patch and patch["scope"] not in LIMIT_SCOPES:
+        raise HTTPException(400, "Invalid scope")
+    if "hard_behavior" in patch and patch["hard_behavior"] not in HARD_BEHAVIORS:
+        raise HTTPException(400, "Invalid hard_behavior")
+    if "plan_limits" in patch:
+        pl = dict(fc.get("plan_limits") or {})
+        for p, v in (patch["plan_limits"] or {}).items():
+            if p in USAGE_PLANS and isinstance(v, dict):
+                mode = v.get("mode", "unlimited")
+                if mode not in LIMIT_MODES:
+                    raise HTTPException(400, f"Invalid mode for {p}")
+                lim = v.get("limit")
+                pl[p] = {"mode": mode, "limit": (int(lim) if (lim not in (None, "") and mode in ("monthly", "custom")) else None)}
+        patch["plan_limits"] = pl
+    cost_changed = ("unit_cost" in patch and float(patch["unit_cost"]) != float(fc.get("unit_cost", 0.0)))
+    fc.update(patch)
+    if cost_changed:
+        fc["effective_from"] = now_iso()
+    feats[feature] = fc
+    hist = cfg.get("cost_history") or []
+    if cost_changed:
+        hist.append({"feature": feature, "unit_cost": fc["unit_cost"], "currency": fc.get("currency", "USD"),
+                     "effective_from": fc["effective_from"], "changed_by": user["id"], "changed_at": now_iso()})
+    await db.usage_config.update_one({"id": "global"}, {"$set": {"features": feats, "cost_history": hist}}, upsert=True)
+    await audit(None, user["id"], "admin.usage.config", {"feature": feature, "before": before, "after": fc})
+    return {"ok": True, "feature": feature, "config": fc}
+
+
+class UsageOverrideIn(BaseModel):
+    feature: str
+    scope_type: str          # user | workspace | event
+    scope_id: str
+    mode: str = "monthly"    # unlimited | monthly | disabled | custom
+    limit: Optional[int] = None
+    note: str = ""
+
+
+@platform_router.get("/admin/control/usage/overrides")
+async def usage_overrides_list(feature: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    q = {"feature": feature} if feature else {}
+    rows = await db.usage_overrides.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for r in rows:
+        if r.get("scope_type") == "user":
+            u = await db.users.find_one({"id": r["scope_id"]}, {"_id": 0, "name": 1, "email": 1})
+            r["scope_label"] = (u or {}).get("email") or r["scope_id"]
+        elif r.get("scope_type") == "workspace":
+            w = await db.workspaces.find_one({"id": r["scope_id"]}, {"_id": 0, "name": 1})
+            r["scope_label"] = (w or {}).get("name") or r["scope_id"]
+        elif r.get("scope_type") == "event":
+            e = await db.events.find_one({"id": r["scope_id"]}, {"_id": 0, "name": 1})
+            r["scope_label"] = (e or {}).get("name") or r["scope_id"]
+    return {"items": rows}
+
+
+@platform_router.post("/admin/control/usage/overrides")
+async def usage_override_create(body: UsageOverrideIn, user: dict = Depends(current_user)):
+    _require_super(user)
+    if body.feature not in _USAGE_FEATURE_MAP:
+        raise HTTPException(404, "Unknown feature")
+    if body.scope_type not in ("user", "workspace", "event"):
+        raise HTTPException(400, "Invalid scope_type")
+    if body.mode not in LIMIT_MODES:
+        raise HTTPException(400, "Invalid mode")
+    lim = int(body.limit) if (body.limit not in (None, "") and body.mode in ("monthly", "custom")) else None
+    doc = {"id": str(uuid.uuid4()), "feature": body.feature, "scope_type": body.scope_type,
+           "scope_id": body.scope_id, "mode": body.mode, "limit": lim, "note": body.note,
+           "created_by": user["id"], "created_at": now_iso()}
+    await db.usage_overrides.update_one(
+        {"feature": body.feature, "scope_type": body.scope_type, "scope_id": body.scope_id},
+        {"$set": doc}, upsert=True)
+    await audit(None, user["id"], "admin.usage.override.set", {"feature": body.feature,
+                "scope_type": body.scope_type, "scope_id": body.scope_id, "mode": body.mode, "limit": lim})
+    return {"ok": True, "override": doc}
+
+
+@platform_router.delete("/admin/control/usage/overrides/{oid}")
+async def usage_override_delete(oid: str, user: dict = Depends(current_user)):
+    _require_super(user)
+    ov = await db.usage_overrides.find_one({"id": oid}, {"_id": 0})
+    if not ov:
+        raise HTTPException(404, "Not found")
+    await db.usage_overrides.delete_one({"id": oid})
+    await audit(None, user["id"], "admin.usage.override.remove",
+                {"feature": ov.get("feature"), "scope_type": ov.get("scope_type"), "scope_id": ov.get("scope_id")})
+    return {"ok": True}
+
+
+async def _usage_agg(match: dict, group_field: str):
+    """Sum quantity + cost grouped by a field over usage_events (success only)."""
+    pipe = [{"$match": {**match, "result": "success"}},
+            {"$group": {"_id": f"${group_field}", "usage": {"$sum": "$quantity"}, "cost": {"$sum": "$cost"}}}]
+    rows = await db.usage_events.aggregate(pipe).to_list(10000)
+    return {r["_id"]: {"usage": r["usage"], "cost": round(r["cost"], 4)} for r in rows}
+
+
+@platform_router.get("/admin/control/usage/overview")
+async def usage_overview(start: str = None, end: str = None, plan: str = "", feature: str = "",
+                         workspace: str = "", user_id: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    today_i = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}}
+    if plan:
+        match["plan"] = plan
+    if feature:
+        match["feature"] = feature
+    if workspace:
+        match["workspace_id"] = workspace
+    if user_id:
+        match["user_id"] = user_id
+
+    by_feature = await _usage_agg(match, "feature")
+    by_feature_today = await _usage_agg({**match, "created_at": {"$gte": today_i, "$lte": end_i}}, "feature")
+    by_user = await _usage_agg(match, "user_id")
+    by_ws = await _usage_agg(match, "workspace_id")
+    by_plan = await _usage_agg(match, "plan")
+    ai_match = {**match, "category": "AI"}
+    by_feature_ai = await _usage_agg(ai_match, "feature")
+    ai_ops = sum(v["usage"] for v in by_feature_ai.values())
+    ai_cost = round(sum(v["cost"] for v in by_feature_ai.values()), 4)
+    total_cost = round(sum(v["cost"] for v in by_feature.values()), 4)
+    total_usage = sum(v["usage"] for v in by_feature.values())
+
+    cfg = await get_usage_config()
+    feats_cfg = cfg.get("features") or {}
+    # distinct active subjects in period
+    active_users = len([k for k in by_user.keys() if k])
+    active_ws = len([k for k in by_ws.keys() if k])
+
+    # highest-cost user / workspace (resolve names)
+    def _top(d):
+        items = [(k, v) for k, v in d.items() if k]
+        items.sort(key=lambda x: x[1]["cost"], reverse=True)
+        return items[:10]
+    top_users_raw = _top(by_user)
+    top_ws_raw = _top(by_ws)
+    top_users = []
+    for uid, v in top_users_raw:
+        u = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1, "email": 1})
+        m = await db.memberships.find_one({"user_id": uid}, {"_id": 0, "workspace_id": 1})
+        ws = await db.workspaces.find_one({"id": (m or {}).get("workspace_id")}, {"_id": 0, "name": 1, "plan": 1, "subscription": 1}) if m else None
+        top_users.append({"id": uid, "name": (u or {}).get("name"), "email": (u or {}).get("email"),
+                          "workspace": (ws or {}).get("name"), "plan": display_plan(ws) if ws else None,
+                          "ai_ops": v["usage"], "cost": v["cost"]})
+    top_ws = []
+    for wid, v in top_ws_raw:
+        ws = await db.workspaces.find_one({"id": wid}, {"_id": 0, "name": 1, "plan": 1, "subscription": 1})
+        seats = ((ws or {}).get("subscription") or {}).get("seats")
+        badge = by_feature.get("event_badge_scan", {})  # platform-wide; per-ws detail in drilldown
+        top_ws.append({"id": wid, "name": (ws or {}).get("name"), "plan": display_plan(ws) if ws else None,
+                       "seats": seats, "ai_ops": v["usage"], "cost": v["cost"]})
+
+    # ---- feature table ----
+    rows = []
+    for f in USAGE_FEATURES:
+        k = f["key"]
+        fc = feats_cfg.get(k, {})
+        if f.get("metered"):
+            m_all = by_feature.get(k, {"usage": 0, "cost": 0})
+            m_today = by_feature_today.get(k, {"usage": 0, "cost": 0})
+            # per-feature user/ws breakdown for averages + highest
+            fu = await _usage_agg({**match, "feature": k}, "user_id")
+            fw = await _usage_agg({**match, "feature": k}, "workspace_id")
+            n_u = len([x for x in fu if x]) or 1
+            n_w = len([x for x in fw if x]) or 1
+            hi_u = max((v["usage"] for x, v in fu.items() if x), default=0)
+            hi_w = max((v["usage"] for x, v in fw.items() if x), default=0)
+            usage_month, usage_today, cost = m_all["usage"], m_today["usage"], m_all["cost"]
+            avg_u = round(m_all["usage"] / n_u, 2)
+            avg_w = round(m_all["usage"] / n_w, 2)
+        else:
+            # informational cheap features aggregated from source collections
+            agg = f.get("aggregate")
+            usage_month = usage_today = 0
+            hi_u = hi_w = 0
+            avg_u = avg_w = 0
+            if agg:
+                coll, typ = agg
+                q_month = {"created_at": {"$gte": start_i, "$lte": end_i}}
+                q_today = {"created_at": {"$gte": today_i, "$lte": end_i}}
+                if coll == "analytics_events":
+                    q_month["type"] = typ
+                    q_today["type"] = typ
+                usage_month = await db[coll].count_documents(q_month)
+                usage_today = await db[coll].count_documents(q_today)
+            unit = float(fc.get("unit_cost", 0.0))
+            cost = round(usage_month * unit, 4)
+        # limit summary (default plan limit view)
+        scope = fc.get("scope", "per_user")
+        pl = fc.get("plan_limits") or {}
+        enabled = bool(fc.get("enforcement_enabled"))
+        # status by highest utilisation vs the strictest enabled plan limit
+        status = "normal"
+        limit_label = "Unlimited"
+        if enabled:
+            modes = [pl.get(p, {}).get("mode", "unlimited") for p in USAGE_PLANS]
+            if any(m != "unlimited" for m in modes):
+                limit_label = "; ".join(f"{p}:{(pl.get(p, {}) or {}).get('mode')}"
+                                        + (f" {pl[p].get('limit')}" if pl.get(p, {}).get("limit") else "")
+                                        for p in USAGE_PLANS if pl.get(p, {}).get("mode", "unlimited") != "unlimited")
+        rows.append({
+            "key": k, "name": f["name"], "category": f["category"],
+            "metered": bool(f.get("metered")), "placeholder": bool(f.get("placeholder")),
+            "usage_today": usage_today, "usage_month": usage_month,
+            "avg_per_user": avg_u, "avg_per_workspace": avg_w,
+            "highest_user_usage": hi_u, "highest_workspace_usage": hi_w,
+            "unit_cost": float(fc.get("unit_cost", 0.0)), "currency": fc.get("currency", "USD"),
+            "estimated_total_cost": cost, "cost_unit": f.get("cost_unit"),
+            "scope": scope, "enforcement_enabled": enabled, "hard_behavior": fc.get("hard_behavior", "flag"),
+            "soft_pct": fc.get("soft_pct", 80), "limit_label": limit_label, "status": status,
+        })
+
+    kpis = {
+        "active_users": active_users, "active_workspaces": active_ws,
+        "total_tracked_usage": total_usage + sum(r["usage_month"] for r in rows if not r["metered"]),
+        "total_ai_operations": ai_ops, "estimated_ai_cost": ai_cost,
+        "estimated_total_cost": total_cost,
+        "avg_cost_per_user": round(total_cost / max(active_users, 1), 4),
+        "avg_cost_per_workspace": round(total_cost / max(active_ws, 1), 4),
+        "highest_cost_user": (top_users[0] if top_users else None),
+        "highest_cost_workspace": (top_ws[0] if top_ws else None),
+        "total_users": await db.users.count_documents({}),
+        "total_workspaces": await db.workspaces.count_documents({}),
+    }
+    return {"range": {"start": start_i, "end": end_i}, "kpis": kpis, "features": rows,
+            "top_users": top_users, "top_workspaces": top_ws,
+            "cost_by_plan": {k: v for k, v in by_plan.items() if k},
+            "cost_by_feature": {k: by_feature.get(k, {"usage": 0, "cost": 0}) for k in _USAGE_FEATURE_MAP},
+            "estimated": True}
+
+
+@platform_router.get("/admin/control/usage/detail")
+async def usage_detail(type: str, id: str, start: str = None, end: str = None, user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    if type not in ("user", "workspace"):
+        raise HTTPException(400, "type must be user|workspace")
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}, ("user_id" if type == "user" else "workspace_id"): id}
+    by_feature = await _usage_agg(match, "feature")
+    cfg = await get_usage_config()
+    feats_cfg = cfg.get("features") or {}
+    breakdown = []
+    total = 0.0
+    for f in USAGE_FEATURES:
+        v = by_feature.get(f["key"])
+        if not v:
+            continue
+        breakdown.append({"key": f["key"], "name": f["name"], "category": f["category"],
+                          "usage": v["usage"], "estimated_cost": v["cost"],
+                          "unit_cost": float((feats_cfg.get(f["key"]) or {}).get("unit_cost", 0.0))})
+        total += v["cost"]
+    header = {}
+    revenue = None
+    if type == "user":
+        u = await db.users.find_one({"id": id}, {"_id": 0, "name": 1, "email": 1, "role": 1})
+        m = await db.memberships.find_one({"user_id": id}, {"_id": 0, "workspace_id": 1})
+        ws = await db.workspaces.find_one({"id": (m or {}).get("workspace_id")}, {"_id": 0}) if m else None
+        header = {"name": (u or {}).get("name"), "email": (u or {}).get("email"),
+                  "plan": display_plan(ws) if ws else None, "workspace": (ws or {}).get("name")}
+    else:
+        ws = await db.workspaces.find_one({"id": id}, {"_id": 0})
+        header = {"name": (ws or {}).get("name"), "plan": display_plan(ws) if ws else None,
+                  "seats": ((ws or {}).get("subscription") or {}).get("seats")}
+        sub = (ws or {}).get("subscription") or {}
+        if is_real_paid(sub):
+            revenue = {"status": sub.get("status"), "interval": sub.get("interval"), "plan": sub.get("plan")}
+    ratio = None  # cost-to-revenue only when authoritative revenue is known (kept null otherwise)
+    return {"type": type, "id": id, "header": header, "breakdown": breakdown,
+            "total_estimated_cost": round(total, 4), "subscription_revenue": revenue,
+            "cost_to_revenue_ratio": ratio, "estimated": True}
+
+
+@platform_router.get("/admin/control/usage/timeseries")
+async def usage_timeseries(start: str = None, end: str = None, feature: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}, "result": "success"}
+    if feature:
+        match["feature"] = feature
+    pipe = [{"$match": match},
+            {"$group": {"_id": {"$substr": ["$created_at", 0, 10]},
+                        "usage": {"$sum": "$quantity"}, "cost": {"$sum": "$cost"},
+                        "ai": {"$sum": {"$cond": [{"$eq": ["$category", "AI"]}, "$quantity", 0]}}}},
+            {"$sort": {"_id": 1}}]
+    rows = await db.usage_events.aggregate(pipe).to_list(400)
+    return {"series": [{"date": r["_id"], "usage": r["usage"], "cost": round(r["cost"], 4), "ai": r["ai"]} for r in rows],
+            "estimated": True}
+
+
+@platform_router.get("/admin/control/usage/export.csv")
+async def usage_export_csv(start: str = None, end: str = None, feature: str = "",
+                           workspace: str = "", user_id: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}}
+    if feature:
+        match["feature"] = feature
+    if workspace:
+        match["workspace_id"] = workspace
+    if user_id:
+        match["user_id"] = user_id
+    rows = await db.usage_events.find(match, {"_id": 0}).sort("created_at", -1).to_list(50000)
+    ucache, wcache = {}, {}
+
+    async def _uemail(uid):
+        if uid not in ucache:
+            u = await db.users.find_one({"id": uid}, {"_id": 0, "email": 1})
+            ucache[uid] = (u or {}).get("email", "")
+        return ucache[uid]
+
+    async def _wname(wid):
+        if wid not in wcache:
+            w = await db.workspaces.find_one({"id": wid}, {"_id": 0, "name": 1})
+            wcache[wid] = (w or {}).get("name", "")
+        return wcache[wid]
+
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    w = csv.writer(buf)
+    w.writerow(["Date", "Feature", "Category", "User", "Workspace", "Plan", "Usage",
+                "Unit Cost (USD)", "Estimated Cost (USD)", "Result", "Source", "Period"])
+    for r in rows:
+        w.writerow([r.get("created_at", ""), r.get("feature", ""), r.get("category", ""),
+                    await _uemail(r.get("user_id")) if r.get("user_id") else "",
+                    await _wname(r.get("workspace_id")) if r.get("workspace_id") else "",
+                    r.get("plan", ""), r.get("quantity", 0), r.get("unit_cost", 0),
+                    r.get("cost", 0), r.get("result", ""), r.get("source", ""), r.get("period", "")])
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
+                             headers={"Content-Disposition": "attachment; filename=usage_cost.csv"})
+
+
+@platform_router.get("/usage/me")
+async def usage_me(user: dict = Depends(current_user)):
+    """User-facing usage — ONLY features with an ACTIVE limit that applies to this account.
+    Returns an empty list when nothing is limited (no unnecessary counters for cheap/unlimited features)."""
+    ws_id = await _primary_ws_id(user)
+    ent = await resolve_entitlements(ws_id) if ws_id else {}
+    plan = ent.get("plan") if ent.get("plan") in USAGE_PLANS else None
+    cfg = await get_usage_config()
+    feats = cfg.get("features") or {}
+    out = []
+    for f in USAGE_FEATURES:
+        if not f.get("enforceable"):
+            continue
+        fc = feats.get(f["key"]) or {}
+        if not fc.get("enforcement_enabled"):
+            continue
+        scope = fc.get("scope", "per_user")
+        if scope == "unlimited":
+            continue
+        fc2 = dict(fc)
+        fc2["_key"] = f["key"]
+        if scope == "per_user":
+            scope_type, scope_id = "user", user["id"]
+        elif scope == "per_workspace":
+            scope_type, scope_id = "workspace", ws_id
+        else:
+            continue  # per_event not shown in the account-level panel
+        if not scope_id:
+            continue
+        limit, mode, is_ov = await _resolve_feature_limit(fc2, plan or "pro", scope_type, scope_id)
+        if mode == "unlimited" or limit is None:
+            continue
+        period = await _usage_period_for_ws(ws_id)
+        used = await db.usage_events.count_documents(
+            {"feature": f["key"], "result": "success", "period": period,
+             ("user_id" if scope_type == "user" else "workspace_id"): scope_id})
+        pct = round(used / limit * 100, 1) if limit else 0
+        out.append({"key": f["key"], "name": f["name"], "scope": scope,
+                    "scope_label": "Your monthly allowance" if scope_type == "user" else "Shared workspace allowance",
+                    "used": used, "limit": limit, "remaining": max(0, limit - used),
+                    "pct": pct, "soft_pct": fc.get("soft_pct", 80),
+                    "warning": pct >= fc.get("soft_pct", 80), "over": pct >= 100,
+                    "source": "override" if is_ov else "plan"})
+    return {"items": out}
+
+
 # ------------------------------------------------------------------ migration
 async def run_migration():
     """Idempotent, non-destructive. Preserves existing users/cards/URLs."""
@@ -5006,8 +5707,23 @@ async def run_migration():
         # CRM & Data Export Pack V1 — HubSpot connectors
         await db.crm_connections.create_index([("workspace_id", 1), ("provider", 1)], unique=True)
         await db.crm_oauth_states.create_index("state", unique=True)
+        # Usage & Cost Control V1 — metering + atomic reservation + overrides
+        await db.usage_events.create_index([("created_at", -1)])
+        await db.usage_events.create_index([("feature", 1), ("period", 1)])
+        await db.usage_events.create_index([("user_id", 1), ("period", 1)])
+        await db.usage_events.create_index([("workspace_id", 1), ("period", 1)])
+        await db.usage_meters.create_index(
+            [("feature", 1), ("scope_type", 1), ("scope_id", 1), ("period", 1)], unique=True)
+        await db.usage_overrides.create_index(
+            [("feature", 1), ("scope_type", 1), ("scope_id", 1)], unique=True)
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
+
+    # Seed Usage & Cost Control config (idempotent; backfills newly added features)
+    try:
+        await get_usage_config()
+    except Exception as e:
+        logger.warning(f"usage config seed: {e}")
 
     # Backfill lead scores for any leads not yet scored under the current version (safe, bounded, preview)
     try:

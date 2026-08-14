@@ -50,6 +50,7 @@ export default function Billing() {
   const navigate = useNavigate();
   const [data, setData] = useState(undefined);
   const [ref, setRef] = useState(null);
+  const [featureUsage, setFeatureUsage] = useState([]);
   const [interval, setInterval] = useState("year");
   const [market, setMarket] = useState("USD");
   const [busy, setBusy] = useState("");
@@ -60,7 +61,7 @@ export default function Billing() {
       if (!mk && data?.commercial?.pricing?.market) setMarket(data.commercial.pricing.market);
     }).catch(() => setData(null));
   };
-  useEffect(() => { load(); api.get("/referral").then(({ data }) => setRef(data)).catch(() => {}); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load(); api.get("/referral").then(({ data }) => setRef(data)).catch(() => {}); api.get("/usage/me").then(({ data }) => setFeatureUsage(data.items || [])).catch(() => {}); /* eslint-disable-next-line */ }, []);
   useEffect(() => { if (data) load(market); /* eslint-disable-next-line */ }, [market]);
 
   const c = data?.commercial;
@@ -207,6 +208,24 @@ export default function Billing() {
               <UsageMeter icon={Sparkles} label={t("billing.usageAi")} used={data.usage.ai.used} limit={data.usage.ai.limit} testid="usage-ai" />
               <UsageMeter icon={ScanLine} label={t("billing.usageScanner")} used={data.usage.scanner.used} limit={data.usage.scanner.limit} testid="usage-scanner" />
             </div>
+
+            {/* feature usage allowances (only shown when a limit is active for this account) */}
+            {featureUsage.length > 0 && (
+              <div className="mt-4 space-y-2" data-testid="billing-feature-usage">
+                {featureUsage.map((f) => (
+                  <div key={f.key} className="rounded-xl border border-white/10 bg-white/[0.02] p-3" data-testid={`feature-usage-${f.key}`}>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-white/80">{f.name}</span>
+                      <span className={f.over ? "text-red-300" : f.warning ? "text-amber-300" : "text-white/50"}>{f.used} / {f.limit} used · {f.remaining} remaining</span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div className={`h-full rounded-full ${f.over ? "bg-red-400" : f.warning ? "bg-amber-400" : "bg-[#D6A653]"}`} style={{ width: `${Math.min(100, f.pct)}%` }} />
+                    </div>
+                    <p className="mt-1 text-[10px] text-white/40">{f.scope_label}{f.warning && !f.over ? ` — you've used ${f.pct}% of your allowance` : ""}{f.over ? " — allowance reached" : ""}</p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* interval toggle */}
             <div className="mt-8 flex items-center justify-center gap-2">
