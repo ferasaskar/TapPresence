@@ -1,5 +1,15 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## GLOBAL TAX & STRIPE READINESS AUDIT (2026-08) — READ-ONLY, NO CODE/CONFIG/STRIPE/DEPLOY CHANGES
+Analysis-only audit of tax readiness before international launch. Key findings (evidence: platform_v1.py billing_checkout L928-993, _sync_ws_from_stripe_sub L996-1026, webhook L1070-1099, markets L247-711, control_overview L2427-2496; frontend has zero tax wording; backend/.env has STRIPE_* keys):
+- Checkout ALREADY sets `automatic_tax=enabled` + `billing_address_collection=required` + `tax_behavior=exclusive` (tax on top, base price preserved) + `allow_promotion_codes`. Per-seat Team tax + post-discount tax handled correctly by Stripe. No hardcoded tax % anywhere.
+- CRITICAL GAP: silent fallback (L980-985) recreates the session WITHOUT tax/address if `automatic_tax` raises (i.e. Stripe Tax not enabled in dashboard) → risk of live charges with zero tax.
+- Missing (CODE): remove/guard silent fallback; SaaS product tax_code; `tax_id_collection` (VAT/UAE TRN); mirror customer country into DB; admin revenue/tax-by-jurisdiction; UI "taxes calculated at checkout" wording; in-app invoice history (backlog). Workspace `tax` object is dead local metadata (not sent to Stripe).
+- App generates NO invoices/receipts itself (Stripe native only). Admin money block is null placeholders (no revenue-by-country/tax-collected).
+- Stripe CAN automate: rate/taxability per jurisdiction (US states, UAE 5%, EU/UK VAT, CA GST/HST/PST, AU GST), threshold monitoring, tax invoices — once Stripe Tax enabled + registrations added + SaaS tax code set. Stripe CANNOT: tax registrations, nexus decisions, filing/remittance (EXTERNAL/ACCOUNTING). Corporate income tax separate.
+- Readiness scores: US 55, UAE 50, EU/UK 55, Global 52 (/100). Architecture is jurisdiction-agnostic & scalable (no hardcoded tables); gated on Stripe config + external registrations + a few code additions. NO changes made — implementation deferred to a future scoped task.
+
+
 ## AI LEAD INSIGHTS + AI EVENT RECAP — V1 (2026-08, preview only — NOT deployed) — IMPLEMENTED & TESTING-AGENT VERIFIED (backend 9/9 100%, frontend 100%, 0 issues; iteration_39)
 Implemented the two previously-placeholder AI features as real, on-demand, cached, metered features reusing existing AI infra + Usage & Cost Control. Provider = OpenAI gpt-5.4 via Emergent LLM key; ONE structured JSON call per generation.
 - **AI Lead Insights** (`GET/POST /api/crm/leads/{lead_id}/ai-insight`): on-demand analysis of ONE lead using existing TapPresence fields only (no external enrichment). Output JSON: summary, opportunity_assessment, why_matters, recommended_next_action, followup_approach, signals_risks[], priority(High/Med/Low), timing. Advisory only — never overwrites rules-based lead_score/stage. Default limit scope = **per_user**. Stored on `lead.ai_insight` {content, generated_at, generated_by, provider, language, source_hash}.
