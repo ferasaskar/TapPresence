@@ -6,6 +6,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Loader2, ArrowLeft, CalendarDays, MapPin, Users, User, Search, TrendingUp, UserPlus, RefreshCw, CalendarCheck, Trophy, Coins, Pencil, Check, DollarSign, Download } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/i18n/useLocale";
+import { EventAIRecap } from "@/components/ai/AIPanels";
 
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) : "");
 const fmtDT = (iso) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "");
@@ -154,6 +155,9 @@ export default function EventDetail() {
               <Kpi label={t("eventDash.followupsDue")} value={k.followups_due + k.followups_overdue} sub={k.followups_overdue ? t("eventDash.overdue", { count: k.followups_overdue }) : ""} testid="kpi-followups-due" />
               <Kpi label={t("eventDash.followupsCompleted")} value={k.followups_completed} testid="kpi-followups-done" />
             </div>
+
+            {/* AI Event Recap (on-demand, cached, metered — one aggregated AI call) */}
+            <div className="mb-6"><EventAIRecap eventId={id} /></div>
 
             {/* Financial performance */}
             {(() => {

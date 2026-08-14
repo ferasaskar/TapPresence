@@ -1,6 +1,21 @@
 {
+  "ai": {
+    "insightTitle": "AI Lead Insight",
+    "recapTitle": "AI Event Recap",
+    "generateInsight": "Generate AI Insight",
+    "generateRecap": "Generate AI Event Recap",
+    "regenerate": "Regenerate",
+    "generated": "AI analysis ready",
+    "generatedAt": "Generated",
+    "priority": "Priority",
+    "insightEmpty": "Generate an AI analysis of this lead using your existing data — priority, next action and follow-up approach.",
+    "recapEmpty": "Generate an AI summary of this event's performance, lead quality and next actions.",
+    "insightStale": "Lead information has changed since this AI Insight was generated.",
+    "recapStale": "Event data has changed since this recap was generated.",
+    "limitReached": "You've reached your usage allowance for this period.",
+    "failed": "Could not generate. Please try again."
+  },
   "common": {
-    "loading": "Loading",
     "cancel": "Cancel",
     "save": "Save",
     "close": "Close",

@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 39: AI Lead Insights + AI Event Recap. Backend pytest (9/9 passing) verified on-demand generation, caching (no new usage), stale detection after material change, exactly-one usage per generation for both features (recap = 1 usage even with multi-lead event), permission/tenant isolation (throwaway account 403), enforcement toggle (enable+reset lead insight, verified event_recap left OFF), regressions (billing, /ai/followup, /events/{id}/dashboard). Frontend Playwright confirmed lead-insight-panel/generate/regenerate/priority/timing testids and event-recap-panel/generate/regenerate testids render correctly with real LLM content (openai:gpt-5.4). No enforcement left ON.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter39_ai_panels.py",
+    "/app/test_reports/pytest/iter39.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "platform_v1.py is now ~6063 lines — consider splitting AI panels module into its own file (routes/ai_panels.py) for maintainability.",
+    "_lead_insight_signature includes lead_score/lead_temperature and status; any PATCH that touches these flips stale=true. Confirmed behaves as designed (agent intent).",
+    "get_event_recap re-runs event_dashboard on every GET just to compute the material hash — acceptable now but O(N leads) DB work per GET; consider persisting last-hash alongside recap for cheap staleness check."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter39_ai_panels.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (panels + testids verified, both languages via lang toggle present)"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN); throwaway TEST_throw_*@example.com created and left (register endpoint does not expose delete).",
+  "seed_data_creation": "One throwaway user + workspace created per fixture run; used only for 403 checks. Lead 30ee38ed-... (DashTest 3 5010) had ai_insight populated & regenerated; event 3877d2f4-... (GITEX GLOBAL 2026) had ai_recap generated.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter39_ai_panels.py is idempotent and safe to re-run. It always resets enforcement_enabled=false at the end. Overview API uses `features` list with `usage_month` field (not `by_feature`); reuse the helper if querying counts.",
+  "rca of the issue": "N/A — all features implemented correctly per spec."
+}

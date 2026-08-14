@@ -5017,10 +5017,10 @@ USAGE_FEATURES = [
      "enforceable": True, "default_unit_cost": 0.02, "cost_unit": "per scan"},
     {"key": "ai_followup", "name": "AI Follow-up / Draft", "category": "AI", "metered": True,
      "enforceable": True, "default_unit_cost": 0.03, "cost_unit": "per AI request"},
-    {"key": "ai_lead_insight", "name": "AI Lead Insights", "category": "AI", "metered": False, "placeholder": True,
-     "enforceable": True, "default_unit_cost": 0.03, "cost_unit": "per AI request"},
-    {"key": "ai_event_recap", "name": "AI Event Recap", "category": "AI", "metered": False, "placeholder": True,
-     "enforceable": True, "default_unit_cost": 0.05, "cost_unit": "per AI request"},
+    {"key": "ai_lead_insight", "name": "AI Lead Insights", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.03, "cost_unit": "per AI request", "default_scope": "per_user"},
+    {"key": "ai_event_recap", "name": "AI Event Recap", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.05, "cost_unit": "per AI request", "default_scope": "per_event"},
     {"key": "email", "name": "Transactional Emails", "category": "Email", "metered": True,
      "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per email"},
     {"key": "crm_sync", "name": "CRM Sync", "category": "CRM", "metered": True,
@@ -5049,7 +5049,7 @@ def _default_feature_config(meta: dict) -> dict:
         "currency": "USD",
         "effective_from": now_iso(),
         "enforcement_enabled": False,          # OFF by default — preserves existing behavior
-        "scope": "per_user",
+        "scope": meta.get("default_scope", "per_user"),
         "plan_limits": {p: {"mode": "unlimited", "limit": None} for p in USAGE_PLANS},
         "soft_pct": 80,
         "hard_behavior": "flag",               # non-blocking default even if later enabled
@@ -5674,6 +5674,237 @@ async def usage_me(user: dict = Depends(current_user)):
     return {"items": out}
 
 
+# ==================================================================
+# AI LEAD INSIGHTS + AI EVENT RECAP (on-demand, cached, metered) — reuses LlmChat (openai gpt-5.4),
+# usage_guard/meter_usage, ai_usage, and existing lead/event tenant permissions. NEVER auto-runs.
+# One structured provider call per generation. Viewing a cached result costs ZERO AI usage.
+# ==================================================================
+import hashlib
+
+_AI_MODEL = ("openai", "gpt-5.4")
+
+
+async def _llm_json(system: str, prompt: str, session_prefix: str) -> dict:
+    """One structured JSON completion via the shared Emergent LLM key. Raises on failure so the
+    caller can release the usage reservation (failed provider op must not consume allowance)."""
+    key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
+    if not key:
+        raise HTTPException(503, "AI is not configured.")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    chat = LlmChat(api_key=key, session_id=f"{session_prefix}-{uuid.uuid4()}",
+                   system_message=system).with_model(*_AI_MODEL)
+    resp = await chat.send_message(UserMessage(text=prompt))
+    data = _parse_scan_json(str(resp))
+    if not data:
+        raise HTTPException(502, "The AI response could not be parsed. Please try again.")
+    return data
+
+
+def _lang_name(lang: str) -> str:
+    return {"ar": "Arabic", "es": "Spanish", "en": "English"}.get(_norm_lang(lang), "English")
+
+
+def _material_hash(obj: dict) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+# ---- AI Lead Insights ----
+async def _lead_or_403(lead_id: str, user: dict):
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    if user.get("role") != "SUPER_ADMIN":
+        slugs = await _owned_slugs(user)
+        if lead.get("cardSlug") not in slugs:
+            raise HTTPException(403, "Not your lead")
+    return lead
+
+
+async def _lead_insight_signature(lead: dict) -> dict:
+    """The material fields whose change should mark an insight stale (rules-based, no AI)."""
+    mc = await _active_meeting_count(lead["id"])
+    return {
+        "name": lead.get("name"), "company": lead.get("company"), "title": lead.get("title"),
+        "industry": lead.get("industry"), "source": lead.get("source"), "event_id": lead.get("event_id"),
+        "notes": lead.get("notes") or lead.get("message"), "tags": sorted(lead.get("tags") or []),
+        "status": lead.get("status"), "lead_score": lead.get("lead_score"),
+        "lead_temperature": lead.get("lead_temperature_override") or lead.get("lead_temperature"),
+        "phone": bool(lead.get("phone")), "email": bool(lead.get("email")),
+        "next_follow_up": lead.get("next_follow_up"), "follow_up_completed_at": lead.get("follow_up_completed_at"),
+        "opportunity_value": lead.get("opportunity_value"), "actual_revenue": lead.get("actual_revenue"),
+        "meetings": mc,
+    }
+
+
+def _lead_insight_context(lead: dict, sig: dict, event_name: str) -> str:
+    fields = {
+        "Name": lead.get("name"), "Company": lead.get("company"), "Job Title": lead.get("title"),
+        "Industry": lead.get("industry"), "Lead Source": lead.get("source"), "Event": event_name,
+        "Pipeline Stage": lead.get("status"), "Rules-based Lead Score (0-100)": lead.get("lead_score"),
+        "Lead Temperature": sig["lead_temperature"], "Tags": ", ".join(sig["tags"]),
+        "Notes": sig["notes"], "Has Phone": sig["phone"], "Has Email": sig["email"],
+        "Next Follow-up": lead.get("next_follow_up"), "Follow-up Completed": lead.get("follow_up_completed_at"),
+        "Active Meetings": sig["meetings"], "Opportunity Value": lead.get("opportunity_value"),
+        "Recorded Revenue": lead.get("actual_revenue"),
+    }
+    return "\n".join(f"{k}: {v}" for k, v in fields.items() if v not in (None, "", []))
+
+
+class LeadInsightIn(BaseModel):
+    regenerate: bool = False
+    language: str = "en"
+
+
+@platform_router.get("/crm/leads/{lead_id}/ai-insight")
+async def get_lead_insight(lead_id: str, user: dict = Depends(current_user)):
+    """Return the STORED insight (0 AI usage) + a stale flag if material lead data changed since."""
+    lead = await _lead_or_403(lead_id, user)
+    ins = lead.get("ai_insight")
+    if not ins:
+        return {"insight": None, "stale": False}
+    sig = await _lead_insight_signature(lead)
+    return {"insight": ins, "stale": ins.get("source_hash") != _material_hash(sig)}
+
+
+@platform_router.post("/crm/leads/{lead_id}/ai-insight")
+async def generate_lead_insight(lead_id: str, body: LeadInsightIn, request: Request,
+                                user: dict = Depends(current_user)):
+    lead = await _lead_or_403(lead_id, user)
+    ws_id = await _lead_workspace_id(lead)
+    sig = await _lead_insight_signature(lead)
+    cur_hash = _material_hash(sig)
+    existing = lead.get("ai_insight")
+    # Cached path — no new AI call unless regenerate is explicitly requested.
+    if existing and not body.regenerate:
+        return {"insight": existing, "stale": existing.get("source_hash") != cur_hash, "cached": True}
+    rate_limit(request, "ai_insight", 20, 60)
+    lang = _norm_lang(body.language)
+    ev_name = ""
+    if lead.get("event_id"):
+        ev = await db.events.find_one({"id": lead["event_id"]}, {"_id": 0, "name": 1})
+        ev_name = (ev or {}).get("name", "")
+    handle = await usage_guard("ai_lead_insight", user, ws_id)
+    system = (f"You are an elite B2B sales assistant. Analyze ONE lead using ONLY the provided TapPresence data "
+              f"(never invent facts or external data). Respond in {_lang_name(lang)}. "
+              f"Return ONLY a JSON object with keys: summary, opportunity_assessment, why_matters, "
+              f"recommended_next_action, followup_approach, signals_risks (array of short strings), "
+              f"priority (one of High, Medium, Low), timing (one of 'Follow up now','Today','Within 24 hours','This week','Low urgency'). "
+              f"Keep each field concise and actionable. Do not change or restate the numeric lead score.")
+    prompt = "Lead data:\n" + _lead_insight_context(lead, sig, ev_name)
+    try:
+        data = await _llm_json(system, prompt, "lead-insight")
+    except HTTPException:
+        await release_usage_handle(handle)
+        await meter_usage("ai_lead_insight", user_id=user["id"], workspace_id=ws_id,
+                          quantity=1, result="failed", source="lead_insight", paid=False)
+        raise
+    except Exception as e:
+        await release_usage_handle(handle)
+        await meter_usage("ai_lead_insight", user_id=user["id"], workspace_id=ws_id,
+                          quantity=1, result="failed", source="lead_insight", paid=False)
+        logger.warning(f"lead insight LLM error: {e}")
+        raise HTTPException(502, "Could not generate the insight. Please try again.")
+    insight = {"content": data, "generated_at": now_iso(), "generated_by": user["id"],
+               "provider": "openai:gpt-5.4", "language": lang, "source_hash": cur_hash}
+    await db.leads.update_one({"id": lead_id}, {"$set": {"ai_insight": insight}})
+    await db.ai_usage.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "provider": "openai:gpt-5.4",
+                                  "channel": "lead_insight", "tone": "insight", "language": lang, "created_at": now_iso()})
+    await meter_usage("ai_lead_insight", user_id=user["id"], workspace_id=ws_id,
+                      quantity=1, result="success", source="lead_insight", paid=True)
+    return {"insight": insight, "stale": False, "cached": False}
+
+
+# ---- AI Event Recap ----
+def _event_recap_signature(dash: dict) -> dict:
+    k = dash.get("kpis") or {}
+    f = dash.get("financials") or {}
+    return {"total_leads": k.get("total_leads"), "customers": k.get("customers"),
+            "meetings": k.get("meetings_booked"), "conversion": k.get("conversion_rate"),
+            "pipeline_value": f.get("pipeline_value"), "attributed_revenue": f.get("attributed_revenue"),
+            "roi": f.get("roi")}
+
+
+def _event_recap_context(dash: dict) -> str:
+    ev = dash.get("event") or {}
+    k = dash.get("kpis") or {}
+    q = dash.get("quality") or {}
+    fin = dash.get("financials") or {}
+    lb = [{"name": r.get("name"), "leads": r.get("leads"), "hot": r.get("hot_leads"),
+           "meetings": r.get("meetings"), "customers": r.get("customers")} for r in (dash.get("leaderboard") or [])[:5]]
+    topl = [{"name": l.get("name"), "company": l.get("company"), "title": l.get("title"),
+             "score": l.get("score"), "temp": l.get("temperature")} for l in (dash.get("top_leads") or [])[:5]]
+    topo = [{"name": l.get("name"), "company": l.get("company"), "value": l.get("opportunity_value"),
+             "stage": l.get("stage")} for l in (dash.get("top_opportunities") or [])[:5]]
+    ctx = {
+        "event_name": ev.get("name"), "reporting_currency": fin.get("currency"),
+        "kpis": k, "new_vs_returning": dash.get("new_vs_returning"),
+        "pipeline_stage_counts": dash.get("pipeline"), "capture_methods": dash.get("capture_methods"),
+        "lead_quality": q, "followups": dash.get("followups"),
+        "financials": {kk: fin.get(kk) for kk in ("pipeline_value", "open_opportunities", "attributed_revenue",
+                                                   "attributed_revenue_count", "event_cost", "roi", "revenue_cost_multiple")},
+        "team_top5": lb, "top_leads": topl, "top_opportunities": topo,
+    }
+    return json.dumps(ctx, ensure_ascii=False, default=str)
+
+
+class EventRecapIn(BaseModel):
+    regenerate: bool = False
+    language: str = "en"
+
+
+@platform_router.get("/events/{event_id}/ai-recap")
+async def get_event_recap(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    rec = ev.get("ai_recap")
+    if not rec:
+        return {"recap": None, "stale": False}
+    dash = await event_dashboard(event_id, user)
+    return {"recap": rec, "stale": rec.get("source_hash") != _material_hash(_event_recap_signature(dash))}
+
+
+@platform_router.post("/events/{event_id}/ai-recap")
+async def generate_event_recap(event_id: str, body: EventRecapIn, request: Request,
+                               user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    ws_id = ev.get("workspace_id")
+    existing = ev.get("ai_recap")
+    # Aggregate ONCE (no per-lead AI). event_dashboard returns fully aggregated metrics.
+    dash = await event_dashboard(event_id, user)
+    cur_hash = _material_hash(_event_recap_signature(dash))
+    if existing and not body.regenerate:
+        return {"recap": existing, "stale": existing.get("source_hash") != cur_hash, "cached": True}
+    rate_limit(request, "ai_recap", 15, 60)
+    lang = _norm_lang(body.language)
+    handle = await usage_guard("ai_event_recap", user, ws_id, event_id=event_id)
+    system = (f"You are a sales operations analyst. Write a concise, executive AI recap for ONE event using ONLY the "
+              f"provided aggregated metrics (never invent numbers). Respond in {_lang_name(lang)}. "
+              f"Return ONLY a JSON object with keys: executive_summary, event_performance, lead_quality, "
+              f"strongest_opportunities, key_patterns, team_highlights, followup_priorities, "
+              f"next_actions (array of short strings), risks, conclusion. Keep it useful for a manager and not overly long.")
+    prompt = "Aggregated event data (JSON):\n" + _event_recap_context(dash)
+    try:
+        data = await _llm_json(system, prompt, "event-recap")
+    except HTTPException:
+        await release_usage_handle(handle)
+        await meter_usage("ai_event_recap", user_id=user["id"], workspace_id=ws_id, event_id=event_id,
+                          quantity=1, result="failed", source="event_recap", paid=False)
+        raise
+    except Exception as e:
+        await release_usage_handle(handle)
+        await meter_usage("ai_event_recap", user_id=user["id"], workspace_id=ws_id, event_id=event_id,
+                          quantity=1, result="failed", source="event_recap", paid=False)
+        logger.warning(f"event recap LLM error: {e}")
+        raise HTTPException(502, "Could not generate the recap. Please try again.")
+    recap = {"content": data, "generated_at": now_iso(), "generated_by": user["id"],
+             "provider": "openai:gpt-5.4", "language": lang, "source_hash": cur_hash}
+    await db.events.update_one({"id": event_id}, {"$set": {"ai_recap": recap}})
+    await db.ai_usage.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "provider": "openai:gpt-5.4",
+                                  "channel": "event_recap", "tone": "recap", "language": lang, "created_at": now_iso()})
+    await meter_usage("ai_event_recap", user_id=user["id"], workspace_id=ws_id, event_id=event_id,
+                      quantity=1, result="success", source="event_recap", paid=True)
+    return {"recap": recap, "stale": False, "cached": False}
+
+
 # ------------------------------------------------------------------ migration
 async def run_migration():
     """Idempotent, non-destructive. Preserves existing users/cards/URLs."""
@@ -5721,7 +5952,12 @@ async def run_migration():
 
     # Seed Usage & Cost Control config (idempotent; backfills newly added features)
     try:
-        await get_usage_config()
+        _ucfg = await get_usage_config()
+        # AI Event Recap default scope correction (per_event) — enforcement stays OFF, no behavior change.
+        _erf = (_ucfg.get("features") or {}).get("ai_event_recap") or {}
+        if _erf.get("scope") == "per_user" and not _erf.get("enforcement_enabled"):
+            await db.usage_config.update_one({"id": "global"},
+                {"$set": {"features.ai_event_recap.scope": "per_event"}})
     except Exception as e:
         logger.warning(f"usage config seed: {e}")
 

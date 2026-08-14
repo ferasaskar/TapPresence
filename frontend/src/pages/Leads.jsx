@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useLocale } from "@/i18n/useLocale";
 import { useAuth } from "@/context/AuthContext";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
+import { LeadAIInsight } from "@/components/ai/AIPanels";
 
 const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR"];
 const money = (v, ccy) => { try { return `${ccy || ""} ${Number(v).toLocaleString()}`.trim(); } catch { return `${ccy || ""} ${v}`.trim(); } };
@@ -382,6 +383,9 @@ export default function Leads() {
                     </div>
                     {l.message ? <p className="mt-3 border-t border-white/8 pt-3 text-white/75">“{l.message}”</p> : null}
                   </div>
+
+                  {/* AI Lead Insight (on-demand, cached, metered) */}
+                  <LeadAIInsight leadId={l.id} />
 
                   {/* editable contact context */}
                   {edit ? (

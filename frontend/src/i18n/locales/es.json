@@ -1,4 +1,20 @@
 {
+  "ai": {
+    "insightTitle": "Insight de contacto con IA",
+    "recapTitle": "Resumen del evento con IA",
+    "generateInsight": "Generar insight con IA",
+    "generateRecap": "Generar resumen del evento con IA",
+    "regenerate": "Regenerar",
+    "generated": "Análisis de IA listo",
+    "generatedAt": "Generado",
+    "priority": "Prioridad",
+    "insightEmpty": "Genera un análisis con IA de este contacto usando tus datos actuales: prioridad, próxima acción y enfoque de seguimiento.",
+    "recapEmpty": "Genera un resumen con IA del rendimiento del evento, la calidad de los contactos y las próximas acciones.",
+    "insightStale": "La información del contacto ha cambiado desde que se generó este insight.",
+    "recapStale": "Los datos del evento han cambiado desde que se generó este resumen.",
+    "limitReached": "Has alcanzado tu límite de uso para este período.",
+    "failed": "No se pudo generar. Inténtalo de nuevo."
+  },
   "common": {
     "loading": "Cargando",
     "cancel": "Cancelar",

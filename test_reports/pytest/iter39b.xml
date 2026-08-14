@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="7.370" timestamp="2026-08-14T10:40:23.703164+00:00" hostname="agent-env-69e70943-1c88-4258-b0f7-da79badd04b9"><testcase classname="tests.test_iter39_ai_panels.TestLeadInsight" name="test_full_flow" time="6.974"><failure message="AssertionError: regenerate should add exactly 1: 0-&gt;0&#10;assert 0 == (0 + 1)">backend/tests/test_iter39_ai_panels.py:183: in test_full_flow
+    assert post_regen == pre_regen + 1, f"regenerate should add exactly 1: {pre_regen}-&gt;{post_regen}"
+E   AssertionError: regenerate should add exactly 1: 0-&gt;0
+E   assert 0 == (0 + 1)</failure></testcase><testcase classname="tests.test_iter39_ai_panels.TestRegressions" name="test_ai_followup_still_works" time="3.847" /></testsuite></testsuites>
