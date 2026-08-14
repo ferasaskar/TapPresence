@@ -725,6 +725,10 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
     return {
         "plan": ent["plan"], "status": ent["status"], "active": ent["active"],
         "trial_ends_at": ent.get("trial_ends_at"), "current_period_end": ent.get("current_period_end"),
+        "interval": ((ws or {}).get("subscription") or {}).get("interval"),
+        "provider": ((ws or {}).get("subscription") or {}).get("provider"),
+        "cancel_at_period_end": ent["status"] == "cancel_at_period_end",
+        "trial_eligible": _trial_eligible((ws or {}).get("subscription") or {}),
         "seats": ent.get("seats"), "entitlements": ent,
         "commercial": {"trial": cfg["trial"], "plans": cfg["plans"], "referral": cfg["referral"],
                        "pricing": pricing, "markets": COMMERCIAL_MARKETS},
@@ -843,8 +847,45 @@ async def referral_qr(code: str):
 async def cancel_subscription(user: dict = Depends(current_user)):
     ws_id = await _primary_ws_id(user)
     await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = (ws or {}).get("subscription") or {}
+    sub_id = sub.get("stripe_subscription_id")
+    # Real Stripe subscription: schedule cancellation at period end (keeps Pro access until then).
+    if sub_id and STRIPE_SECRET_KEY:
+        try:
+            stripe.Subscription.modify(sub_id, cancel_at_period_end=True)
+        except stripe.error.StripeError as e:
+            raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
     await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription.status": "cancel_at_period_end", "subscription.updated_at": now_iso()}})
+    await audit(ws_id, user["id"], "billing.cancel_at_period_end", {"stripe": bool(sub_id)})
     return {"ok": True, "status": "cancel_at_period_end"}
+
+
+@platform_router.post("/billing/resume")
+async def resume_subscription(user: dict = Depends(current_user)):
+    """Undo a scheduled cancellation on the EXISTING Stripe subscription (never creates a new one)."""
+    ws_id = await _primary_ws_id(user)
+    await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = (ws or {}).get("subscription") or {}
+    if sub.get("status") != "cancel_at_period_end":
+        raise HTTPException(400, "Subscription is not scheduled to cancel")
+    sub_id = sub.get("stripe_subscription_id")
+    if sub_id and STRIPE_SECRET_KEY:
+        try:
+            stripe.Subscription.modify(sub_id, cancel_at_period_end=False)
+            fresh = stripe.Subscription.retrieve(sub_id)
+        except stripe.error.StripeError as e:
+            raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+        # Re-sync from Stripe so status + current_period_end always match Stripe exactly.
+        await _sync_ws_from_stripe_sub(ws_id, fresh, sub.get("plan", "pro"), sub.get("interval", "month"),
+                                       sub.get("seats", 1), sub.get("market", "USD"),
+                                       source="stripe_resume", event_id=f"resume:{sub_id}")
+    else:
+        await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription.status": "active", "subscription.updated_at": now_iso()}})
+    await audit(ws_id, user["id"], "billing.resume", {"stripe": bool(sub_id)})
+    ent = await resolve_entitlements(ws_id)
+    return {"ok": True, "status": ent["status"], "current_period_end": ent.get("current_period_end")}
 
 
 # ------------------------------------------------------------------ Stripe checkout (real payment provider)
@@ -956,6 +997,11 @@ async def _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, mar
                   "canceled": "cancelled", "unpaid": "past_due", "incomplete": "past_due"}
     status = status_map.get(st, "active")
     cpe = stripe_sub.get("current_period_end")
+    if not cpe:
+        # Newer Stripe API versions expose the period end on the subscription ITEM, not the subscription.
+        _items = (stripe_sub.get("items") or {}).get("data") or []
+        if _items:
+            cpe = _items[0].get("current_period_end")
     trial_end = stripe_sub.get("trial_end")
     prior = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
     sub = {

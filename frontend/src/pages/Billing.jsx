@@ -19,6 +19,7 @@ const STATUS_LABEL = {
 };
 
 const fmtMoney = (sym, n) => `${sym}${Number(n).toFixed(2).replace(/\.00$/, "")}`;
+const fmtLong = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "");
 const daysLeft = (iso) => {
   if (!iso) return null;
   const ms = new Date(iso).getTime() - Date.now();
@@ -127,6 +128,17 @@ export default function Billing() {
     finally { setBusy(""); }
   };
 
+  const resume = async () => {
+    setBusy("resume");
+    try { await api.post("/billing/resume"); toast.success(t("billing.resumed")); load(market); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Could not resume subscription."); }
+    finally { setBusy(""); }
+  };
+
+  const isPaid = currentPlan === "pro" || currentPlan === "team";
+  const cycleLabel = data?.interval === "year" ? t("billing.annual") : t("billing.monthly");
+  const willCancel = data?.cancel_at_period_end;
+
   return (
     <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="billing-page">
       <div className="grain-overlay" style={{ opacity: 0.04 }} />
@@ -158,18 +170,27 @@ export default function Billing() {
                 <div>
                   <p className="text-sm text-white/55">{t("billing.currentPlan")}</p>
                   <p className="text-lg font-medium capitalize text-white" data-testid="billing-current-plan">
-                    {currentPlan} · <span className={locked ? "text-red-400" : "text-[#D6A653]"}>{STATUS_LABEL[data.status] || data.status}</span>
+                    {currentPlan} · <span className={locked ? "text-red-400" : (willCancel ? "text-amber-400" : "text-[#D6A653]")}>{STATUS_LABEL[data.status] || data.status}</span>
                   </p>
+                  {isPaid && data.provider === "stripe" ? (
+                    <p className="mt-0.5 text-xs text-white/45" data-testid="billing-cycle">{t("billing.billingCycle")}: {cycleLabel}</p>
+                  ) : null}
                 </div>
               </div>
               <div className="text-right">
                 {isTrial && data.trial_ends_at ? (
                   <p className="text-sm text-white/70" data-testid="billing-trial-days"><span className="text-xl font-light text-[#D6A653]">{daysLeft(data.trial_ends_at)}</span> {t("billing.daysLeft")}</p>
-                ) : data.current_period_end ? (
-                  <p className="text-xs text-white/45">{t("billing.renews")} {new Date(data.current_period_end).toLocaleDateString()}</p>
+                ) : willCancel && data.current_period_end ? (
+                  <p className="text-sm text-amber-300/90" data-testid="billing-access-until">{t("billing.remainsActiveUntil", { plan: (currentPlan || "").replace(/^\w/, (c) => c.toUpperCase()) })} <span className="font-medium">{fmtLong(data.current_period_end)}</span></p>
+                ) : isPaid && data.current_period_end ? (
+                  <p className="text-sm text-white/70" data-testid="billing-next-date">{t("billing.nextBilling")}: <span className="font-medium text-white">{fmtLong(data.current_period_end)}</span></p>
                 ) : null}
-                {data.active && (currentPlan === "pro" || currentPlan === "team") && data.status !== "cancel_at_period_end" ? (
-                  <button onClick={cancel} disabled={busy === "cancel"} data-testid="billing-cancel" className="mt-2 text-xs text-white/45 underline underline-offset-2 hover:text-white/70">{t("billing.cancel")}</button>
+                {data.active && isPaid && willCancel ? (
+                  <button onClick={resume} disabled={busy === "resume"} data-testid="billing-resume" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#D6A653] px-4 py-1.5 text-xs font-semibold text-black transition-all hover:brightness-110 disabled:opacity-50">
+                    {busy === "resume" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}{t("billing.resume")}
+                  </button>
+                ) : data.active && isPaid && data.status !== "cancel_at_period_end" ? (
+                  <button onClick={cancel} disabled={busy === "cancel"} data-testid="billing-cancel" className="mt-2 block text-xs text-white/45 underline underline-offset-2 hover:text-white/70">{t("billing.cancel")}</button>
                 ) : null}
               </div>
             </div>
@@ -202,7 +223,7 @@ export default function Billing() {
 
             {/* plan comparison */}
             <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="billing-plans">
-              {plans.map((p) => {
+              {plans.filter((p) => !(p.id === "trial" && !data.trial_eligible)).map((p) => {
                 const isCurrent = currentPlan === p.id && data.active;
                 const Icon = p.icon;
                 return (

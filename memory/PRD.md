@@ -1,5 +1,17 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## BILLING & PLAN UX FIXES + RESUME + TRIAL-ELIGIBILITY (2026-08, preview only — NOT deployed) — Stripe TEST-mode E2E verified (monthly + annual)
+Fixed Billing & Plan page issues without touching Stripe keys/webhook/pricing/checkout.
+- **ROOT CAUSE (missing renewal date):** newer Stripe API/SDK (stripe 14.4.1) moved `current_period_end` off the subscription object onto the subscription **item** → `_sync_ws_from_stripe_sub` stored `None`. Fixed to read item-level fallback. Dates now come straight from Stripe (works for monthly + annual).
+- **ROOT CAUSE ($0 Trial shown to Pro users):** trial eligibility (`_trial_eligible`, one-time via immutable `trial_started_at`/`trial_ends_at`) was enforced only at checkout (server-side ✓) but never surfaced to the billing UI, and the frontend rendered the Trial card unconditionally. Fix: `/billing` now returns `trial_eligible`; frontend hides the Trial card when false. Server-side checkout already refuses to grant `trial_period_days` to trialed accounts, so it can't be bypassed by direct API call. Cancel/resume/expiry never reset eligibility (marker is immutable).
+- **Resume:** new `POST /api/billing/resume` → `stripe.Subscription.modify(id, cancel_at_period_end=False)` on the EXISTING sub (never creates a new one), then re-syncs status + period end from Stripe.
+- **Cancel now Stripe-aware:** `POST /api/billing/cancel` was DB-only; now calls `stripe.Subscription.modify(id, cancel_at_period_end=True)` too (required for resume + safety), keeps Pro access until period end. Demo (no stripe_subscription_id) falls back to DB-only.
+- **`/billing` additions:** `interval`, `cancel_at_period_end`, `trial_eligible`, `provider`.
+- **Frontend Billing card:** shows plan, billing cycle (Monthly/Annual), status, and "Next billing date" (active) or "remains active until" + Resume button (cancel-scheduled).
+- **Verified (Stripe TEST mode, real subs, monthly+annual):** cancel→Stripe flag true + status cancel_at_period_end; resume→flag false + status active + date preserved; cancel again stays synced; trial_eligible stays false through the cycle; no duplicate subscriptions. Test accounts/subs cleaned up.
+- Files: backend/platform_v1.py, frontend/src/pages/Billing.jsx, i18n en/ar/es. **No Stripe keys/webhook/pricing/checkout changed. Production was NOT deployed or modified.**
+
+
 ## PRODUCTION EMAIL AUDIT + SENDER HARDENING — (2026-08, preview only — NOT deployed)
 Audited the full transactional-email system (code + preview config). Findings: **NO code path/fallback/seed/hardcode sends to `delivered@resend.dev`** — the only resend.dev reference was a *sender* fallback (now removed); the delivered@resend.dev entries in Resend logs were historical manual acceptance tests, not a production bug. All flows route to the real user's email dynamically (verify=user.email, resend-verify=user.email, reset=requester email, trial=owner.email, referral=owner.email, meeting guest=visitor_email + host=card-owner account email, invite=email). Email HTML is fully TapPresence-branded (no Ariadni; APP_NAME "ariadni-id" is only an upload-path prefix). Billing/receipt emails = NOT IMPLEMENTED (left for a separate task).
 - **Code change (only file):** `backend/platform_v1.py` — `send_email` now refuses to send and logs a clear config error if `SENDER_EMAIL` (or `RESEND_API_KEY`) is missing, instead of silently falling back to `onboarding@resend.dev`. `SENDER_EMAIL` default changed from `onboarding@resend.dev` to empty.

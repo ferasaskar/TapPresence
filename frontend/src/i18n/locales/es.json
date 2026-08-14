@@ -579,7 +579,12 @@
     "rewardApplied": "{{pct}}% de recompensa aplicada a tu próxima factura",
     "rewardQueued": "{{pct}}% en cola para el siguiente ciclo",
     "referredYou": "Tienes un {{pct}}% de descuento por referido en tu plan.",
-    "demoNote": "Modo demo — las mejoras se activan al instante sin pago real. Un proveedor de pagos gestionará la facturación en producción."
+    "demoNote": "Modo demo — las mejoras se activan al instante sin pago real. Un proveedor de pagos gestionará la facturación en producción.",
+    "resume": "Reanudar suscripción",
+    "resumed": "Suscripción reanudada",
+    "nextBilling": "Próxima fecha de facturación",
+    "remainsActiveUntil": "Tu plan {{plan}} permanece activo hasta",
+    "billingCycle": "Ciclo de facturación"
   },
   "referral": {
     "title": "Recomienda y gana",

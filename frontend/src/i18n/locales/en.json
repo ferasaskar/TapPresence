@@ -579,7 +579,12 @@
     "rewardApplied": "{{pct}}% reward applied to your next bill",
     "rewardQueued": "{{pct}}% queued for the following cycle",
     "referredYou": "You have a {{pct}}% referral discount on your plan.",
-    "demoNote": "Demo mode — upgrades activate instantly without a real payment. A payment provider will handle billing in production."
+    "demoNote": "Demo mode — upgrades activate instantly without a real payment. A payment provider will handle billing in production.",
+    "resume": "Resume subscription",
+    "resumed": "Subscription resumed",
+    "nextBilling": "Next billing date",
+    "remainsActiveUntil": "Your {{plan}} plan remains active until",
+    "billingCycle": "Billing cycle"
   },
   "referral": {
     "title": "Refer & Earn",
