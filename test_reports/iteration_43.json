@@ -1,0 +1,43 @@
+{
+  "summary": "Frontend-only GA4 runtime verification for TapPresence (Measurement ID G-YY864DN86T). All 8 requested checks passed: gtag.js script loaded with correct ID, window.gtag is a function, window.dataLayer contains consent default + config(G-YY864DN86T) commands, network requests fired to googletagmanager.com/gtag/js AND google-analytics.com/g/collect, SPA page_view events pushed with sanitized page_location (no query strings, no PII), PostHog still present (additive), consent 'update' with analytics_storage:'denied' and later 'granted' correctly pushed after localStorage tp_consent change + tp-consent-changed dispatch, and no JS console errors on /, /pricing, /digital-business-card.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_evidence": {
+    "gtag_script_src": "https://www.googletagmanager.com/gtag/js?id=G-YY864DN86T (present)",
+    "window_gtag": "function",
+    "window_posthog": "object (preserved)",
+    "dataLayer_home_entries": [
+      "['js', <Date>]",
+      "['consent','default',{ad_storage:denied,ad_user_data:denied,ad_personalization:denied,analytics_storage:granted}]",
+      "['config','G-YY864DN86T',{anonymize_ip:true, allow_google_signals:false, allow_ad_personalization_signals:false, send_page_view:false}]",
+      "['event','page_view',{page_path:'/', page_location:'https://template-hub-184.preview.emergentagent.com/', ...}] (x2 on homepage)"
+    ],
+    "page_view_count_after_multi_nav": ">1 (verified across /, /pricing, /digital-business-card via g/collect requests dp=%2F, dp=%2Fpricing, dp=%2Fdigital-business-card)",
+    "no_query_strings_in_page_location": true,
+    "network_requests_fired": [
+      "https://www.googletagmanager.com/gtag/js?id=G-YY864DN86T",
+      "https://www.google-analytics.com/g/collect?...&dp=%2F&...",
+      "https://www.google-analytics.com/g/collect?...&dp=%2Fpricing&...",
+      "8 GA network requests total observed"
+    ],
+    "consent_reject_update_pushed": "['consent','update',{analytics_storage:'denied'}]",
+    "consent_grant_update_pushed": "['consent','update',{analytics_storage:'granted'}]",
+    "console_js_errors": 0
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GAListener useEffect for trackPageView is triggered twice on initial mount in some scenarios (observed 2 page_view entries for the same path on load). Likely React StrictMode double-invoke in dev, harmless in prod. Non-blocking.",
+    "ga.js correctly relies on REACT_APP_GA4_MEASUREMENT_ID env var; no hardcoded ID. Good."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "GA4 integration verified end-to-end in preview env (non-GDPR/USD default => opt-out, analytics_storage granted by default). Real /g/collect endpoint is reachable in this environment. Consent toggle via localStorage 'tp_consent' + window event 'tp-consent-changed' correctly emits gtag consent updates. Do NOT retest unless code changes."
+}

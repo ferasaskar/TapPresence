@@ -34,6 +34,7 @@ import { PaymentSuccess, PaymentCancel } from "@/pages/PaymentResult";
 import GoogleFinish from "@/pages/GoogleFinish";
 import LocaleToast from "@/components/LocaleToast";
 import ConsentBanner from "@/components/ConsentBanner";
+import GAListener from "@/components/GAListener";
 import PrivacyCenter from "@/pages/PrivacyCenter";
 import Privacy from "@/pages/Privacy";
 import { Loader2 } from "lucide-react";
@@ -71,6 +72,7 @@ function App() {
     <div className="App">
       <AuthProvider>
         <BrowserRouter>
+          <GAListener />
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />

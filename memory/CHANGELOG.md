@@ -25,3 +25,16 @@ Continues SEO Phase 1 + Phase 2. Scope strictly: social image, OG/Twitter metada
 - Google Search Console: no verification value present → owner verification required.
 - Bing Webmaster: no verification token present → owner verification required.
 - Final production redeploy: pending owner authorization (one final deploy).
+
+## 2026-08-15 — GA4 Analytics Connected (PREVIEW, agent-verified 100%; needs redeploy for production)
+
+Measurement ID `G-YY864DN86T`. Additive to existing PostHog (PostHog untouched). No UI changes.
+
+### Files changed
+- `frontend/.env` — added `REACT_APP_GA4_MEASUREMENT_ID=G-YY864DN86T` (public, non-secret).
+- `frontend/src/lib/ga.js` (NEW) — gtag.js loader + Google Consent Mode v2. Reads ID from env; if absent, GA no-ops. `initGA()` pushes consent default (ads always denied; analytics_storage per consent), `config` with anonymize_ip + google_signals off + send_page_view:false. `analyticsAllowed()` mirrors app rule: EU/UK (EUR/GBP) opt-in, else opt-out. Listens to `tp-consent-changed` → consent update. `trackPageView()` strips query strings and redacts token routes (reset/verify/activate/m/invite/auth) → no PII.
+- `frontend/src/components/GAListener.jsx` (NEW) — initGA once + trackPageView on every route change.
+- `frontend/src/App.js` — `<GAListener/>` mounted inside `<BrowserRouter>`.
+
+### Verified (testing_agent iteration_43 — frontend 100%)
+gtag.js loaded with correct ID; dataLayer has consent default + config; real network hits to googletagmanager.com/gtag/js and google-analytics.com/g/collect for /, /pricing, /digital-business-card with sanitized page_location (no query strings/PII); PostHog still present; consent reject→analytics_storage denied, grant→granted; no console errors. Production verification pending owner redeploy.
