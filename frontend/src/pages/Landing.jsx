@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useMotionValueEvent } from "framer-motion";
 import { Sparkles, ArrowRight, Users, Nfc, PlayCircle, Star, BrainCircuit, LineChart, Linkedin, Twitter, Instagram, Apple, Play } from "lucide-react";
+import { useSeo, ORG_JSONLD, WEBSITE_JSONLD, SOFTWARE_APP_JSONLD } from "@/lib/seo";
 import "@/components/landing/landing.css";
 import HeroVisual from "@/components/landing/HeroVisual";
 import GoldWaveCanvas from "@/components/landing/GoldWaveCanvas";
@@ -473,6 +474,12 @@ function GoogleCalendarInfo() {
 
 /* ---------------------------------------------------------------- PAGE */
 export default function Landing() {
+  useSeo({
+    title: "TapPresence — Digital Business Cards, NFC & QR Networking",
+    description: "TapPresence is a premium digital business card platform — share your profile via NFC & QR, capture leads, book meetings, run a CRM pipeline, send AI follow-ups and track analytics. For individuals and teams.",
+    path: "/",
+    jsonLd: [ORG_JSONLD, WEBSITE_JSONLD, SOFTWARE_APP_JSONLD],
+  });
   return (
     <div className="lp-root min-h-screen">
       <Navbar />

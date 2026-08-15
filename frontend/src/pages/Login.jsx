@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { useSeo } from "@/lib/seo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ const fmtErr = (detail) => {
 };
 
 export default function Login() {
+  useSeo({ title: "Sign in — TapPresence", description: "Sign in to your TapPresence account to manage your digital business card, leads, meetings and analytics.", path: "/login" });
   const { login } = useAuth();
   const { t } = useLocale();
   const navigate = useNavigate();

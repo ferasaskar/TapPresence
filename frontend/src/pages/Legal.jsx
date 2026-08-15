@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useLocale } from "@/i18n/useLocale";
+import { useSeo, breadcrumb } from "@/lib/seo";
 
 // NOTE: Company-specific legal facts are marked with [[ ... ]] and MUST be supplied by TapPresence
 // (legal entity name, address, jurisdiction, contact, DPO). Do not treat this as legal advice.
@@ -82,6 +83,13 @@ export default function Legal() {
   const { doc } = useParams();
   const { t } = useLocale();
   const c = DOCS[doc];
+  useSeo({
+    title: c ? `${c.title || doc} — TapPresence` : "Legal — TapPresence",
+    description: c ? `TapPresence ${(c.title || doc)}. Read our legal terms, privacy and policies.` : "TapPresence legal documents — terms, privacy and policies.",
+    path: doc ? `/legal/${doc}` : "/legal",
+    noindex: !c,
+    jsonLd: c ? [breadcrumb([{ name: "Home", path: "/" }, { name: "Legal", path: "/legal" }, { name: c.title || doc, path: `/legal/${doc}` }])] : undefined,
+  });
   return (
     <div className="aria-dark relative min-h-screen overflow-hidden bg-[#0B0D12] text-white" style={{ fontFamily: "'Outfit', sans-serif" }}>
       <div className="grain-overlay" style={{ opacity: 0.05 }} />

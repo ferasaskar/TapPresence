@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { useSeo } from "@/lib/seo";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ import { GoogleButton, AuthDivider } from "@/components/GoogleButton";
 const fmtErr = (d) => typeof d === "string" ? d : Array.isArray(d) ? d.map((e) => e?.msg || "").join(" ") : null;
 
 export default function Register() {
+  useSeo({ title: "Create your free TapPresence account", description: "Start your free 14-day TapPresence trial — create a digital business card, share via NFC & QR, capture leads and follow up with AI. No card required.", path: "/register" });
   const { register, applyData } = useAuth();
   const { t } = useLocale();
   const navigate = useNavigate();
