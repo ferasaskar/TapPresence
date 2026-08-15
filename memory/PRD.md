@@ -1,5 +1,18 @@
 # TapPresence (formerly ARIADNI ID) — Product Requirements & Build Log
 
+## SEO / AI SEARCH — PHASE 2 (2026-08, preview only — NOT deployed) — agent-verified in preview
+Built on Phase 1. No pricing/auth/business-logic changes; no new deps; homepage not redesigned.
+- **Brand entity:** ORG_JSONLD.sameAs now = verified LinkedIn (`/company/tappresence/`) + Instagram (`/tappresence/`); homepage footer social icons point to them (were dead `#`). Positioning reflects real features (digital card, NFC/QR, save-contact, scanner, lead capture, CRM pipeline, follow-up, meetings, analytics, teams).
+- **13 SEO landing pages** via reusable `pages/seo/SeoLanding.jsx` + content config `pages/seo/landingContent.js`: /digital-business-card, /nfc-business-card, /business-card-scanner, /lead-capture, /teams, /real-estate, /sales-teams, /event-networking (renamed from /events to avoid collision with protected Events route), /consultants, /healthcare, /digital-business-card-uae, /digital-business-card-dubai. Each: unique H1/title/description, self-canonical, factual content + features + FAQ + CTA to /register + internal related links; JSON-LD BreadcrumbList+SoftwareApplication+FAQPage. On-brand dark/gold layout, mobile responsive.
+- **/pricing** (`pages/seo/PricingPage.jsx`): reuses existing PricingSection → SAME `/api/commercial/pricing` source (no hardcoded prices, regional/currency preserved); BreadcrumbList+SoftwareApplication JSON-LD.
+- **Internal linking:** homepage Footer gained a "Solutions" strip + social links; SeoLanding footer links across all pages → no orphans, nav not overloaded.
+- **Sitemap:** expanded to 21 indexable URLs with lastmod; private/admin/auth excluded.
+- **hreflang:** still NOT applicable (client-side language only) — reported.
+- **Verified (Playwright):** all 13 pages + /pricing correct title/canonical/H1/JSON-LD; pricing shows live values; /events protected route still redirects (no regression). Routes registered before `/:slug` catch-all.
+- **External (user action, not done):** GA4, Google Search Console + Bing verification codes needed.
+- Files: src/lib/seo.js, src/pages/seo/{SeoLanding.jsx,PricingPage.jsx,landingContent.js} (new), src/pages/Landing.jsx, src/App.js, public/sitemap.xml. Not deployed.
+
+
 ## SEO / AI SEARCH — PHASE 1 (2026-08, preview only — NOT deployed) — AGENT-VERIFIED per-route in preview
 Source of prod SEO = React app output snapshotted by host prerender → fixes made in React source (survive redeploy). No new deps; dependency-free head manager.
 - **New `src/lib/seo.js`**: `useSeo({title,description,path,jsonLd,noindex})` upserts title, description, self-referencing canonical, OG/Twitter mirrors, robots noindex, and JSON-LD into `<head>` on mount (captured by prerender). Exports ORG_JSONLD (Organization, logo=/logo512.png, **no sameAs — no verified socials exist**), WEBSITE_JSONLD, SOFTWARE_APP_JSONLD, breadcrumb().

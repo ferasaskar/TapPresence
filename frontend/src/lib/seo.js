@@ -80,8 +80,7 @@ export function useSeo({ title, description, path, jsonLd, noindex = false }) {
   }, [title, description, path, noindex, JSON.stringify(jsonLd)]);
 }
 
-// Reusable site-wide entity graph. sameAs intentionally omitted — no verified official
-// TapPresence social profiles exist in the project/config (do not invent them).
+// Reusable site-wide entity graph. sameAs uses ONLY verified official TapPresence profiles.
 export const ORG_JSONLD = {
   "@context": "https://schema.org",
   "@type": "Organization",
@@ -89,7 +88,11 @@ export const ORG_JSONLD = {
   url: SEO_ORIGIN,
   logo: SEO_LOGO,
   description:
-    "TapPresence is a digital business card and professional networking platform with NFC & QR sharing, lead capture, meetings, CRM pipeline, AI follow-up and analytics.",
+    "TapPresence is a digital business card and professional networking platform — NFC & QR sharing, save-contact, business card scanner, lead capture, CRM pipeline, follow-up, meeting booking, analytics and teams.",
+  sameAs: [
+    "https://www.linkedin.com/company/tappresence/",
+    "https://www.instagram.com/tappresence/",
+  ],
 };
 
 export const WEBSITE_JSONLD = {
@@ -120,5 +123,15 @@ export const breadcrumb = (items) => ({
     position: i + 1,
     name: it.name,
     item: `${SEO_ORIGIN}${it.path}`,
+  })),
+});
+
+export const faqJsonLd = (qa) => ({
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: qa.map((x) => ({
+    "@type": "Question",
+    name: x.q,
+    acceptedAnswer: { "@type": "Answer", text: x.a },
   })),
 });

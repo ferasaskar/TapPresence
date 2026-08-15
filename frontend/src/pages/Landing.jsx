@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion, useScroll, useMotionValueEvent } from "framer-motion";
 import { Sparkles, ArrowRight, Users, Nfc, PlayCircle, Star, BrainCircuit, LineChart, Linkedin, Twitter, Instagram, Apple, Play } from "lucide-react";
 import { useSeo, ORG_JSONLD, WEBSITE_JSONLD, SOFTWARE_APP_JSONLD } from "@/lib/seo";
+import { SEO_FOOTER_LINKS } from "@/pages/seo/landingContent";
 import "@/components/landing/landing.css";
 import HeroVisual from "@/components/landing/HeroVisual";
 import GoldWaveCanvas from "@/components/landing/GoldWaveCanvas";
@@ -421,6 +422,10 @@ function Footer() {
             <Link to="/privacy" data-testid="footer-privacy-policy" className="inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">Privacy Policy</Link>
             <Link to="/privacy-center" data-testid="footer-privacy-choices" className="inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">{t("landing.footer.privacyChoices")}</Link>
           </div>
+          <div className="mt-3 flex gap-3">
+            <a href="https://www.linkedin.com/company/tappresence/" target="_blank" rel="noreferrer" className="text-[12px] text-[#8A8F97] hover:text-white">LinkedIn</a>
+            <a href="https://www.instagram.com/tappresence/" target="_blank" rel="noreferrer" className="text-[12px] text-[#8A8F97] hover:text-white">Instagram</a>
+          </div>
         </div>
         {FOOTER_GROUPS.map((g) => (
           <div key={g.title}>
@@ -443,13 +448,23 @@ function Footer() {
             </button>
           </form>
           <div className="mt-4 flex items-center gap-3">
-            {[Linkedin, Twitter, Instagram].map((Icon, i) => (
-              <a key={i} href="#" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 text-[#8A8F97] transition-colors hover:border-[#D6A653]/40 hover:text-[#D6A653]">
+            {[["https://www.linkedin.com/company/tappresence/", Linkedin], ["https://www.instagram.com/tappresence/", Instagram]].map(([href, Icon], i) => (
+              <a key={i} href={href} target="_blank" rel="noreferrer" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 text-[#8A8F97] transition-colors hover:border-[#D6A653]/40 hover:text-[#D6A653]">
                 <Icon className="h-3.5 w-3.5" />
               </a>
             ))}
           </div>
         </div>
+      </div>
+      {/* SEO internal links — discoverable landing/solution pages (not in primary nav) */}
+      <div className="mx-auto mt-10 max-w-[1320px] border-t border-white/8 px-5 pt-8 sm:px-8 lg:px-12" data-testid="footer-solutions">
+        <h4 className="text-[12px] font-semibold uppercase tracking-wider text-white/40">Solutions</h4>
+        <nav className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+          {SEO_FOOTER_LINKS.map((l) => (
+            <Link key={l.path} to={l.path} className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]" data-testid={`home-seo-link-${l.path.slice(1)}`}>{l.label}</Link>
+          ))}
+          <Link to="/industries" className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]">Industries</Link>
+        </nav>
       </div>
     </footer>
   );

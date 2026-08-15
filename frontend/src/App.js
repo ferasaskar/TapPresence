@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import PublicProfile from "@/pages/PublicProfile";
+import SeoLanding from "@/pages/seo/SeoLanding";
+import PricingPage from "@/pages/seo/PricingPage";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Admin from "@/pages/Admin";
@@ -105,6 +107,19 @@ function App() {
             <Route path="/m/:token" element={<ManageMeeting />} />
             <Route path="/invite/:token" element={<AcceptInvite />} />
             <Route path="/industries" element={<IndustryShowcase />} />
+            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/digital-business-card" element={<SeoLanding />} />
+            <Route path="/nfc-business-card" element={<SeoLanding />} />
+            <Route path="/business-card-scanner" element={<SeoLanding />} />
+            <Route path="/lead-capture" element={<SeoLanding />} />
+            <Route path="/teams" element={<SeoLanding />} />
+            <Route path="/real-estate" element={<SeoLanding />} />
+            <Route path="/sales-teams" element={<SeoLanding />} />
+            <Route path="/event-networking" element={<SeoLanding />} />
+            <Route path="/consultants" element={<SeoLanding />} />
+            <Route path="/healthcare" element={<SeoLanding />} />
+            <Route path="/digital-business-card-uae" element={<SeoLanding />} />
+            <Route path="/digital-business-card-dubai" element={<SeoLanding />} />
             <Route path="/:slug" element={<PublicProfile />} />
           </Routes>
           <ConsentBanner />
