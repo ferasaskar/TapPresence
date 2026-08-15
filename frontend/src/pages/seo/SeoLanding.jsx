@@ -2,7 +2,7 @@ import { useLocation, Link, Navigate } from "react-router-dom";
 import { ArrowRight, Check, ChevronRight } from "lucide-react";
 import { useSeo, breadcrumb, faqJsonLd, SOFTWARE_APP_JSONLD } from "@/lib/seo";
 import { trackTrialClick } from "@/lib/ga";
-import { LANDING_PAGES, SEO_FOOTER_LINKS, FEAT, TRIAL } from "./landingContent";
+import { LANDING_PAGES, SEO_FOOTER_LINKS, COMPANY_FOOTER_LINKS, FEAT, TRIAL } from "./landingContent";
 
 const SeoFooter = () => (
   <footer className="border-t border-white/10 bg-[#08090B] px-6 py-12" data-testid="seo-footer">
@@ -13,6 +13,9 @@ const SeoFooter = () => (
           <Link key={l.path} to={l.path} className="transition-colors hover:text-[#D6A653]" data-testid={`footer-link-${l.path.slice(1)}`}>{l.label}</Link>
         ))}
         <Link to="/industries" className="transition-colors hover:text-[#D6A653]">Industries</Link>
+        {COMPANY_FOOTER_LINKS.map((l) => (
+          <Link key={l.path} to={l.path} className="transition-colors hover:text-[#D6A653]" data-testid={`footer-company-link-${l.path.slice(1)}`}>{l.label}</Link>
+        ))}
         <Link to="/legal/privacy" className="transition-colors hover:text-[#D6A653]">Privacy</Link>
         <Link to="/legal/terms" className="transition-colors hover:text-[#D6A653]">Terms</Link>
       </nav>
@@ -65,6 +68,20 @@ export default function SeoLanding() {
         </Link>
         <p className="mt-3 text-xs text-white/40">No card required · Taxes calculated at checkout</p>
       </section>
+
+      {/* in-depth content sections */}
+      {page.sections?.length ? (
+        <section className="mx-auto max-w-3xl px-6 py-8" data-testid="seo-sections">
+          <div className="space-y-8">
+            {page.sections.map((s, i) => (
+              <div key={i} data-testid={`seo-section-${i}`}>
+                <h2 className="text-xl font-medium text-white sm:text-2xl">{s.h}</h2>
+                <p className="mt-3 text-base leading-relaxed text-white/65">{s.p}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* features */}
       <section className="mx-auto max-w-4xl px-6 py-10">

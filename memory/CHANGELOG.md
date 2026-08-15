@@ -54,3 +54,13 @@ Files changed:
 - backend/platform_v1.py — /billing/checkout and /payments/status now also return non-PII amount + currency.
 
 Verified (testing_agent iteration_44): 5/6 events fully E2E with real dataLayer + /g/collect evidence + real backend outcomes; each fires exactly once (StrictMode/poll-safe). begin_checkout carried real value 99.99 USD. purchase code-path verified (Stripe hosted-form completion not automatable — env limit, not a code bug). NO PII in any GA payload; Consent Mode v2 intact; PostHog preserved; no console errors.
+
+## 2026-08-15 — SEO P0 + P1 Implementation (PREVIEW, agent-verified 100%; needs redeploy)
+
+Canonical host kept non-www https://tappresence.com. No redesign, no pricing/auth/billing changes. Reused SeoLanding.jsx + landingContent.js.
+
+New routes: /event-lead-capture (SeoLanding), /about /contact /security (CompanyPages.jsx), /compare/:comp (ComparePage.jsx — 4 competitors, noindex until competitor data verified, out of sitemap).
+Improved: 12 existing SEO pages gained in-depth `sections` (H2+prose), updated titles (digital-business-card "for Professionals & Teams"; UAE/Dubai keyworded; scanner "App"), differentiated /event-networking (networking) vs /event-lead-capture (lead-capture software), NFC page de-positioned from hardware store, internal linking expanded, homepage hero-purpose now semantic H2 (brand H1 preserved), Company footer nav added.
+Files: landingContent.js (rewritten, +sections +event-lead-capture +COMPANY_FOOTER_LINKS), SeoLanding.jsx (sections render + company footer), CompanyPages.jsx (NEW), compareContent.js + ComparePage.jsx (NEW), App.js (routes), Landing.jsx (H2 + company footer), public/sitemap.xml (+event-lead-capture/about/contact/security; excludes /compare + private).
+Verified (testing_agent iteration_45, frontend 100%, 0 action items): all pages load+hard-refresh, one H1, unique titles, self canonicals, indexable (compare=noindex), valid JSON-LD, sections present, internal links (no href='#'), EN/AR-RTL/ES OK, mobile OK, sitemap/robots correct, signup + protected-route + pricing regression PASS, no console-breaking errors.
+Deferred to P2 (per user): blog/guides content, external authority (G2/Capterra/directories/backlinks), competitor-data verification for compare pages.

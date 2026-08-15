@@ -4,7 +4,7 @@ import { motion, useScroll, useMotionValueEvent } from "framer-motion";
 import { Sparkles, ArrowRight, Users, Nfc, PlayCircle, Star, BrainCircuit, LineChart, Linkedin, Twitter, Instagram, Apple, Play } from "lucide-react";
 import { useSeo, ORG_JSONLD, WEBSITE_JSONLD, SOFTWARE_APP_JSONLD } from "@/lib/seo";
 import { trackTrialClick } from "@/lib/ga";
-import { SEO_FOOTER_LINKS } from "@/pages/seo/landingContent";
+import { SEO_FOOTER_LINKS, COMPANY_FOOTER_LINKS } from "@/pages/seo/landingContent";
 import "@/components/landing/landing.css";
 import HeroVisual from "@/components/landing/HeroVisual";
 import GoldWaveCanvas from "@/components/landing/GoldWaveCanvas";
@@ -94,9 +94,9 @@ function Hero() {
             {t("landing.hero.subtitle")}
           </motion.p>
 
-          <p className="mt-5 max-w-[560px] text-[16px] font-medium leading-relaxed text-[#D7DAE0]" data-testid="hero-purpose">
+          <h2 className="mt-5 max-w-[560px] text-[16px] font-medium leading-relaxed text-[#D7DAE0]" data-testid="hero-purpose">
             {t("landing.hero.purpose")}
-          </p>
+          </h2>
           <p className="mt-2.5 max-w-[560px] text-[14px] leading-relaxed text-[#9096A0]" data-testid="hero-capabilities">
             {t("landing.hero.capabilities")}
           </p>
@@ -465,6 +465,14 @@ function Footer() {
             <Link key={l.path} to={l.path} className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]" data-testid={`home-seo-link-${l.path.slice(1)}`}>{l.label}</Link>
           ))}
           <Link to="/industries" className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]">Industries</Link>
+        </nav>
+        <h4 className="mt-6 text-[12px] font-semibold uppercase tracking-wider text-white/40">Company</h4>
+        <nav className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+          {COMPANY_FOOTER_LINKS.map((l) => (
+            <Link key={l.path} to={l.path} className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]" data-testid={`home-company-link-${l.path.slice(1)}`}>{l.label}</Link>
+          ))}
+          <Link to="/legal/privacy" className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]">Privacy</Link>
+          <Link to="/legal/terms" className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]">Terms</Link>
         </nav>
       </div>
     </footer>

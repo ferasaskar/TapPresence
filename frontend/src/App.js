@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import PublicProfile from "@/pages/PublicProfile";
 import SeoLanding from "@/pages/seo/SeoLanding";
 import PricingPage from "@/pages/seo/PricingPage";
+import { About, Contact, Security } from "@/pages/seo/CompanyPages";
+import ComparePage from "@/pages/seo/ComparePage";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Admin from "@/pages/Admin";
@@ -122,6 +124,11 @@ function App() {
             <Route path="/healthcare" element={<SeoLanding />} />
             <Route path="/digital-business-card-uae" element={<SeoLanding />} />
             <Route path="/digital-business-card-dubai" element={<SeoLanding />} />
+            <Route path="/event-lead-capture" element={<SeoLanding />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/security" element={<Security />} />
+            <Route path="/compare/:comp" element={<ComparePage />} />
             <Route path="/:slug" element={<PublicProfile />} />
           </Routes>
           <ConsentBanner />
