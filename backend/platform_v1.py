@@ -161,6 +161,25 @@ EMAIL_MSGS = {
         "es": {"subject": "Tu prueba de TapPresence ha terminado", "title": "Tu prueba ha terminado", "cta": "Reactivar",
                "intro": "Tu prueba de 14 días de TapPresence ha terminado. Tus datos están a salvo — mejora tu plan cuando quieras para reactivar tu tarjeta y las funciones premium."},
     },
+    "payment_failed": {
+        "en": {"subject": "Action needed: your TapPresence payment failed", "title": "Your payment didn't go through", "cta": "Update payment method",
+               "intro": "We couldn't process your latest TapPresence payment of <b>{amount}</b>. Your account is still active for now — please update your payment method to avoid any interruption.",
+               "footnote": "You're taken to Stripe's secure billing page — TapPresence never sees your card details."},
+        "ar": {"subject": "إجراء مطلوب: فشل الدفع في TapPresence", "title": "لم تتم عملية الدفع", "cta": "تحديث طريقة الدفع",
+               "intro": "لم نتمكن من معالجة دفعتك الأخيرة في TapPresence بقيمة <b>{amount}</b>. لا يزال حسابك نشطًا حاليًا — يُرجى تحديث طريقة الدفع لتجنب أي انقطاع.",
+               "footnote": "سيتم توجيهك إلى صفحة الفوترة الآمنة من Stripe — لا يطّلع TapPresence على بيانات بطاقتك."},
+        "es": {"subject": "Acción requerida: falló tu pago de TapPresence", "title": "Tu pago no se procesó", "cta": "Actualizar método de pago",
+               "intro": "No pudimos procesar tu último pago de TapPresence de <b>{amount}</b>. Tu cuenta sigue activa por ahora — actualiza tu método de pago para evitar interrupciones.",
+               "footnote": "Se te redirige a la página segura de facturación de Stripe — TapPresence nunca ve los datos de tu tarjeta."},
+    },
+    "payment_recovered": {
+        "en": {"subject": "You're all set — TapPresence payment received", "title": "Payment successful", "cta": "View billing",
+               "intro": "Good news — your TapPresence payment went through and your subscription is healthy again. No further action is needed."},
+        "ar": {"subject": "تمت العملية — تم استلام الدفع في TapPresence", "title": "تم الدفع بنجاح", "cta": "عرض الفوترة",
+               "intro": "أخبار جيدة — تمت عملية الدفع في TapPresence واشتراكك الآن سليم مجددًا. لا حاجة لأي إجراء إضافي."},
+        "es": {"subject": "Todo listo — pago de TapPresence recibido", "title": "Pago exitoso", "cta": "Ver facturación",
+               "intro": "Buenas noticias — tu pago de TapPresence se procesó y tu suscripción está activa de nuevo. No necesitas hacer nada más."},
+    },
     "referral_reward": {
         "en": {"subject": "You've earned a free month of TapPresence", "title": "Reward unlocked — 1 month free", "cta": "View my rewards",
                "intro": "Great news! You've reached {per} successful paid referrals and earned <b>{months} month(s) free</b> on TapPresence. Your reward is ready to apply to your billing."},
@@ -305,7 +324,9 @@ PLAN_ENTITLEMENTS = {
 }
 
 # provider-neutral subscription states; card stays live through cancel_at_period_end
-ACTIVE_STATES = {"trialing", "active", "cancel_at_period_end"}
+# past_due is RECOVERABLE (Stripe is still retrying) → keep access during the dunning/grace window.
+# unpaid / incomplete / incomplete_expired / cancelled are terminal → access ends.
+ACTIVE_STATES = {"trialing", "active", "cancel_at_period_end", "past_due"}
 
 DEFAULT_PLANS = [
     {"id": "free", "name": "Legacy", "price_month": 0, "price_year": 0, "public": False},
@@ -719,6 +740,19 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
     # referral discounts: referred-customer discount on their price + referrer reward on their own bill
     referred = ((ws or {}).get("subscription") or {}).get("referral") or {}
     reward = (ws or {}).get("referral_rewards") or {}
+    sub_obj = (ws or {}).get("subscription") or {}
+    dunning = sub_obj.get("dunning") or {}
+    payment_failed = ent["status"] in ("past_due", "unpaid") or dunning.get("state") == "failed"
+    payment_state = {
+        "failed": bool(payment_failed),
+        "status": ent["status"],
+        "amount_due": dunning.get("amount_due") if payment_failed else None,
+        "currency": dunning.get("currency") if payment_failed else None,
+        "hosted_invoice_url": dunning.get("hosted_invoice_url") if payment_failed else None,
+        "next_attempt": dunning.get("next_attempt") if payment_failed else None,
+        "recovered": dunning.get("state") == "recovered",
+        "has_customer": bool(sub_obj.get("stripe_customer_id")),
+    }
     discount = {
         "referred_month_pct": float(referred.get("discount_month_pct", 0)) if referred else 0,
         "referred_year_pct": float(referred.get("discount_year_pct", 0)) if referred else 0,
@@ -736,11 +770,87 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
         "commercial": {"trial": cfg["trial"], "plans": cfg["plans"], "referral": cfg["referral"],
                        "pricing": pricing, "markets": COMMERCIAL_MARKETS},
         "discount": discount,
+        "payment_state": payment_state,
         "demo_billing": ALLOW_DEMO_BILLING,
         "usage": {"ai": {"used": ai_used, "limit": ent.get("ai_limit"), "period": ent.get("ai_period")},
                   "scanner": {"used": sc_used, "limit": ent.get("scanner_limit"), "period": ent.get("scanner_period")},
                   "cards": {"used": cards_used, "limit": ent.get("max_cards")}},
     }
+
+
+@platform_router.post("/billing/portal")
+async def billing_portal(user: dict = Depends(current_user)):
+    """Stripe-hosted billing portal for 'Update payment method / Fix payment'.
+    TapPresence never sees or stores card details. Owner/admin only."""
+    ws_id = await _primary_ws_id(user)
+    if not ws_id:
+        raise HTTPException(404, "No workspace")
+    await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    customer_id = ((ws or {}).get("subscription") or {}).get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(400, "No Stripe customer on file for this workspace.")
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id, return_url=f"{PUBLIC_APP_URL}/billing")
+    except stripe.error.StripeError as e:
+        logger.error("[billing] portal creation failed ws=%s type=%s", ws_id, type(e).__name__)
+        raise HTTPException(503, "The billing portal is temporarily unavailable. Please try again shortly.")
+    return {"url": session.url}
+
+
+@platform_router.get("/billing/invoices")
+async def billing_invoices(user: dict = Depends(current_user)):
+    """Invoice & receipt history — Stripe is the authoritative source. Owner/admin only; a workspace
+    can only see its OWN invoices (scoped by its Stripe customer id). Returns [] when none."""
+    ws_id = await _primary_ws_id(user)
+    if not ws_id:
+        raise HTTPException(404, "No workspace")
+    await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    customer_id = ((ws or {}).get("subscription") or {}).get("stripe_customer_id")
+    if not customer_id:
+        return {"invoices": [], "has_customer": False}
+    try:
+        inv_list = stripe.Invoice.list(customer=customer_id, limit=24, expand=["data.charge"])
+    except stripe.error.StripeError as e:
+        logger.error("[billing] invoice list failed ws=%s type=%s", ws_id, type(e).__name__)
+        raise HTTPException(503, "Could not load billing history right now. Please try again shortly.")
+    out = []
+    for inv in inv_list.get("data", []):
+        lines = (inv.get("lines") or {}).get("data") or []
+        line0 = lines[0] if lines else {}
+        period = line0.get("period") or {}
+        plan_nick = None
+        price = line0.get("price") or {}
+        if price:
+            plan_nick = price.get("nickname") or ((price.get("product") if isinstance(price.get("product"), str) else None))
+        disc = inv.get("total_discount_amounts") or []
+        charge = inv.get("charge") if isinstance(inv.get("charge"), dict) else None
+        receipt_url = (charge or {}).get("receipt_url")
+        refunded = bool((charge or {}).get("refunded")) or (inv.get("status") == "void")
+        status = "refunded" if (charge or {}).get("refunded") else inv.get("status")
+        out.append({
+            "id": inv.get("id"),
+            "number": inv.get("number"),
+            "date": (datetime.fromtimestamp(inv["created"], timezone.utc).isoformat() if inv.get("created") else None),
+            "plan": (inv.get("metadata") or {}).get("plan") or plan_nick,
+            "period_start": (datetime.fromtimestamp(period["start"], timezone.utc).isoformat() if period.get("start") else None),
+            "period_end": (datetime.fromtimestamp(period["end"], timezone.utc).isoformat() if period.get("end") else None),
+            "subtotal": inv.get("subtotal"),
+            "discount": sum(d.get("amount", 0) for d in disc) if disc else 0,
+            "tax": inv.get("tax") or 0,
+            "total": inv.get("total"),
+            "amount_paid": inv.get("amount_paid"),
+            "currency": (inv.get("currency") or "usd").upper(),
+            "status": status,
+            "paid": bool(inv.get("paid")),
+            "refunded": refunded,
+            "hosted_invoice_url": inv.get("hosted_invoice_url"),
+            "invoice_pdf": inv.get("invoice_pdf"),
+            "receipt_url": receipt_url,
+        })
+    return {"invoices": out, "has_customer": True}
 
 
 @platform_router.get("/commercial/pricing")
@@ -1006,8 +1116,9 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
 async def _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, market, source, event_id):
     st = (stripe_sub or {}).get("status")
     status_map = {"trialing": "trialing", "active": "active", "past_due": "past_due",
-                  "canceled": "cancelled", "unpaid": "past_due", "incomplete": "past_due"}
-    status = status_map.get(st, "active")
+                  "canceled": "cancelled", "unpaid": "unpaid", "incomplete": "incomplete",
+                  "incomplete_expired": "incomplete_expired", "paused": "past_due"}
+    status = status_map.get(st, st or "active")
     cpe = stripe_sub.get("current_period_end")
     if not cpe:
         # Newer Stripe API versions expose the period end on the subscription ITEM, not the subscription.
@@ -1172,6 +1283,12 @@ async def stripe_webhook(request: Request):
     except Exception:
         raise HTTPException(400, "Invalid signature")
     obj, t, eid = event["data"]["object"], event["type"], event.get("id")
+    # Idempotency: dedupe multi-delivered webhooks so we never double-process or double-email.
+    if eid:
+        try:
+            await db.stripe_events.insert_one({"id": eid, "type": t, "created_at": now_iso()})
+        except Exception:
+            return {"status": "duplicate"}
     if t == "checkout.session.completed":
         await _handle_completed_session(obj, event_id=eid)
     elif t in ("invoice.paid", "invoice.payment_succeeded"):
@@ -1188,12 +1305,94 @@ async def stripe_webhook(request: Request):
                     sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
                     source="stripe", event_id=eid)
                 await _record_tax_from_invoice(obj, ws["id"], eid)
+                await _maybe_notify_recovery(ws["id"], eid)
+    elif t == "invoice.payment_failed":
+        await _handle_invoice_failed(obj, eid)
+    elif t == "customer.subscription.updated":
+        sub_id = obj.get("id")
+        ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": sub_id}, {"_id": 0})
+        if ws:
+            sub = ws.get("subscription") or {}
+            await _sync_ws_from_stripe_sub(ws["id"], obj, sub.get("plan", "pro"),
+                sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
+                source="stripe", event_id=eid)
+            if obj.get("status") == "active":
+                await _maybe_notify_recovery(ws["id"], eid)
     elif t == "customer.subscription.deleted":
         ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": obj.get("id")}, {"_id": 0, "id": 1})
         if ws:
             await db.workspaces.update_one({"id": ws["id"]},
                 {"$set": {"subscription.status": "cancelled", "subscription.updated_at": now_iso()}})
     return {"status": "ok"}
+
+
+async def _billing_owner(ws: dict):
+    """The account/workspace billing owner (never every team member)."""
+    return await db.users.find_one({"id": (ws or {}).get("owner_id")}, {"_id": 0, "email": 1, "language": 1})
+
+
+async def _handle_invoice_failed(inv, event_id):
+    """Renewal payment failed. Keep access while Stripe still considers it recoverable (past_due),
+    surface the failure to the customer, and email the billing owner ONCE per failed invoice."""
+    sub_id = inv.get("subscription")
+    if not sub_id:
+        return
+    ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": sub_id}, {"_id": 0})
+    if not ws:
+        return
+    sub = ws.get("subscription") or {}
+    try:
+        stripe_sub = stripe.Subscription.retrieve(sub_id)
+    except stripe.error.StripeError:
+        stripe_sub = {"id": sub_id, "status": "past_due", "customer": inv.get("customer")}
+    await _sync_ws_from_stripe_sub(ws["id"], stripe_sub, sub.get("plan", "pro"),
+        sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
+        source="stripe", event_id=event_id)
+    invoice_id = inv.get("id")
+    amount_minor = inv.get("amount_due") or inv.get("total") or 0
+    currency = (inv.get("currency") or "usd").upper()
+    dunning = {
+        "state": "failed", "invoice_id": invoice_id, "amount_due": amount_minor, "currency": currency,
+        "hosted_invoice_url": inv.get("hosted_invoice_url"),
+        "attempt_count": inv.get("attempt_count"),
+        "next_attempt": (datetime.fromtimestamp(inv["next_payment_attempt"], timezone.utc).isoformat()
+                         if inv.get("next_payment_attempt") else None),
+        "failed_at": now_iso(),
+    }
+    await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"subscription.dunning": dunning}})
+    # Email the billing owner ONCE per failed invoice (idempotent on invoice_id).
+    prior_inv = (sub.get("dunning") or {}).get("invoice_id")
+    prior_state = (sub.get("dunning") or {}).get("state")
+    if not (prior_inv == invoice_id and prior_state == "failed"):
+        owner = await _billing_owner(ws)
+        if owner and owner.get("email"):
+            amount_str = _fmt_money_minor(amount_minor, currency)
+            portal_url = f"{PUBLIC_APP_URL}/billing"
+            await send_localized(owner["email"], "payment_failed", owner.get("language", "en"),
+                                 portal_url, amount=amount_str)
+
+
+async def _maybe_notify_recovery(ws_id, event_id):
+    """After a successful payment, if the account was previously in a failed/dunning state,
+    clear it and email the billing owner ONCE that billing is healthy again."""
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0})
+    sub = (ws or {}).get("subscription") or {}
+    dunning = sub.get("dunning") or {}
+    if dunning.get("state") == "failed":
+        await db.workspaces.update_one({"id": ws_id},
+            {"$set": {"subscription.dunning": {"state": "recovered", "recovered_at": now_iso(),
+                                               "invoice_id": dunning.get("invoice_id")}}})
+        owner = await _billing_owner(ws)
+        if owner and owner.get("email"):
+            await send_localized(owner["email"], "payment_recovered", owner.get("language", "en"),
+                                 f"{PUBLIC_APP_URL}/billing")
+
+
+def _fmt_money_minor(minor, currency):
+    zero_dec = {"JPY", "KRW", "VND", "CLP", "BHD", "KWD", "OMR"}
+    cur = (currency or "USD").upper()
+    amt = (minor or 0) / (1 if cur in zero_dec else 100)
+    return f"{cur} {amt:,.2f}"
 
 
 async def audit(workspace_id, actor_id, action, meta=None):
@@ -6130,6 +6329,8 @@ async def run_migration():
         await db.billing_tax_records.create_index("source_id", unique=True)
         await db.billing_tax_records.create_index([("created_at", -1)])
         await db.billing_tax_records.create_index([("country", 1)])
+        # Failed-payment recovery — webhook idempotency ledger
+        await db.stripe_events.create_index("id", unique=True)
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
 

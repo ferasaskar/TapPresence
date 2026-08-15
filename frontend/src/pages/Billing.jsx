@@ -51,6 +51,7 @@ export default function Billing() {
   const [data, setData] = useState(undefined);
   const [ref, setRef] = useState(null);
   const [featureUsage, setFeatureUsage] = useState([]);
+  const [invoices, setInvoices] = useState(undefined);
   const [interval, setInterval] = useState("year");
   const [market, setMarket] = useState("USD");
   const [busy, setBusy] = useState("");
@@ -61,7 +62,7 @@ export default function Billing() {
       if (!mk && data?.commercial?.pricing?.market) setMarket(data.commercial.pricing.market);
     }).catch(() => setData(null));
   };
-  useEffect(() => { load(); api.get("/referral").then(({ data }) => setRef(data)).catch(() => {}); api.get("/usage/me").then(({ data }) => setFeatureUsage(data.items || [])).catch(() => {}); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load(); api.get("/referral").then(({ data }) => setRef(data)).catch(() => {}); api.get("/usage/me").then(({ data }) => setFeatureUsage(data.items || [])).catch(() => {}); api.get("/billing/invoices").then(({ data }) => setInvoices(data.invoices || [])).catch(() => setInvoices([])); /* eslint-disable-next-line */ }, []);
   useEffect(() => { if (data) load(market); /* eslint-disable-next-line */ }, [market]);
 
   const c = data?.commercial;
@@ -136,6 +137,14 @@ export default function Billing() {
     finally { setBusy(""); }
   };
 
+  const openPortal = async () => {
+    setBusy("portal");
+    try { const { data: res } = await api.post("/billing/portal"); window.location.href = res.url; }
+    catch (e) { toast.error(e?.response?.data?.detail || t("billing.portalError")); setBusy(""); }
+  };
+
+  const ps = data?.payment_state;
+
   const isPaid = currentPlan === "pro" || currentPlan === "team";
   const cycleLabel = data?.interval === "year" ? t("billing.annual") : t("billing.monthly");
   const willCancel = data?.cancel_at_period_end;
@@ -164,6 +173,31 @@ export default function Billing() {
           <div className="mt-8 rounded-2xl border border-dashed border-white/12 py-24 text-center text-white/55">{t("billing.loadError")}</div>
         ) : (
           <>
+            {/* failed-payment recovery banner */}
+            {ps?.failed ? (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-500/40 bg-red-500/[0.08] p-5" data-testid="billing-payment-failed">
+                <div className="flex items-start gap-3">
+                  <CreditCard className="mt-0.5 h-6 w-6 shrink-0 text-red-400" />
+                  <div>
+                    <p className="text-sm font-medium text-red-200">{t("billing.paymentFailedTitle")}</p>
+                    <p className="mt-1 text-xs text-white/60">
+                      {t("billing.paymentFailedBody")}
+                      {ps.amount_due ? ` (${ps.currency} ${(ps.amount_due / 100).toFixed(2)})` : ""}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={openPortal} disabled={busy === "portal" || !ps.has_customer} data-testid="fix-payment-btn"
+                  className="rounded-full bg-red-500 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-red-400 disabled:opacity-50">
+                  {busy === "portal" ? <Loader2 className="h-4 w-4 animate-spin" /> : t("billing.fixPayment")}
+                </button>
+              </div>
+            ) : ps?.recovered ? (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.06] p-4" data-testid="billing-payment-recovered">
+                <ShieldCheck className="h-5 w-5 text-emerald-400" />
+                <p className="text-sm text-emerald-200">{t("billing.paymentRecovered")}</p>
+              </div>
+            ) : null}
+
             {/* current status banner */}
             <div className={`mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 ${locked ? "border-red-500/30 bg-red-500/[0.06]" : "border-[#D6A653]/25 bg-[#D6A653]/[0.06]"}`} data-testid="billing-status">
               <div className="flex items-center gap-3">
@@ -277,6 +311,60 @@ export default function Billing() {
             </div>
 
             {/* referral engine */}
+            {/* Invoice & receipt history (Stripe is the source of truth) */}
+            <div className="mt-8 rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="billing-history">
+              <div className="mb-4 flex items-center justify-between">
+                <p className="flex items-center gap-2 text-sm font-medium text-white"><CreditCard className="h-4 w-4 text-[#D6A653]" /> {t("billing.historyTitle")}</p>
+                {ps?.has_customer ? (
+                  <button onClick={openPortal} disabled={busy === "portal"} data-testid="manage-billing-btn"
+                    className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-white/80 transition-colors hover:border-[#D6A653]/50">
+                    {t("billing.manageBilling")}</button>
+                ) : null}
+              </div>
+              {invoices === undefined ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#D6A653]" /></div>
+              ) : invoices.length === 0 ? (
+                <p className="py-8 text-center text-sm text-white/40" data-testid="billing-history-empty">{t("billing.historyEmpty")}</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] uppercase tracking-wider text-white/40"><tr className="border-b border-white/8">
+                      <th className="py-2 pr-3">{t("billing.colDate")}</th><th className="pr-3">{t("billing.colInvoice")}</th><th className="pr-3">{t("billing.colPlan")}</th>
+                      <th className="pr-3 text-right">{t("billing.colSubtotal")}</th><th className="pr-3 text-right">{t("billing.colDiscount")}</th>
+                      <th className="pr-3 text-right">{t("billing.colTax")}</th><th className="pr-3 text-right">{t("billing.colTotal")}</th>
+                      <th className="pr-3">{t("billing.colStatus")}</th><th className="pr-3 text-right">{t("billing.colActions")}</th>
+                    </tr></thead>
+                    <tbody className="text-white/80">
+                      {invoices.map((inv) => {
+                        const cur = inv.currency;
+                        const m = (v) => `${cur} ${((v || 0) / 100).toFixed(2)}`;
+                        const stStyle = inv.status === "paid" ? "text-emerald-300" : inv.refunded ? "text-sky-300" : (inv.status === "open" || inv.status === "draft") ? "text-amber-300" : "text-red-300";
+                        return (
+                          <tr key={inv.id} className="border-b border-white/5" data-testid={`invoice-row-${inv.id}`}>
+                            <td className="py-2 pr-3 text-white/70">{fmtLong(inv.date)}</td>
+                            <td className="pr-3 text-white/60">{inv.number || "—"}</td>
+                            <td className="pr-3 capitalize">{inv.plan || "—"}</td>
+                            <td className="pr-3 text-right tabular-nums">{m(inv.subtotal)}</td>
+                            <td className="pr-3 text-right tabular-nums text-white/50">{inv.discount ? `−${m(inv.discount)}` : "—"}</td>
+                            <td className="pr-3 text-right tabular-nums text-white/60">{m(inv.tax)}</td>
+                            <td className="pr-3 text-right tabular-nums text-white">{m(inv.total)}</td>
+                            <td className={`pr-3 capitalize ${stStyle}`} data-testid={`invoice-status-${inv.id}`}>{inv.refunded ? t("billing.stRefunded") : (STATUS_LABEL[inv.status] || inv.status)}</td>
+                            <td className="pr-3 text-right">
+                              <div className="flex justify-end gap-2">
+                                {inv.hosted_invoice_url ? <a href={inv.hosted_invoice_url} target="_blank" rel="noreferrer" data-testid={`invoice-view-${inv.id}`} className="text-[#D6A653] hover:underline">{t("billing.view")}</a> : null}
+                                {inv.invoice_pdf ? <a href={inv.invoice_pdf} target="_blank" rel="noreferrer" data-testid={`invoice-pdf-${inv.id}`} className="text-white/60 hover:underline">PDF</a> : null}
+                                {inv.receipt_url ? <a href={inv.receipt_url} target="_blank" rel="noreferrer" data-testid={`invoice-receipt-${inv.id}`} className="text-white/60 hover:underline">{t("billing.receipt")}</a> : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             {ref?.enabled ? (
               <div className="mt-8 rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="billing-referral">
                 <div className="flex items-start gap-3">

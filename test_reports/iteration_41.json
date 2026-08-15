@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 41 — Failed Payment Recovery + Invoice/Receipt History. Fully validated. Unit test /app/scripts/test_failed_payment.py: 8/8 PASS (past_due keeps access, dunning stored, owner emailed once, dedupe on webhook retry, recovery flips to 'recovered' + emails once, unpaid removes access). Backend API pytest suite /app/backend/tests/test_iter41_failed_payment_billing.py: 12/12 PASS covering GET /billing payment_state schema (failed=false, has_customer=false for admin no-customer case), GET /billing/invoices (401 unauth, own-workspace-only 200 empty, admin no-customer returns {invoices:[],has_customer:false}), POST /billing/portal (401 unauth, 400 with clear 'No Stripe customer on file' message), stripe webhook signature verification (400 on bad+missing signature — not weakened), and regressions (POST /billing/checkout pro/year still returns https checkout_url via Stripe test with automatic_tax; /admin/control/usage/overview + trial_eligible still work). Frontend /billing verified in real browser (admin@ariadni.id): billing-history section renders with billing-history-empty visible, billing-payment-failed and billing-payment-recovered HIDDEN (correct since payment_state.failed=false), manage-billing-btn and fix-payment-btn NOT rendered (correct since has_customer=false), billing-tax-note shows 'Taxes calculated at checkout'. i18n: switching to AR via [data-testid=language-switcher] -> lang-option-ar sets documentElement.dir='rtl', 'سجل الفوترة' (historyTitle) and 'لا توجد فواتير' (historyEmpty) render correctly; all new billing.* keys present in en/ar/es JSON bundles.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter41_failed_payment_billing.py",
+    "/app/test_reports/pytest/iter41_results.xml",
+    "/app/scripts/test_failed_payment.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "stripe_webhook (platform_v1.py L1277-1326): idempotency correctly implemented via unique index on stripe_events.id — insert_one raises on duplicate and returns {'status':'duplicate'} before any handler runs, so double-delivery cannot double-email or double-mutate state.",
+    "_handle_invoice_failed (L1334-1372): dunning stored with invoice_id + state='failed' + amount_due/currency/hosted_invoice_url. The email guard checks (prior_inv==invoice_id and prior_state=='failed') BEFORE writing new dunning — read from `sub` variable captured earlier — so multiple retries for the SAME invoice.id do not re-email. New failed invoice ids WILL re-email (correct).",
+    "_maybe_notify_recovery (L1375-1388): only flips + emails when dunning.state=='failed' (guards against 'recovered'->'recovered' loops). Also called from BOTH invoice.paid and customer.subscription.updated->active branches — good coverage.",
+    "ACTIVE_STATES (L329) correctly includes 'past_due' + 'trialing' + 'active' + 'cancel_at_period_end'. Terminal states 'unpaid'/'incomplete_expired'/'cancelled' are NOT active → access correctly removed (unit test PASS for unpaid).",
+    "_billing_owner uses ws.owner_id — never members. Matches spec: 'team notifies owner not members'.",
+    "GET /billing (L727-778): payment_state.failed derived from BOTH ent.status in past_due/unpaid AND dunning.state=='failed' — belt-and-braces. amount_due/currency/hosted_invoice_url only surfaced when failed=true (avoids stale values leaking on recovered state). has_customer flag correctly gates UI 'Manage billing' button.",
+    "GET /billing/invoices (L802-853): scoped strictly by ws.subscription.stripe_customer_id via _primary_ws_id + require_ws_admin → a member of another workspace cannot enumerate someone else's invoices. Refund status derived from charge.refunded (Stripe truth). Returns {invoices:[],has_customer:false} short-circuit (no Stripe call) when no customer — good.",
+    "POST /billing/portal (L781-799): correctly returns HTTP 400 with 'No Stripe customer on file for this workspace.' when customer_id missing. Handles StripeError → 503 with generic user-safe message (no key leakage). return_url points at /billing.",
+    "Bad-signature webhook: stripe.Webhook.construct_event raises on invalid sig -> HTTPException(400). Signature verification NOT weakened.",
+    "Frontend Billing.jsx: openPortal() posts to /billing/portal, on 200 does window.location.href = data.url (correct — always trust Stripe hosted URL). fix-payment-btn disabled when !has_customer to avoid dead click. Table cells use invoice.id in testids (invoice-row-*, invoice-status-*, invoice-view-*, invoice-pdf-*, invoice-receipt-*) matching spec."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter41_failed_payment_billing.py (new)"],
+  "success_rate": {"backend": "100% (12/12 pytest + 8/8 unit)", "frontend": "100%"},
+  "test_credentials": "SUPER_ADMIN admin@ariadni.id / Ariadni@2026 (see /app/memory/test_credentials.md). Throwaway TEST_iter41_{ts}@example.com / TestPass@123 auto-registered per pytest run.",
+  "seed_data_creation": "Unit test script creates ephemeral ws 'fpr-test-ws' + user 'fpr-test-owner' + stripe_events 'evt_fpr_*' and self-cleans on exit (verified). Pytest registers a throwaway user; no cleanup (safe — owns nothing).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 41 (Failed Payment Recovery + Invoice History) is GA-ready on preview. Because the admin account has NO Stripe customer, the only path to exercise the 'failed banner visible' / 'invoice table populated' UI in preview is to complete a real Stripe TEST checkout (4242...) via POST /billing/checkout with a customer account, then trigger a Stripe test webhook or wait for invoice.paid — after which billing-payment-recovered banner + invoice-row-* cells render. The webhook logic is fully exercised by /app/scripts/test_failed_payment.py (patched send_localized + stripe.Subscription.retrieve, no real network). Do NOT modify Stripe keys/prices/tax settings; do NOT deploy.",
+  "rca of the issue": "N/A — no bugs found. All spec bullets validated."
+}
