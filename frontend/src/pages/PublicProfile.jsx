@@ -27,6 +27,8 @@ export default function PublicProfile() {
   // missing/unavailable slugs (soft-404 fix) so thin pages never enter the index.
   const _id = card?.identity || {};
   const _name = _id.fullName || slug;
+  const _photo = _id.profilePhoto || "";
+  const _photoAbs = _photo ? (/^https?:\/\//.test(_photo) ? _photo : `${SEO_ORIGIN}${_photo.startsWith("/") ? "" : "/"}${_photo}`) : undefined;
   useSeo({
     title: state === "notfound" ? "Profile not found — TapPresence"
       : `${_name}${_id.jobTitle ? " — " + _id.jobTitle : ""} | TapPresence`,
@@ -35,6 +37,9 @@ export default function PublicProfile() {
       : "This TapPresence profile is unavailable.",
     path: `/${slug}`,
     noindex: state !== "ready",
+    ogType: state === "ready" ? "profile" : "website",
+    image: state === "ready" ? _photoAbs : undefined,
+    imageAlt: state === "ready" && _photoAbs ? `${_name} — TapPresence digital business card` : undefined,
     jsonLd: state === "ready" ? [{
       "@context": "https://schema.org", "@type": "ProfilePage", name: _name,
       mainEntity: {
