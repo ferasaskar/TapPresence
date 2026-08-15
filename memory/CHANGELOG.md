@@ -38,3 +38,19 @@ Measurement ID `G-YY864DN86T`. Additive to existing PostHog (PostHog untouched).
 
 ### Verified (testing_agent iteration_43 — frontend 100%)
 gtag.js loaded with correct ID; dataLayer has consent default + config; real network hits to googletagmanager.com/gtag/js and google-analytics.com/g/collect for /, /pricing, /digital-business-card with sanitized page_location (no query strings/PII); PostHog still present; consent reject→analytics_storage denied, grant→granted; no console errors. Production verification pending owner redeploy.
+
+## 2026-08-15 — GA4 Conversion Funnel Tracking (PREVIEW, agent-verified; needs redeploy for production)
+
+Acquisition-funnel conversion events on the existing GA4 integration (G-YY864DN86T). Additive to PostHog; Consent Mode v2 preserved; no UI changes.
+
+Events: start_trial_click · sign_up_start · sign_up · trial_started · begin_checkout (value+currency+item) · purchase (transaction_id=session_id + real value + currency, deduped by session_id).
+
+Files changed:
+- frontend/src/lib/ga.js — added trackEvent(name, params, {dedupeKey, persist}) (auto-init, cleans undefined params, dedupe via in-memory Set or sessionStorage tp_ga_fired) + trackTrialClick().
+- frontend/src/pages/Register.jsx — sign_up_start on mount (dedupe 'flow'); sign_up + trial_started on real register/google-complete success (dedupe by user id, persist).
+- frontend/src/pages/Landing.jsx, pages/seo/SeoLanding.jsx, pages/seo/PricingPage.jsx, components/landing/PricingSection.jsx — start_trial_click on all CTAs (cta_location).
+- frontend/src/pages/Billing.jsx — begin_checkout with value/currency/items from checkout response.
+- frontend/src/pages/PaymentResult.jsx — purchase with transaction_id/value/currency, deduped by session_id (persist).
+- backend/platform_v1.py — /billing/checkout and /payments/status now also return non-PII amount + currency.
+
+Verified (testing_agent iteration_44): 5/6 events fully E2E with real dataLayer + /g/collect evidence + real backend outcomes; each fires exactly once (StrictMode/poll-safe). begin_checkout carried real value 99.99 USD. purchase code-path verified (Stripe hosted-form completion not automatable — env limit, not a code bug). NO PII in any GA payload; Consent Mode v2 intact; PostHog preserved; no console errors.

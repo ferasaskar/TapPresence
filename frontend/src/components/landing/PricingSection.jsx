@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Check, Crown, Users, Sparkles, Building2, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { trackTrialClick } from "@/lib/ga";
 import { getPreferredMarket, saveMarketPreference } from "@/lib/market";
 import { useLocale } from "@/i18n/useLocale";
 
@@ -111,7 +112,7 @@ export default function PricingSection() {
               <ul className="mt-4 flex-1 space-y-2">
                 {p.features.map((f, k) => (<li key={k} className="flex items-start gap-2 text-[13px] text-white/65"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#D6A653]" /> {f}</li>))}
               </ul>
-              <Link to={p.to} data-testid={`landing-plan-${p.id}-cta`}
+              <Link to={p.to} onClick={() => trackTrialClick(`pricing_plan_${p.id}`)} data-testid={`landing-plan-${p.id}-cta`}
                 className={`mt-5 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${p.popular ? "lp-btn-gold lp-press" : "lp-btn-ghost lp-press"}`}>
                 {p.cta} <ArrowRight className="h-4 w-4" />
               </Link>

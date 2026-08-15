@@ -78,3 +78,44 @@ export function trackPageView(pathname) {
     page_title: document.title,
   });
 }
+
+// ---- Conversion events -----------------------------------------------------
+// Dedupe: `persist` survives reloads/StrictMode via sessionStorage (for one-time
+// outcomes like sign_up / purchase); in-memory otherwise (for per-session flows).
+const _firedSession = new Set();
+function _isDuplicate(key, persist) {
+  if (!key) return false;
+  if (persist) {
+    try {
+      const store = JSON.parse(sessionStorage.getItem("tp_ga_fired") || "[]");
+      if (store.includes(key)) return true;
+      store.push(key);
+      sessionStorage.setItem("tp_ga_fired", JSON.stringify(store));
+      return false;
+    } catch { /* fall through to in-memory */ }
+  }
+  if (_firedSession.has(key)) return true;
+  _firedSession.add(key);
+  return false;
+}
+
+// Strip undefined values so GA4 never receives empty/PII-adjacent params.
+function _clean(params) {
+  const out = {};
+  Object.keys(params || {}).forEach((k) => {
+    if (params[k] !== undefined && params[k] !== null) out[k] = params[k];
+  });
+  return out;
+}
+
+export function trackEvent(name, params = {}, opts = {}) {
+  if (!GA_ID) return;
+  if (!initialized) initGA(); // events emitted before GAListener effect still land after config
+  const key = opts.dedupeKey ? `${name}:${opts.dedupeKey}` : null;
+  if (_isDuplicate(key, opts.persist)) return;
+  gtag("event", name, _clean(params));
+}
+
+export function trackTrialClick(location) {
+  trackEvent("start_trial_click", location ? { cta_location: location } : {});
+}

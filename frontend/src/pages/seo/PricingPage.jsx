@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import PricingSection from "@/components/landing/PricingSection";
 import { useSeo, breadcrumb, SOFTWARE_APP_JSONLD } from "@/lib/seo";
+import { trackTrialClick } from "@/lib/ga";
 import { SeoFooter } from "./SeoLanding";
 
 export default function PricingPage() {
@@ -17,7 +18,7 @@ export default function PricingPage() {
         <Link to="/" className="text-lg font-semibold">TapPresence</Link>
         <div className="flex items-center gap-3 text-sm">
           <Link to="/login" className="text-white/70 hover:text-white">Sign in</Link>
-          <Link to="/register" className="rounded-full bg-[#D6A653] px-4 py-2 font-medium text-[#050607] hover:bg-[#E8B764]">Start free</Link>
+          <Link to="/register" onClick={() => trackTrialClick("pricing_top")} className="rounded-full bg-[#D6A653] px-4 py-2 font-medium text-[#050607] hover:bg-[#E8B764]">Start free</Link>
         </div>
       </header>
       <section className="mx-auto max-w-3xl px-6 pt-10 pb-2 text-center">
@@ -27,7 +28,7 @@ export default function PricingPage() {
       {/* Pricing is rendered from the SAME authoritative /api/commercial/pricing source (no hardcoded prices). */}
       <PricingSection />
       <section className="mx-auto max-w-2xl px-6 py-12 text-center">
-        <Link to="/register" className="inline-flex items-center gap-2 rounded-full bg-[#D6A653] px-6 py-3 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="pricing-cta">
+        <Link to="/register" onClick={() => trackTrialClick("pricing_bottom")} className="inline-flex items-center gap-2 rounded-full bg-[#D6A653] px-6 py-3 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="pricing-cta">
           Start your free 14-day trial <ArrowRight className="h-4 w-4" />
         </Link>
       </section>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion, useScroll, useMotionValueEvent } from "framer-motion";
 import { Sparkles, ArrowRight, Users, Nfc, PlayCircle, Star, BrainCircuit, LineChart, Linkedin, Twitter, Instagram, Apple, Play } from "lucide-react";
 import { useSeo, ORG_JSONLD, WEBSITE_JSONLD, SOFTWARE_APP_JSONLD } from "@/lib/seo";
+import { trackTrialClick } from "@/lib/ga";
 import { SEO_FOOTER_LINKS } from "@/pages/seo/landingContent";
 import "@/components/landing/landing.css";
 import HeroVisual from "@/components/landing/HeroVisual";
@@ -62,7 +63,7 @@ function Navbar() {
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           <Link to="/login" className="lp-navlink text-[15px]" data-testid="nav-login">{t("landing.login")}</Link>
-          <Link to="/register" className="lp-btn-gold lp-press lp-sweep rounded-xl px-5 py-2.5 text-[14px]" data-testid="nav-register">{t("landing.createId")}</Link>
+          <Link to="/register" onClick={() => trackTrialClick("home_nav")} className="lp-btn-gold lp-press lp-sweep rounded-xl px-5 py-2.5 text-[14px]" data-testid="nav-register">{t("landing.createId")}</Link>
         </div>
       </div>
     </motion.header>
@@ -102,10 +103,10 @@ function Hero() {
 
           <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }}
             className="mt-8 flex flex-wrap gap-3">
-            <Link to="/register" className="lp-btn-gold lp-press lp-sweep inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-create">
+            <Link to="/register" onClick={() => trackTrialClick("home_hero")} className="lp-btn-gold lp-press lp-sweep inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-create">
               {t("landing.hero.ctaCreate")} <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link to="/register?intent=team" className="lp-btn-ghost lp-press inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-team">
+            <Link to="/register?intent=team" onClick={() => trackTrialClick("home_hero_team")} className="lp-btn-ghost lp-press inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-team">
               <Users className="h-4 w-4 text-[#D6A653]" /> {t("landing.hero.ctaTeams")}
             </Link>
           </motion.div>
@@ -392,7 +393,7 @@ function FinalCTA() {
         <p className="mx-auto mt-4 max-w-[520px] text-[15px] text-[#A2A6AD]">
           {t("landing.finalCta.subtitle")}
         </p>
-        <Link to="/register" className="lp-btn-gold lp-press lp-sweep mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-[15px]" data-testid="cta-final">
+        <Link to="/register" onClick={() => trackTrialClick("home_final")} className="lp-btn-gold lp-press lp-sweep mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-[15px]" data-testid="cta-final">
           {t("landing.finalCta.cta")} <ArrowRight className="h-4 w-4" />
         </Link>
       </Reveal>

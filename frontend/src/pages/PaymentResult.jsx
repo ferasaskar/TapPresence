@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
+import { trackEvent } from "@/lib/ga";
 import { useAuth } from "@/context/AuthContext";
 import { Loader2, CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 
@@ -39,6 +40,13 @@ export function PaymentSuccess() {
         setPlan(data.plan || "");
         if (data.payment_status === "paid" || data.status === "completed") {
           setState("paid");
+          // GA4 purchase — real transaction data; deduped by session_id (survives polling/reload/StrictMode).
+          trackEvent("purchase", {
+            transaction_id: sessionId,
+            value: typeof data.amount === "number" ? data.amount / 100 : undefined,
+            currency: data.currency ? String(data.currency).toUpperCase() : undefined,
+            items: data.plan ? [{ item_id: data.plan, item_name: `TapPresence ${data.plan}` }] : undefined,
+          }, { dedupeKey: sessionId, persist: true });
           await refreshSession();
           return;
         }

@@ -1110,7 +1110,8 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
         "status": "initiated", "payment_status": "pending",
         "created_at": now_iso(), "updated_at": now_iso(),
     })
-    return {"checkout_url": session.url, "session_id": session.id}
+    return {"checkout_url": session.url, "session_id": session.id,
+            "amount": unit_amount * seats, "currency": currency}
 
 
 async def _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, market, source, event_id):
@@ -1271,7 +1272,8 @@ async def payment_status(session_id: str):
         except stripe.error.StripeError:
             pass
     return {"session_id": record["session_id"], "status": record["status"],
-            "payment_status": record["payment_status"], "plan": record.get("plan")}
+            "payment_status": record["payment_status"], "plan": record.get("plan"),
+            "amount": record.get("amount"), "currency": record.get("currency")}
 
 
 @platform_router.post("/stripe/webhook")

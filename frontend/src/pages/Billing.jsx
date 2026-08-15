@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
+import { trackEvent } from "@/lib/ga";
 import { useAuth } from "@/context/AuthContext";
 import { useLocale } from "@/i18n/useLocale";
 import { OwnerNav } from "@/components/admin/OwnerNav";
@@ -112,6 +113,11 @@ export default function Billing() {
     try {
       const seats = planId === "team" ? (c.plans.team.min_seats || 3) : 1;
       const { data: res } = await api.post("/billing/checkout", { plan: planId, interval, seats, market, origin_url: window.location.origin });
+      trackEvent("begin_checkout", {
+        currency: res.currency ? String(res.currency).toUpperCase() : undefined,
+        value: typeof res.amount === "number" ? res.amount / 100 : undefined,
+        items: [{ item_id: planId, item_name: planId === "team" ? "TapPresence Team" : "TapPresence Pro" }],
+      });
       window.location.href = res.checkout_url;
     } catch (e) {
       const st = e?.response?.status;

@@ -1,6 +1,7 @@
 import { useLocation, Link, Navigate } from "react-router-dom";
 import { ArrowRight, Check, ChevronRight } from "lucide-react";
 import { useSeo, breadcrumb, faqJsonLd, SOFTWARE_APP_JSONLD } from "@/lib/seo";
+import { trackTrialClick } from "@/lib/ga";
 import { LANDING_PAGES, SEO_FOOTER_LINKS, FEAT, TRIAL } from "./landingContent";
 
 const SeoFooter = () => (
@@ -48,7 +49,7 @@ export default function SeoLanding() {
         <Link to="/" className="text-lg font-semibold">TapPresence</Link>
         <div className="flex items-center gap-3 text-sm">
           <Link to="/login" className="text-white/70 hover:text-white">Sign in</Link>
-          <Link to="/register" className="rounded-full bg-[#D6A653] px-4 py-2 font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="seo-cta-top">Start free</Link>
+          <Link to="/register" onClick={() => trackTrialClick(`seo_top_${key}`)} className="rounded-full bg-[#D6A653] px-4 py-2 font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="seo-cta-top">Start free</Link>
         </div>
       </header>
 
@@ -59,7 +60,7 @@ export default function SeoLanding() {
         </p>
         <h1 className="text-4xl font-light leading-tight sm:text-5xl lg:text-6xl" data-testid="seo-h1">{page.h1}</h1>
         <p className="mx-auto mt-5 max-w-2xl text-base text-white/65 sm:text-lg">{page.intro}</p>
-        <Link to="/register" className="mt-8 inline-flex items-center gap-2 rounded-full bg-[#D6A653] px-6 py-3 text-sm font-medium text-[#050607] transition-colors hover:bg-[#E8B764]" data-testid="seo-cta-hero">
+        <Link to="/register" onClick={() => trackTrialClick(`seo_hero_${key}`)} className="mt-8 inline-flex items-center gap-2 rounded-full bg-[#D6A653] px-6 py-3 text-sm font-medium text-[#050607] transition-colors hover:bg-[#E8B764]" data-testid="seo-cta-hero">
           {TRIAL} <ArrowRight className="h-4 w-4" />
         </Link>
         <p className="mt-3 text-xs text-white/40">No card required · Taxes calculated at checkout</p>
@@ -108,7 +109,7 @@ export default function SeoLanding() {
       {/* closing CTA */}
       <section className="mx-auto max-w-2xl px-6 py-14 text-center">
         <h2 className="text-2xl font-light sm:text-3xl">Ready to make your presence effortless?</h2>
-        <Link to="/register" className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#D6A653] px-6 py-3 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="seo-cta-bottom">
+        <Link to="/register" onClick={() => trackTrialClick(`seo_bottom_${key}`)} className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#D6A653] px-6 py-3 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="seo-cta-bottom">
           {TRIAL} <ArrowRight className="h-4 w-4" />
         </Link>
       </section>
