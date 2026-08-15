@@ -64,3 +64,20 @@ Improved: 12 existing SEO pages gained in-depth `sections` (H2+prose), updated t
 Files: landingContent.js (rewritten, +sections +event-lead-capture +COMPANY_FOOTER_LINKS), SeoLanding.jsx (sections render + company footer), CompanyPages.jsx (NEW), compareContent.js + ComparePage.jsx (NEW), App.js (routes), Landing.jsx (H2 + company footer), public/sitemap.xml (+event-lead-capture/about/contact/security; excludes /compare + private).
 Verified (testing_agent iteration_45, frontend 100%, 0 action items): all pages load+hard-refresh, one H1, unique titles, self canonicals, indexable (compare=noindex), valid JSON-LD, sections present, internal links (no href='#'), EN/AR-RTL/ES OK, mobile OK, sitemap/robots correct, signup + protected-route + pricing regression PASS, no console-breaking errors.
 Deferred to P2 (per user): blog/guides content, external authority (G2/Capterra/directories/backlinks), competitor-data verification for compare pages.
+
+## 2026-08-15 — Competitor Comparison Pages Finalized + Claim Verification (PREVIEW, agent-verified 100%; needs redeploy)
+
+Finalized /compare/tappresence-vs-{blinq,hihello,popl,wave} with factual, defensible content; removed noindex (now indexable) and added all 4 to sitemap. Removed unsupported social-proof line. Verified TapPresence claims vs live code.
+
+Files: frontend/src/pages/seo/compareContent.js (verified competitor data, verified:true), ComparePage.jsx (two-column table + competitor-strengths + tp-edge + cross-links + CTA), PricingPage.jsx (compare cross-links), public/sitemap.xml (+4 compare URLs), i18n/{en,ar,es}.json (removed "Join thousands...").
+
+Claim verification vs live implementation:
+- Webhooks (outbound, team): VERIFIED LIVE (create/delete/test + dispatch on lead.created).
+- Business card + event badge scanner, CRM pipeline+scoring, follow-up + AI-assisted drafts, NFC/QR, Save Contact, analytics, meetings, EN/AR/ES, team from 3 seats: VERIFIED LIVE.
+- Public/consumable API: PARTIAL/NOT READY (api-keys can be created but no endpoint authenticates them; not used as a differentiator).
+- Custom Domain: PARTIAL/EXTERNAL CONFIG (entitlement + CUSTOM_DOMAIN_HOST; not verified end-to-end; not used as differentiator).
+- SSO/SAML: NOT IMPLEMENTED. Zapier: NOT IMPLEMENTED (flag only). Salesforce/Pipedrive: NOT IMPLEMENTED (config flags, no connector).
+- HubSpot: EXTERNAL CONFIG REQUIRED (full connector code, needs owner OAuth creds).
+None of the PARTIAL/NOT-READY/EXTERNAL items are claimed as differentiators in comparison content.
+
+Verified (testing_agent iteration_46, frontend 100%, 0 action items): all 4 compare pages indexable, unique titles/descriptions, one H1, self canonical, valid BreadcrumbList, factual tables acknowledging competitor strengths, no fabricated pricing/ratings/counts; sitemap includes them; pricing cross-links; homepage social-proof removed; 14-day trial CTA (no Free-plan wording); AR-RTL/ES OK; protected routes + regression PASS; mobile OK; no console errors.
