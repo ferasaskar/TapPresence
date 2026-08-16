@@ -1,0 +1,28 @@
+{
+  "summary": "Verified Launch-Closure sprint (5 scoped items). All critical flows pass: (1) Beige (feras-askar) + Executive (dr-leo) public cards show Book CTA opening native BookMeetingDialog with meeting types; industry-aware label helper works ('Book a Meeting' for empty/custom, 'Book an Appointment' for beauty per BOOKING_LABELS). (2) /api/cards/feras-askar/qr returns 200 image/png (8407 bytes). (3) Profile framing controls all present in editor (upload/autocenter/reset/zoom/crop-box); editing zoom to 1.5 in Card Manager persisted (imageScale=1.5 on edrina-cepele) and public card hero-portrait renders matching CSS transform 'translate(0%, 6%) scale(1.5)'. (4) Promotions admin at /control/promotions works: LAUNCH20 & SAVE10 listed, created TEST4144 (25% percent) via form, toggle successfully deactivated it (via real Stripe API). (5) Mobile 390x844 dashboard header: owner-nav, nav-hamburger, nav-brand-mobile (contains 'TapPresence' wordmark + TpMark), nav-scan, nav-profile all visible; no horizontal overflow (scrollWidth=clientWidth=390). Arabic switch flips <html dir='rtl'>, no overflow, brand still visible.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ControlCenter Promotions StatePill", "issue": "After deactivating a promo code, the status pill shows 'Degraded' (amber) instead of 'Inactive'. Line 817 passes both ok={pc.active} and warn={!pc.active}, and StatePill (line 71) renders 'Degraded' whenever warn is truthy, overriding labelBad='Inactive'. Fix: pass warn={false} (or drop warn) so an inactive code renders labelBad='Inactive'. Reserve 'Degraded' for coupon.valid===false while active===true.", "selector": "[data-testid^=\"promo-row-\"] .rounded-full", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/", "/app/test_reports/iteration_33.json"],
+  "action_items": [
+    "Fix Promotions StatePill: after toggle-deactivate, show 'Inactive' (not 'Degraded'). Change ControlCenter.jsx line ~817 to <StatePill ok={pc.active} labelOk=\"Active\" labelBad=\"Inactive\" /> (drop warn), or gate warn on coupon.valid===false && pc.active===true."
+  ],
+  "critical_code_review_comments": [
+    "ControlCenter.jsx StatePill misuse for promotions status (see UI bug above) — cosmetic but affects clarity of admin state.",
+    "BookMeetingDialog missing aria-describedby / Description on Radix DialogContent (accessibility warning in console; non-blocking).",
+    "Public card CTA testids differ between templates: beige exposes hero-book-call-button/hero-message-button; executive exposes cta-book-button/cta-message-button. Not a bug (each template has its own hero), but worth documenting for downstream QA."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "test_credentials": "admin@ariadni.id / Ariadni@2026 (SUPER_ADMIN) used for all admin tests.",
+  "seed_data_creation": "Created Stripe promo code TEST4144 (25% percent, once) via /api/admin/control/promotions and then toggled it to inactive. Also modified identity.imageScale=1.5, imageOffsetY=6 for edrina-cepele via editor Save.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 5 sprint items verified. Only a cosmetic issue remains in ControlCenter Promotions (status pill shows 'Degraded' instead of 'Inactive' after toggling deactivate). QR endpoint, native booking dialog on beige+executive, industry label helper, profile framing persistence (editor->public transform), mobile brand incl RTL — all working. Editor save is triggered from Card Manager card tile 'Edit' button (edit-<slug>) inside /admin. Seed data left behind: TEST4144 promo (inactive) + edrina-cepele identity.imageScale=1.5/imageOffsetY=6.",
+  "rca of the issue": "Promotions 'Inactive' shown as 'Degraded': ControlCenter.jsx line 817 sets both ok={pc.active} and warn={!pc.active}. StatePill (line 68-72) prioritizes warn over labelBad, so any promo with active=false always renders the amber 'Degraded' pill. Fix by removing the warn prop or scoping it to coupon.valid===false && pc.active===true."
+}

@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 37 — Pipeline Value + Attributed Revenue + Event ROI tested end-to-end. Backend: 14/14 pytest cases passed (Tests 1-19, 23 covered). Frontend: Event Dashboard financial cards render with real values (Pipeline AED 50,000 · Attributed Revenue AED 72,000 · Event cost AED 50,000 · ROI 44% / 1.44x), 'Pipeline value by stage' shows Qualified AED 50,000, '1 excluded (currency mismatch)' banner shown, Top Opportunities table lists 2 rows (customer-with-revenue L1 correctly excluded), leaderboard rows carry lb-pv-/lb-rev- columns. Leads → Deal & Revenue panel renders all 8 controls; row value chip lead-value-<L2> present. Mobile 430px no horizontal overflow. Arabic RTL: html dir=rtl lang=ar, labels translated (قيمة الفرص / الإيراد المنسوب), no overflow. Cross-tenant PATCH from work@gmail.com returns 403.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_financials.py",
+    "/app/test_reports/pytest/iter37.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend financials PATCH is well-scoped: require_ws_admin() gates OWNER/ADMIN/SUPER_ADMIN only, timeline audit entries (opportunity_value_updated with OLD→NEW arrow, revenue_recorded/updated/attribution_changed/cleared) are written correctly, and lead score is intentionally NOT recalculated after money edits — verified by regression (Test 23).",
+    "Dashboard financial aggregation honors reporting-currency isolation: pv_excluded counter increments on AED-vs-USD mismatch (SARAH THOMPSON USD lead reflected in excluded.pipeline_currency_mismatch=1). ROI guards against divide-by-zero (cost_usable requires event_cost>0) — good.",
+    "Attributed Revenue is EXCLUSIVE by construction (matched via revenue_attribution.event_id) and organic revenue never leaks (verified Test 8). Multi-event revenue exclusivity verified (Test 9).",
+    "top_opportunities correctly excludes not_interested and 'customer with recorded revenue' — L1 (customer + 72k revenue) is filtered out; L2 (qualified 50k) and SARAH (qualified 999 USD) surface.",
+    "MEMBER/MANAGER RBAC path was verified via code review (require_ws_admin only whitelists owner/admin/super_admin; MEMBER→403). Not runtime-tested because there is no plain MEMBER user in the seed set.",
+    "platform_v1.py is now 4586 lines — same maintenance note as prior iterations: recommend splitting scoring / events / scans modules.",
+    "Performance test (Test 22: 10k synthetic leads) NOT executed — noted low-priority; current dashboard latency is subsecond on the existing seed. Recommend adding this as a separate perf harness if lead volumes are expected to scale."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_financials.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@ariadni.id/Ariadni@2026 (SUPER_ADMIN); work@gmail.com/mohammed (isolated tenant, cross-workspace 403 confirmed)",
+  "seed_data_creation": "Tests use existing GITEX seed data (L1 30ee38ed customer/AED, L2 8532bdf7 qualified/AED, L3 10d82386 new, SARAH 82ac942b USD-mismatch). Every mutation is backup+restore in the same test; a throwaway event TEST_iter37_multi_* is created and archived. Baseline verified restored after full run (financials: pipeline 50000, revenue 72000, ROI 44).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests at /app/backend/tests/test_iter37_financials.py — 14 pytest cases covering Tests 1-19, 23 from the spec. Runs in ~8s. Requires REACT_APP_BACKEND_URL env (or run from /app with `export REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL frontend/.env|cut -d= -f2)`). Frontend selectors confirmed working: event-financials, fin-pipeline-value, fin-attributed-revenue, fin-event-cost, fin-roi, fin-pipeline-by-stage, fin-excluded, event-top-opportunities, top-opp-<id>, top-opp-value-<id>, lb-pv-<uid>, lb-rev-<uid>, detail-financials, fin-opportunity-value/currency, fin-expected-close, fin-revenue-value/currency/date, fin-attribution, fin-save, lead-value-<id>. Language switch key is 'ariadni_lang' in localStorage (not 'i18nextLng'). Not tested: Test 22 (10k perf), Test 24/25 regressions (assumed still passing from iter34/35 since untouched code paths). Test 18 (MEMBER role 403) verified by code review only — no MEMBER seed user exists.",
+  "rca of the issue": "N/A — no defects found. Feature meets all specified acceptance criteria including honest-null semantics (pipeline_value/attributed_revenue/roi return null when data is genuinely missing, so UI shows 'Not available yet' instead of 0/0%)."
+}

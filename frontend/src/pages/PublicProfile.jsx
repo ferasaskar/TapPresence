@@ -5,9 +5,11 @@ import { ProfileContext } from "@/context/ProfileContext";
 import { getConsent } from "@/components/ConsentBanner";
 import { TemplateRenderer } from "@/components/templates/TemplateRenderer";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
+import { bookingLabel } from "@/lib/cardHelpers";
 import { useLocale } from "@/i18n/useLocale";
 import { toast } from "sonner";
 import { Loader2, Globe, Share2 } from "lucide-react";
+import { useSeo, SEO_ORIGIN } from "@/lib/seo";
 
 const LANG_LABELS = { en: "EN", ar: "العربية", es: "ES", fr: "FR", de: "DE", pt: "PT" };
 const RTL = ["ar"];
@@ -20,6 +22,34 @@ export default function PublicProfile() {
   const [state, setState] = useState("loading");
   const [lang, setLang] = useState(searchParams.get("lang") || localStorage.getItem(`lang_${slug}`) || "");
   const [bookOpen, setBookOpen] = useState(false);
+
+  // Per-route SEO: indexable self-canonical for a valid published profile; noindex for
+  // missing/unavailable slugs (soft-404 fix) so thin pages never enter the index.
+  const _id = card?.identity || {};
+  const _name = _id.fullName || slug;
+  const _photo = _id.profilePhoto || "";
+  const _photoAbs = _photo ? (/^https?:\/\//.test(_photo) ? _photo : `${SEO_ORIGIN}${_photo.startsWith("/") ? "" : "/"}${_photo}`) : undefined;
+  useSeo({
+    title: state === "notfound" ? "Profile not found — TapPresence"
+      : `${_name}${_id.jobTitle ? " — " + _id.jobTitle : ""} | TapPresence`,
+    description: state === "ready"
+      ? `${_name}${_id.jobTitle ? ", " + _id.jobTitle : ""}${_id.company ? " at " + _id.company : ""} — connect via TapPresence: save contact, book a meeting and share instantly.`
+      : "This TapPresence profile is unavailable.",
+    path: `/${slug}`,
+    noindex: state !== "ready",
+    ogType: state === "ready" ? "profile" : "website",
+    image: state === "ready" ? _photoAbs : undefined,
+    imageAlt: state === "ready" && _photoAbs ? `${_name} — TapPresence digital business card` : undefined,
+    jsonLd: state === "ready" ? [{
+      "@context": "https://schema.org", "@type": "ProfilePage", name: _name,
+      mainEntity: {
+        "@type": "Person", name: _name,
+        jobTitle: _id.jobTitle || undefined,
+        worksFor: _id.company ? { "@type": "Organization", name: _id.company } : undefined,
+        url: `${SEO_ORIGIN}/${slug}`,
+      },
+    }] : undefined,
+  });
 
   const track = useCallback(
     (type, key = "") => {
@@ -125,7 +155,7 @@ export default function PublicProfile() {
           </div>
         )}
         <TemplateRenderer data={card} />
-        <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} ownerName={card?.identity?.fullName || ""} />
+        <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} ownerName={card?.identity?.fullName || ""} title={bookingLabel(card)} />
       </div>
     </ProfileContext.Provider>
   );

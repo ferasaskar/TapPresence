@@ -1,7 +1,9 @@
 import os
 import io
-import uuid
 import re
+import html
+import uuid
+import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -26,7 +28,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 from seed_data import DEMO_CARD
-from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead
+from platform_v1 import platform_router, run_migration, _auth_payload, member_role, dispatch_webhooks, resolve_entitlements, effective_status, ACTIVE_STATES, rate_limit, client_ip, login_locked, record_login_fail, clear_login_fails, find_duplicate_lead, send_email, _email_shell, send_localized, recalc_lead_score, require_ws_admin, _event_or_403, crm_maybe_autosync, _lead_workspace_id
 
 # ------------------------------------------------------------------ config
 mongo_url = os.environ['MONGO_URL']
@@ -364,6 +366,103 @@ async def get_public_card(slug: str, lang: str = None):
     return _apply_lang(card, lang)
 
 
+def _abs_url(u: str) -> str:
+    """Resolve a stored image reference to an absolute, crawler-fetchable URL."""
+    if not u:
+        return ""
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    if u.startswith("/") and PUBLIC_APP_URL:
+        return f"{PUBLIC_APP_URL}{u}"
+    return ""
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+@api_router.get("/og/{slug}")
+async def card_og(slug: str, lang: str = None):
+    """Crawler-visible per-card Open Graph / Twitter metadata.
+
+    Serves a minimal HTML document (no SPA execution required) using ONLY public
+    card fields. Respects publication + active-subscription rules; unknown, draft
+    or paused cards return 404 so no private/unpublished data is exposed. Human
+    browsers are redirected to the normal React public profile."""
+    card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    wsid = card.get("workspace_id")
+    if wsid:
+        ent = await resolve_entitlements(wsid)
+        if not ent.get("active"):
+            raise HTTPException(status_code=404, detail="Card not found")
+    card = _apply_lang(card, lang)
+    idn = card.get("identity", {}) or {}
+
+    name = (idn.get("fullName") or slug).strip()
+    job = (idn.get("jobTitle") or "").strip()
+    company = (idn.get("company") or "").strip()
+    bio = (idn.get("bio") or "").strip()
+
+    role_line = " · ".join([p for p in (job, company) if p])
+    title = f"{name} — {role_line}" if role_line else name
+    if role_line:
+        desc = bio or f"Connect with {name}, {role_line}. Save the contact, book a meeting and exchange details — powered by TapPresence."
+    else:
+        desc = bio or f"Connect with {name}. Save the contact, book a meeting and exchange details — powered by TapPresence."
+    title = _clip(title, 90)
+    desc = _clip(desc, 200)
+
+    image = _abs_url(idn.get("profilePhoto") or "")
+    if not image:
+        image = f"{PUBLIC_APP_URL}/logo512.png" if PUBLIC_APP_URL else "/logo512.png"
+    canonical = f"{PUBLIC_APP_URL}/{slug}" if PUBLIC_APP_URL else f"/{slug}"
+
+    active_lang = card.get("_activeLang") or "en"
+    is_rtl = active_lang == "ar"
+    e = html.escape
+    doc = f"""<!doctype html>
+<html lang="{e(active_lang)}"{' dir="rtl"' if is_rtl else ''}>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{e(title)}</title>
+<meta name="description" content="{e(desc)}" />
+<link rel="canonical" href="{e(canonical)}" />
+<meta property="og:type" content="profile" />
+<meta property="og:site_name" content="TapPresence" />
+<meta property="og:title" content="{e(title)}" />
+<meta property="og:description" content="{e(desc)}" />
+<meta property="og:url" content="{e(canonical)}" />
+<meta property="og:image" content="{e(image)}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{e(title)}" />
+<meta name="twitter:description" content="{e(desc)}" />
+<meta name="twitter:image" content="{e(image)}" />
+<script>
+  // Real browsers that land here go straight to the interactive card; crawlers stay for the tags.
+  (function () {{
+    try {{
+      var ua = navigator.userAgent || "";
+      var isBot = /bot|crawl|spider|facebookexternalhit|slurp|bing|preview|whatsapp|telegram|slack|discord|embed|linkedin|twitter|pinterest|applebot/i.test(ua);
+      if (!isBot) window.location.replace("/{e(slug)}");
+    }} catch (err) {{}}
+  }})();
+</script>
+</head>
+<body>
+<h1>{e(title)}</h1>
+<p>{e(desc)}</p>
+<p><a href="{e(canonical)}">Open {e(name)}'s TapPresence card</a></p>
+</body>
+</html>"""
+    return Response(content=doc, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
+
 @api_router.get("/cards/{slug}/vcard")
 async def get_vcard(slug: str):
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
@@ -498,9 +597,9 @@ def _brand_qr(url: str, fill: str = "#0B0D12", back: str = "#FFFFFF"):
     try:
         logo = Image.open(TP_MARK_PATH).convert("RGBA")
         qw, qh = img.size
-        lw = int(qw * 0.26)  # ~26% — recognizable mark; H-level EC + white backing keeps scans reliable
+        lw = int(qw * 0.35)  # largest professionally-scannable size; H-level EC (30% recovery) + tight white backing keeps decode reliable (pyzbar-verified original + 300px + 3x, short & long slugs)
         logo = logo.resize((lw, lw), Image.LANCZOS)
-        pad = max(3, lw // 6)
+        pad = max(3, lw // 12)
         backing = Image.new("RGBA", (lw + 2 * pad, lw + 2 * pad), (255, 255, 255, 255))
         bx, by = (qw - backing.width) // 2, (qh - backing.height) // 2
         img.paste(backing, (bx, by), backing)
@@ -690,7 +789,8 @@ async def delete_card(card_id: str, user: dict = Depends(get_current_user)):
 
 
 @api_router.get("/admin/leads")
-async def list_leads(slug: str = None, user: dict = Depends(get_current_user)):
+async def list_leads(slug: str = None, event_id: str = None, source: str = None,
+                     captured_by: str = None, user: dict = Depends(get_current_user)):
     # Tenant isolation: only leads on cards the caller can access.
     q = await _card_query(user)
     cards = await db.digital_cards.find(q, {"_id": 0, "slug": 1}).to_list(5000)
@@ -701,8 +801,28 @@ async def list_leads(slug: str = None, user: dict = Depends(get_current_user)):
         lq = {"cardSlug": slug}
     else:
         lq = {"cardSlug": {"$in": slugs}}
-    leads = await db.leads.find(lq, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    if event_id:
+        lq["event_id"] = event_id
+    if source and source != "all":
+        lq["source"] = source
+    if captured_by and captured_by != "all":
+        lq["captured_by"] = captured_by
+    leads = await db.leads.find(lq, {"_id": 0}).sort("created_at", -1).to_list(2000)
     return leads
+
+
+@api_router.get("/admin/team-members")
+async def team_members(user: dict = Depends(get_current_user)):
+    """People who can capture leads in the caller's workspaces (for the 'Captured by' filter)."""
+    if user.get("role") == "SUPER_ADMIN":
+        ms = await db.memberships.find({}, {"_id": 0}).to_list(5000)
+    else:
+        my = await db.memberships.find({"user_id": user["id"]}, {"_id": 0}).to_list(100)
+        ws_ids = [m["workspace_id"] for m in my]
+        ms = await db.memberships.find({"workspace_id": {"$in": ws_ids}}, {"_id": 0}).to_list(5000)
+    uids = list({m["user_id"] for m in ms})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(5000)
+    return [{"id": u["id"], "name": u.get("name") or u.get("email") or u["id"]} for u in users]
 
 
 async def _lead_or_403(lead_id: str, user: dict):
@@ -744,6 +864,9 @@ async def update_lead_fields(lead_id: str, body: LeadFieldsIn, user: dict = Depe
     upd["updated_at"] = now
     upd["last_activity"] = now
     await db.leads.update_one({"id": lead_id}, {"$set": upd})
+    await recalc_lead_score(lead_id)
+    _l = await db.leads.find_one({"id": lead_id}, {"_id": 0, "workspace_id": 1, "cardSlug": 1})
+    asyncio.create_task(crm_maybe_autosync(await _lead_workspace_id(_l), lead_id))
     return await db.leads.find_one({"id": lead_id}, {"_id": 0})
 
 
@@ -782,6 +905,165 @@ async def clear_lead_reminder(lead_id: str, user: dict = Depends(get_current_use
     return {"ok": True}
 
 
+@api_router.post("/admin/leads/{lead_id}/complete-follow-up")
+async def complete_lead_follow_up(lead_id: str, user: dict = Depends(get_current_user)):
+    """Mark the lead's follow-up as done (real persisted completion for event analytics).
+    Clears the pending reminder + records a timeline entry. Reuses existing lead management."""
+    await _lead_or_403(lead_id, user)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.notifications.delete_many({"type": "lead_reminder", "lead_id": lead_id})
+    await db.leads.update_one({"id": lead_id}, {
+        "$set": {"follow_up_completed_at": now, "next_follow_up": "", "updated_at": now, "last_activity": now},
+        "$push": {"timeline": {"at": now, "event": "follow_up_completed", "by": user.get("id")}}})
+    await recalc_lead_score(lead_id)
+    return {"ok": True, "follow_up_completed_at": now}
+
+
+# ---------- Lead financials (Pipeline Value + Actual Revenue + Attribution) — owner/admin only ----------
+class LeadFinancialsIn(BaseModel):
+    opportunity_value: Optional[float] = None
+    opportunity_currency: Optional[str] = None
+    expected_close_date: Optional[str] = None
+    actual_revenue: Optional[float] = None
+    actual_revenue_currency: Optional[str] = None
+    revenue_recorded_at: Optional[str] = None
+    revenue_attribution_event_id: Optional[str] = None
+    revenue_attribution_type: Optional[str] = None  # event | organic | other
+
+
+def _money(v, ccy):
+    try:
+        return f"{(ccy or '').upper()} {float(v):,.0f}".strip()
+    except Exception:
+        return f"{(ccy or '').upper()} {v}".strip()
+
+
+async def _lead_ws_admin_or_403(lead_id: str, user: dict):
+    """Financial edits are sensitive → WORKSPACE_OWNER / WORKSPACE_ADMIN / SUPER_ADMIN only.
+    Tenant-scoped: require_ws_admin raises 403 for any user outside the lead's workspace."""
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    card = await db.digital_cards.find_one({"slug": lead.get("cardSlug")}, {"_id": 0, "workspace_id": 1})
+    ws_id = lead.get("workspace_id") or (card or {}).get("workspace_id")
+    if not ws_id:
+        raise HTTPException(status_code=403, detail="Not your lead")
+    await require_ws_admin(user, ws_id)
+    return lead, ws_id
+
+
+@api_router.patch("/admin/leads/{lead_id}/financials")
+async def update_lead_financials(lead_id: str, body: LeadFinancialsIn, user: dict = Depends(get_current_user)):
+    """Set / edit / clear a lead's opportunity value, actual revenue and revenue attribution.
+    Financial values NEVER affect the lead score. Audit entries are written for material changes."""
+    lead, ws_id = await _lead_ws_admin_or_403(lead_id, user)
+    raw = body.model_dump(exclude_unset=True)
+    now = datetime.now(timezone.utc).isoformat()
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "region": 1})
+    ws_ccy = (((ws or {}).get("region") or {}).get("default_currency") or "USD").upper()
+    upd, tl = {}, []
+
+    # ----- Opportunity value -----
+    if "opportunity_value" in raw:
+        newv = raw["opportunity_value"]
+        oldv = lead.get("opportunity_value")
+        if newv is None:
+            if oldv is not None:
+                tl.append({"at": now, "event": "opportunity_value_cleared", "by": user["id"],
+                           "detail": _money(oldv, lead.get("opportunity_currency") or ws_ccy)})
+            upd["opportunity_value"] = None
+            upd["opportunity_currency"] = ""
+        else:
+            if float(newv) < 0:
+                raise HTTPException(status_code=400, detail="Opportunity value must be positive")
+            ccy = (raw.get("opportunity_currency") or lead.get("opportunity_currency") or ws_ccy).upper()
+            upd["opportunity_value"] = float(newv)
+            upd["opportunity_currency"] = ccy
+            if oldv is None:
+                tl.append({"at": now, "event": "opportunity_value_updated", "by": user["id"], "detail": _money(newv, ccy)})
+            elif float(oldv) != float(newv):
+                tl.append({"at": now, "event": "opportunity_value_updated", "by": user["id"],
+                           "detail": f"{_money(oldv, lead.get('opportunity_currency') or ccy)} → {_money(newv, ccy)}"})
+    elif raw.get("opportunity_currency"):
+        upd["opportunity_currency"] = raw["opportunity_currency"].upper()
+
+    if "expected_close_date" in raw:
+        upd["expected_close_date"] = (raw["expected_close_date"] or "")[:10]
+
+    # ----- Actual revenue + attribution -----
+    if "actual_revenue" in raw and raw["actual_revenue"] is None:
+        if lead.get("actual_revenue") is not None:
+            tl.append({"at": now, "event": "revenue_cleared", "by": user["id"],
+                       "detail": _money(lead.get("actual_revenue"), lead.get("actual_revenue_currency") or ws_ccy)})
+        upd.update({"actual_revenue": None, "actual_revenue_currency": "", "revenue_recorded_at": "", "revenue_attribution": None})
+    else:
+        touch_rev = any(k in raw for k in ("actual_revenue", "actual_revenue_currency",
+                                           "revenue_attribution_event_id", "revenue_attribution_type", "revenue_recorded_at"))
+        if touch_rev:
+            amt = raw.get("actual_revenue", lead.get("actual_revenue"))
+            if amt is None:
+                raise HTTPException(status_code=400, detail="Enter a revenue amount before attributing it")
+            if float(amt) < 0:
+                raise HTTPException(status_code=400, detail="Revenue must be positive")
+            rccy = (raw.get("actual_revenue_currency") or lead.get("actual_revenue_currency")
+                    or lead.get("opportunity_currency") or ws_ccy).upper()
+            old_att = lead.get("revenue_attribution") or {}
+            att_type = raw.get("revenue_attribution_type") or old_att.get("type") or "organic"
+            if att_type not in ("event", "organic", "other"):
+                att_type = "organic"
+            att_event = raw["revenue_attribution_event_id"] if "revenue_attribution_event_id" in raw else old_att.get("event_id")
+            ev_name = ""
+            if att_type == "event":
+                if not att_event:
+                    raise HTTPException(status_code=400, detail="Select an event to attribute revenue to")
+                # Tenant scope: the attribution event must be accessible to this user (403 otherwise).
+                ev = await _event_or_403(att_event, user)
+                ev_name = ev.get("name") or "event"
+            else:
+                att_event = None
+            attribution = {"event_id": att_event, "type": att_type, "amount": float(amt),
+                           "currency": rccy, "recorded_at": now, "recorded_by": user["id"]}
+            upd["actual_revenue"] = float(amt)
+            upd["actual_revenue_currency"] = rccy
+            upd["revenue_recorded_at"] = raw.get("revenue_recorded_at") or lead.get("revenue_recorded_at") or now
+            upd["revenue_attribution"] = attribution
+
+            def _dest(evid, typ, name):
+                if typ == "event":
+                    return name
+                return "Organic" if typ == "organic" else "Other"
+            new_dest = _dest(att_event, att_type, ev_name)
+            old_amt = lead.get("actual_revenue")
+            if old_amt is None:
+                tl.append({"at": now, "event": "revenue_recorded", "by": user["id"],
+                           "detail": f"{_money(amt, rccy)} → {new_dest}"})
+            else:
+                if float(old_amt) != float(amt):
+                    tl.append({"at": now, "event": "revenue_updated", "by": user["id"],
+                               "detail": f"{_money(old_amt, lead.get('actual_revenue_currency') or rccy)} → {_money(amt, rccy)}"})
+                if old_att.get("event_id") != att_event or old_att.get("type") != att_type:
+                    old_name = ""
+                    if old_att.get("event_id"):
+                        oe = await db.events.find_one({"id": old_att["event_id"]}, {"_id": 0, "name": 1})
+                        old_name = (oe or {}).get("name") or "event"
+                    old_dest = _dest(old_att.get("event_id"), old_att.get("type") or "organic", old_name)
+                    tl.append({"at": now, "event": "revenue_attribution_changed", "by": user["id"],
+                               "detail": f"{old_dest} → {new_dest}"})
+
+    if upd:
+        upd["updated_at"] = now
+        upd["last_activity"] = now
+        ops = {"$set": upd}
+        if tl:
+            ops["$push"] = {"timeline": {"$each": tl}}
+        await db.leads.update_one({"id": lead_id}, ops)
+    # NOTE: lead score is intentionally NOT recalculated — financial values never affect scoring.
+    asyncio.create_task(crm_maybe_autosync(ws_id, lead_id))
+    return await db.leads.find_one({"id": lead_id}, {"_id": 0})
+
+
+
+
 @api_router.delete("/admin/leads/{lead_id}")
 async def delete_lead(lead_id: str, user: dict = Depends(get_current_user)):
     await _lead_or_403(lead_id, user)
@@ -812,6 +1094,9 @@ async def set_lead_status(lead_id: str, body: Dict[str, Any], user: dict = Depen
         raise HTTPException(status_code=400, detail="Invalid status")
     now = datetime.now(timezone.utc).isoformat()
     await db.leads.update_one({"id": lead_id}, {"$set": {"status": st, "updated_at": now, "last_activity": now}})
+    await recalc_lead_score(lead_id)
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0, "workspace_id": 1, "cardSlug": 1})
+    asyncio.create_task(crm_maybe_autosync(await _lead_workspace_id(lead), lead_id))
     return {"ok": True}
 
 
@@ -1213,6 +1498,7 @@ async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Hea
     }
     await db.meetings.insert_one(dict(meeting))
     await db.leads.update_one({"id": lead_id}, {"$push": {"timeline": {"at": now, "event": "meeting_requested" if approval else "meeting_booked", "detail": mt["title"]}}})
+    await recalc_lead_score(lead_id)
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "meeting_booked",
         "card_slug": slug, "scope": "card",
@@ -1221,6 +1507,7 @@ async def public_book(slug: str, body: BookIn, idempotency_key: str | None = Hea
     await db.analytics_events.insert_one({"id": str(uuid.uuid4()), "cardSlug": slug, "type": "tap", "key": "booking_completed", "created_at": now})
     await dispatch_webhooks(card.get("workspace_id"), "meeting.booked", {"id": meeting["id"], "guest": body.name.strip(), "type": mt["title"], "start_utc": meeting.get("start_utc"), "cardSlug": slug})
     await sync_meeting_calendar(meeting["id"])
+    await _send_meeting_emails(meeting, "requested" if approval else "booked")
     meeting.pop("_id", None)
     result = {"ok": True, "manage_token": manage_token, "meeting": meeting}
     await idempotency_store(idempotency_key, f"book:{slug}", result)
@@ -1232,6 +1519,163 @@ def _sanitize_meeting(m: dict) -> dict:
     return m
 
 
+# ---- Transactional booking emails (Resend) — completes the EXISTING meeting lifecycle, localized EN/AR/ES ----
+from platform_v1 import _email_shell as _shell, _norm_lang as _nlang
+
+
+def _fmt_meet_dt(iso_utc: str, tzname: str) -> str:
+    """Language-neutral date/time so AR/ES emails don't show English month names."""
+    try:
+        dt = datetime.fromisoformat((iso_utc or "").replace("Z", "+00:00")).astimezone(ZoneInfo(tzname or "UTC"))
+        return dt.strftime("%Y-%m-%d · %H:%M ") + (tzname or "UTC")
+    except Exception:
+        return iso_utc or ""
+
+
+_MEET_L = {
+    "en": {"meeting": "Meeting", "when": "When", "duration": "Duration", "where": "Where", "guest": "Guest",
+           "proposed": "Proposed time", "min": "min", "dash": "View in dashboard", "manage": "Manage booking",
+           "review": "Review & accept", "again": "Book another time"},
+    "ar": {"meeting": "الاجتماع", "when": "الموعد", "duration": "المدة", "where": "المكان", "guest": "الضيف",
+           "proposed": "الوقت المقترح", "min": "دقيقة", "dash": "عرض في لوحة التحكم", "manage": "إدارة الحجز",
+           "review": "مراجعة وقبول", "again": "احجز وقتًا آخر"},
+    "es": {"meeting": "Reunión", "when": "Cuándo", "duration": "Duración", "where": "Dónde", "guest": "Invitado",
+           "proposed": "Hora propuesta", "min": "min", "dash": "Ver en el panel", "manage": "Gestionar reserva",
+           "review": "Revisar y aceptar", "again": "Reservar otra hora"},
+}
+
+# per (kind, party) → {lang: (subject, title, intro_template)}; intro uses {host}{guest}{mtype}{details}{when}
+_MEET_TX = {
+    ("booked", "guest"): {
+        "en": ("Your meeting is booked", "Your meeting is booked", "Hi {guest}, your {mtype} with {host} is confirmed.<br><br>{details}"),
+        "ar": ("تم حجز اجتماعك", "تم حجز اجتماعك", "مرحبًا {guest}، تم تأكيد {mtype} مع {host}.<br><br>{details}"),
+        "es": ("Tu reunión está reservada", "Tu reunión está reservada", "Hola {guest}, tu {mtype} con {host} está confirmada.<br><br>{details}"),
+    },
+    ("booked", "host"): {
+        "en": ("New meeting booked", "New meeting booked", "{guest} booked a {mtype} with you.<br><br>{details}"),
+        "ar": ("حجز اجتماع جديد", "حجز اجتماع جديد", "قام {guest} بحجز {mtype} معك.<br><br>{details}"),
+        "es": ("Nueva reunión reservada", "Nueva reunión reservada", "{guest} reservó una {mtype} contigo.<br><br>{details}"),
+    },
+    ("requested", "guest"): {
+        "en": ("We received your meeting request", "Request received", "Hi {guest}, your {mtype} request with {host} was received and is pending confirmation.<br><br>{details}"),
+        "ar": ("تم استلام طلب اجتماعك", "تم استلام الطلب", "مرحبًا {guest}، تم استلام طلب {mtype} مع {host} وهو بانتظار التأكيد.<br><br>{details}"),
+        "es": ("Recibimos tu solicitud de reunión", "Solicitud recibida", "Hola {guest}, tu solicitud de {mtype} con {host} fue recibida y está pendiente de confirmación.<br><br>{details}"),
+    },
+    ("requested", "host"): {
+        "en": ("New meeting request — approval needed", "New meeting request", "{guest} requested a {mtype}.<br><br>{details}"),
+        "ar": ("طلب اجتماع جديد — يتطلب الموافقة", "طلب اجتماع جديد", "طلب {guest} {mtype}.<br><br>{details}"),
+        "es": ("Nueva solicitud de reunión — requiere aprobación", "Nueva solicitud de reunión", "{guest} solicitó una {mtype}.<br><br>{details}"),
+    },
+    ("confirmed", "guest"): {
+        "en": ("Your meeting is confirmed", "Your meeting is confirmed", "Hi {guest}, your {mtype} with {host} is now confirmed.<br><br>{details}"),
+        "ar": ("تم تأكيد اجتماعك", "تم تأكيد اجتماعك", "مرحبًا {guest}، تم تأكيد {mtype} مع {host}.<br><br>{details}"),
+        "es": ("Tu reunión está confirmada", "Tu reunión está confirmada", "Hola {guest}, tu {mtype} con {host} está confirmada.<br><br>{details}"),
+    },
+    ("confirmed", "host"): {
+        "en": ("Meeting confirmed", "Meeting confirmed", "The {mtype} with {guest} is confirmed.<br><br>{details}"),
+        "ar": ("تم تأكيد الاجتماع", "تم تأكيد الاجتماع", "تم تأكيد {mtype} مع {guest}.<br><br>{details}"),
+        "es": ("Reunión confirmada", "Reunión confirmada", "La {mtype} con {guest} está confirmada.<br><br>{details}"),
+    },
+    ("rescheduled", "guest"): {
+        "en": ("Your meeting was rescheduled", "Your meeting was rescheduled", "Hi {guest}, your {mtype} with {host} has a new time.<br><br>{details}"),
+        "ar": ("تمت إعادة جدولة اجتماعك", "تمت إعادة جدولة اجتماعك", "مرحبًا {guest}، تم تحديد وقت جديد لـ {mtype} مع {host}.<br><br>{details}"),
+        "es": ("Tu reunión fue reprogramada", "Tu reunión fue reprogramada", "Hola {guest}, tu {mtype} con {host} tiene un nuevo horario.<br><br>{details}"),
+    },
+    ("rescheduled", "host"): {
+        "en": ("Meeting rescheduled", "Meeting rescheduled", "The {mtype} with {guest} was rescheduled.<br><br>{details}"),
+        "ar": ("تمت إعادة جدولة الاجتماع", "تمت إعادة جدولة الاجتماع", "تمت إعادة جدولة {mtype} مع {guest}.<br><br>{details}"),
+        "es": ("Reunión reprogramada", "Reunión reprogramada", "La {mtype} con {guest} fue reprogramada.<br><br>{details}"),
+    },
+    ("cancelled", "guest"): {
+        "en": ("Your meeting was cancelled", "Your meeting was cancelled", "Hi {guest}, your {mtype} with {host} scheduled for {when} has been cancelled."),
+        "ar": ("تم إلغاء اجتماعك", "تم إلغاء اجتماعك", "مرحبًا {guest}، تم إلغاء {mtype} مع {host} المقرر في {when}."),
+        "es": ("Tu reunión fue cancelada", "Tu reunión fue cancelada", "Hola {guest}, tu {mtype} con {host} programada para {when} fue cancelada."),
+    },
+    ("cancelled", "host"): {
+        "en": ("Meeting cancelled", "Meeting cancelled", "The {mtype} with {guest} ({when}) was cancelled."),
+        "ar": ("تم إلغاء الاجتماع", "تم إلغاء الاجتماع", "تم إلغاء {mtype} مع {guest} ({when})."),
+        "es": ("Reunión cancelada", "Reunión cancelada", "La {mtype} con {guest} ({when}) fue cancelada."),
+    },
+    ("proposed", "guest"): {
+        "en": ("A new time was proposed", "A new time was proposed", "Hi {guest}, {host} proposed a new time for your {mtype}.<br><br>{details}<br>Open your booking to accept or decline."),
+        "ar": ("تم اقتراح وقت جديد", "تم اقتراح وقت جديد", "مرحبًا {guest}، اقترح {host} وقتًا جديدًا لـ {mtype}.<br><br>{details}<br>افتح حجزك للقبول أو الرفض."),
+        "es": ("Se propuso un nuevo horario", "Se propuso un nuevo horario", "Hola {guest}, {host} propuso un nuevo horario para tu {mtype}.<br><br>{details}<br>Abre tu reserva para aceptar o rechazar."),
+    },
+    ("reminder", "guest"): {
+        "en": ("Reminder: your meeting starts soon", "Your meeting starts soon", "Hi {guest}, a reminder that your {mtype} with {host} starts in about an hour.<br><br>{details}"),
+        "ar": ("تذكير: اجتماعك يبدأ قريبًا", "اجتماعك يبدأ قريبًا", "مرحبًا {guest}، تذكير بأن {mtype} مع {host} يبدأ خلال ساعة تقريبًا.<br><br>{details}"),
+        "es": ("Recordatorio: tu reunión comienza pronto", "Tu reunión comienza pronto", "Hola {guest}, recuerda que tu {mtype} con {host} comienza en aproximadamente una hora.<br><br>{details}"),
+    },
+    ("reminder", "host"): {
+        "en": ("Reminder: meeting starts soon", "Meeting starts soon", "A reminder that your {mtype} with {guest} starts in about an hour.<br><br>{details}"),
+        "ar": ("تذكير: الاجتماع يبدأ قريبًا", "الاجتماع يبدأ قريبًا", "تذكير بأن {mtype} مع {guest} يبدأ خلال ساعة تقريبًا.<br><br>{details}"),
+        "es": ("Recordatorio: la reunión comienza pronto", "La reunión comienza pronto", "Recuerda que tu {mtype} con {guest} comienza en aproximadamente una hora.<br><br>{details}"),
+    },
+}
+
+
+async def _meeting_host(m: dict):
+    """Return (host_email, host_language) for a meeting."""
+    for uid in [m.get("owner_user_id")]:
+        if uid:
+            u = await db.users.find_one({"id": uid}, {"_id": 0, "email": 1, "language": 1})
+            if u and u.get("email"):
+                return u["email"], u.get("language", "en")
+    wsid = m.get("workspace_id")
+    if wsid:
+        ws = await db.workspaces.find_one({"id": wsid}, {"_id": 0, "owner_id": 1})
+        if ws and ws.get("owner_id"):
+            u = await db.users.find_one({"id": ws["owner_id"]}, {"_id": 0, "email": 1, "language": 1})
+            if u and u.get("email"):
+                return u["email"], u.get("language", "en")
+    return None, "en"
+
+
+async def _send_meeting_emails(m: dict, kind: str):
+    """Send localized transactional emails for the existing meeting lifecycle.
+    kind: booked | requested | confirmed | rescheduled | cancelled | proposed | reminder.
+    Guest + host use the card owner's account language. Best-effort; never raises into the request."""
+    try:
+        host_email, lang = await _meeting_host(m)
+        lang = _nlang(lang)
+        L = _MEET_L.get(lang, _MEET_L["en"])
+        guest_email = (m.get("visitor_email") or "").strip()
+        host_name = m.get("owner_name") or "your host"
+        guest_name = m.get("visitor_name") or L["guest"]
+        mtype = m.get("meeting_type_title") or L["meeting"]
+        dur = m.get("duration") or 30
+        loc = m.get("location_detail") or (m.get("location_type") or "video").title()
+        when_guest = _fmt_meet_dt(m.get("start_utc", ""), m.get("visitor_tz") or m.get("owner_timezone"))
+        when_host = _fmt_meet_dt(m.get("start_utc", ""), m.get("owner_timezone"))
+        manage_url = f"{PUBLIC_APP_URL}/m/{m.get('manage_token', '')}"
+        dash_url = f"{PUBLIC_APP_URL}/meetings"
+        book_url = f"{PUBLIC_APP_URL}/{m.get('cardSlug', '')}"
+
+        def details(when, with_guest=False):
+            proposed = ""
+            if kind == "proposed":
+                pw = _fmt_meet_dt(m.get("proposed_start_utc") or m.get("start_utc"), m.get("visitor_tz") or m.get("owner_timezone"))
+                proposed = f"<b>{L['proposed']}:</b> {pw}<br>"
+            g = f"<br><b>{L['guest']}:</b> {guest_name}" + (f" · {guest_email}" if (with_guest and guest_email) else "") if with_guest else ""
+            return (f"{proposed}<b>{L['meeting']}:</b> {mtype}<br><b>{L['when']}:</b> {when}<br>"
+                    f"<b>{L['duration']}:</b> {dur} {L['min']}<br><b>{L['where']}:</b> {loc}{g}")
+
+        cta_guest = L["review"] if kind == "proposed" else (L["again"] if kind == "cancelled" else L["manage"])
+        parties = []
+        if guest_email and (kind, "guest") in _MEET_TX:
+            parties.append(("guest", guest_email, when_guest, manage_url if kind != "cancelled" else book_url, cta_guest, False))
+        if host_email and (kind, "host") in _MEET_TX:
+            parties.append(("host", host_email, when_host, dash_url, L["dash"], True))
+        for party, to, when, cta_url, cta, with_guest in parties:
+            tx = _MEET_TX[(kind, party)]
+            subject, title, intro_t = tx.get(lang, tx["en"])
+            intro = intro_t.format(guest=guest_name, host=host_name, mtype=mtype, when=when,
+                                   details=details(when, with_guest))
+            await send_email(to, f"{subject} · TapPresence", _shell(title, intro, cta, cta_url, "", lang=lang))
+    except Exception as e:
+        logger.error(f"[email] meeting email failed (kind={kind}) for {m.get('id')}: {e}")
+
+
 # ============================ Google Calendar integration (separate flow — does NOT touch Sign-In) ============================
 import httpx as _httpx
 import urllib.parse as _urlparse
@@ -1240,7 +1684,8 @@ GCAL_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID") or ""
 GCAL_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET") or ""
 GCAL_REDIRECT_URI = os.environ.get("GOOGLE_CALENDAR_REDIRECT_URI") or ""
 # Minimum scope needed to create/update/delete events (+ openid/email to label the connection).
-GCAL_SCOPE = "openid email https://www.googleapis.com/auth/calendar.events"
+GCAL_SCOPE = "openid email https://www.googleapis.com/auth/calendar.app.created"
+GCAL_CALENDAR_NAME = "TapPresence Bookings"
 GCAL_ACTIVE_STATUSES = {"scheduled", "rescheduled", "confirmed"}
 
 
@@ -1316,10 +1761,48 @@ def _gcal_event_body(m: dict) -> dict:
     return body
 
 
+async def _gcal_ensure_calendar(user_id: str, access_token: str):
+    """Create/reuse the dedicated 'TapPresence Bookings' secondary calendar for this user.
+    With the calendar.app.created scope the app can ONLY see/manage calendars it created, so
+    listing + name match is safe and never touches the user's primary or unrelated calendars.
+    Returns the calendar_id (or None on failure). Idempotent — never creates duplicates."""
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    conn = await db.google_calendar_connections.find_one({"user_id": user_id}, {"_id": 0, "calendar_id": 1})
+    async with _httpx.AsyncClient(timeout=15) as cx:
+        # 1) reuse stored id if it still exists
+        stored = (conn or {}).get("calendar_id")
+        if stored:
+            rc = await cx.get(f"https://www.googleapis.com/calendar/v3/calendars/{stored}", headers=headers)
+            if rc.status_code == 200:
+                return stored
+        # 2) reuse an app-created calendar with our name (calendarList only returns app-created ones)
+        rl = await cx.get("https://www.googleapis.com/calendar/v3/users/me/calendarList",
+                          headers=headers, params={"minAccessRole": "owner"})
+        if rl.status_code == 200:
+            for item in (rl.json() or {}).get("items", []):
+                if item.get("summary") == GCAL_CALENDAR_NAME and item.get("id"):
+                    cid = item["id"]
+                    await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"calendar_id": cid}})
+                    return cid
+        # 3) create it
+        rc = await cx.post("https://www.googleapis.com/calendar/v3/calendars", headers=headers,
+                           json={"summary": GCAL_CALENDAR_NAME,
+                                 "description": "Meetings booked through your TapPresence card.",
+                                 "timeZone": "UTC"})
+        if rc.status_code in (200, 201):
+            cid = (rc.json() or {}).get("id")
+            if cid:
+                await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"calendar_id": cid}})
+                return cid
+        logging.error(f"[gcal] ensure calendar failed user={user_id} http={rc.status_code}")
+    return None
+
+
 async def sync_meeting_calendar(meeting_id: str):
-    """Create/update/delete the Google Calendar event on the OWNER's calendar for a TapPresence meeting.
-    No-op if the owner hasn't connected Calendar. Only touches events this app created (stored google_event_id).
-    Never raises to the caller — a Calendar hiccup must never break booking."""
+    """Create/update/delete the Google Calendar event on the OWNER's dedicated 'TapPresence Bookings'
+    secondary calendar for a TapPresence meeting. No-op if the owner hasn't connected Calendar (or has
+    no app-created calendar yet). Only touches events this app created (stored google_event_id).
+    Never reads the user's primary or unrelated calendars. Never raises to the caller."""
     try:
         m = await db.meetings.find_one({"id": meeting_id}, {"_id": 0})
         if not m or not _gcal_configured():
@@ -1327,9 +1810,12 @@ async def sync_meeting_calendar(meeting_id: str):
         owner = m.get("owner_user_id")
         if not owner:
             return
-        conn = await db.google_calendar_connections.find_one({"user_id": owner}, {"_id": 0, "revoked": 1})
+        conn = await db.google_calendar_connections.find_one({"user_id": owner}, {"_id": 0, "revoked": 1, "calendar_id": 1})
         if not conn or conn.get("revoked"):
             return
+        cal_id = conn.get("calendar_id")
+        if not cal_id:
+            return  # legacy/primary connection before the least-privilege migration — needs reconnect; no-op
         try:
             at = await _gcal_access_token(owner)
         except _NeedsReconnect:
@@ -1338,7 +1824,7 @@ async def sync_meeting_calendar(meeting_id: str):
             return
         headers = {"Authorization": f"Bearer {at}", "Content-Type": "application/json"}
         eid = m.get("google_event_id")
-        base = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        base = f"https://www.googleapis.com/calendar/v3/calendars/{_urlparse.quote(cal_id)}/events"
         async def _flag_if_denied(resp):
             if resp.status_code in (401, 403):
                 await db.google_calendar_connections.update_one({"user_id": owner}, {"$set": {"needs_reconnect": True}})
@@ -1380,11 +1866,12 @@ async def gcal_status(user: dict = Depends(get_current_user)):
     conn = await db.google_calendar_connections.find_one({"user_id": user["id"]}, {"_id": 0})
     if not conn:
         return {"configured": True, "connected": False}
-    scope_ok = "calendar.events" in (conn.get("scope") or "")
-    needs = bool(conn.get("revoked")) or bool(conn.get("needs_reconnect")) or not scope_ok
+    scope_ok = "calendar.app.created" in (conn.get("scope") or "")
+    has_cal = bool(conn.get("calendar_id"))
+    needs = bool(conn.get("revoked")) or bool(conn.get("needs_reconnect")) or not scope_ok or not has_cal
     reason = "calendar_permission_missing" if not scope_ok else ("reauth_required" if needs else None)
     return {"configured": True,
-            "connected": (not conn.get("revoked", False)) and scope_ok and not conn.get("needs_reconnect", False),
+            "connected": (not conn.get("revoked", False)) and scope_ok and has_cal and not conn.get("needs_reconnect", False),
             "needs_reconnect": needs, "reason": reason, "email": conn.get("email"),
             "connected_at": conn.get("connected_at")}
 
@@ -1438,8 +1925,8 @@ async def gcal_callback(code: Optional[str] = None, state: Optional[str] = None,
         return RedirectResponse(f"{dest}&calendar=error&reason=network")
     now = datetime.now(timezone.utc)
     granted_scope = t.get("scope", "") or ""
-    if "calendar.events" not in granted_scope:
-        logging.error(f"[gcal] calendar.events scope NOT granted user={user_id} (granted='{granted_scope}')")
+    if "calendar.app.created" not in granted_scope:
+        logging.error(f"[gcal] calendar.app.created scope NOT granted user={user_id} (granted='{granted_scope}')")
         return RedirectResponse(f"{dest}&calendar=error&reason=calendar_permission_denied")
     existing = await db.google_calendar_connections.find_one({"user_id": user_id}, {"_id": 0, "refresh_token": 1})
     if not refresh_tok and not (existing and existing.get("refresh_token")):
@@ -1452,6 +1939,11 @@ async def gcal_callback(code: Optional[str] = None, state: Optional[str] = None,
         setd["refresh_token"] = refresh_tok  # only present on first consent / prompt=consent
     await db.google_calendar_connections.update_one({"user_id": user_id},
         {"$set": setd, "$setOnInsert": {"connected_at": now.isoformat()}}, upsert=True)
+    # Create/reuse the dedicated 'TapPresence Bookings' secondary calendar (never duplicates).
+    cal_id = await _gcal_ensure_calendar(user_id, access_tok)
+    if not cal_id:
+        await db.google_calendar_connections.update_one({"user_id": user_id}, {"$set": {"needs_reconnect": True}})
+        return RedirectResponse(f"{dest}&calendar=error&reason=calendar_create_failed")
     return RedirectResponse(f"{dest}&calendar=connected")
 
 
@@ -1489,7 +1981,9 @@ async def manage_cancel(token: str):
                                  "$push": {"history": {"at": now, "event": "cancelled", "by": "guest"}}})
     if m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
+        await recalc_lead_score(m["lead_id"])
     await sync_meeting_calendar(m["id"])
+    await _send_meeting_emails({**m, "status": "cancelled"}, "cancelled")
     return {"ok": True}
 
 
@@ -1515,6 +2009,7 @@ async def manage_reschedule(token: str, body: Dict[str, Any]):
         "reminders": [{"offset_hours": 24, "status": "scheduled", "provider": "NOT_CONFIGURED"}, {"offset_hours": 1, "status": "scheduled", "provider": "NOT_CONFIGURED"}]},
         "$push": {"history": {"at": now, "event": "rescheduled", "by": "guest"}}})
     await sync_meeting_calendar(m["id"])
+    await _send_meeting_emails({**m, "start_utc": start_utc.isoformat()}, "rescheduled")
     return {"ok": True}
 
 
@@ -1627,6 +2122,10 @@ async def admin_meeting_status(meeting_id: str, body: Dict[str, Any], user: dict
     if status in ("cancelled", "declined") and m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_cancelled", "detail": m.get("meeting_type_title", "")}}})
     await sync_meeting_calendar(meeting_id)
+    if status == "confirmed":
+        await _send_meeting_emails({**m, "status": "confirmed"}, "confirmed")
+    elif status in ("cancelled", "declined"):
+        await _send_meeting_emails({**m, "status": status}, "cancelled")
     return {"ok": True}
 
 
@@ -1691,6 +2190,7 @@ async def admin_propose_time(meeting_id: str, body: Dict[str, Any], user: dict =
         "proposed_start_utc": start_utc.isoformat(), "proposed_end_utc": end_utc.isoformat(),
         "status": "time_proposed", "updated_at": now},
         "$push": {"history": {"at": now, "event": "time_proposed", "by": user.get("email")}}})
+    await _send_meeting_emails({**m, "proposed_start_utc": start_utc.isoformat()}, "proposed")
     return {"ok": True}
 
 
@@ -1712,6 +2212,7 @@ async def manage_accept_proposal(token: str):
     if m.get("lead_id"):
         await db.leads.update_one({"id": m["lead_id"]}, {"$push": {"timeline": {"at": now, "event": "meeting_confirmed", "detail": m.get("meeting_type_title", "")}}})
     await sync_meeting_calendar(m["id"])
+    await _send_meeting_emails({**m, "start_utc": start_utc.isoformat(), "status": "confirmed"}, "confirmed")
     return {"ok": True}
 
 
@@ -1741,18 +2242,52 @@ async def admin_reschedule(meeting_id: str, body: Dict[str, Any], user: dict = D
         "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat(), "status": "rescheduled", "updated_at": now},
         "$push": {"history": {"at": now, "event": "rescheduled", "by": user.get("email")}}})
     await sync_meeting_calendar(meeting_id)
+    await _send_meeting_emails({**m, "start_utc": start_utc.isoformat()}, "rescheduled")
     return {"ok": True}
 
 
 # ------------------------------------------------------------------ uploads
 
+ALLOWED_UPLOAD_EXT = {"jpg", "jpeg", "png", "gif", "webp"}
+ALLOWED_UPLOAD_MIME = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _sniff_image_kind(data: bytes):
+    """Return the real image kind from magic bytes, or None if not a supported image."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
 @api_router.post("/upload")
 async def upload(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "bin"
+    ext = file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else ""
+    if ext not in ALLOWED_UPLOAD_EXT:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Allowed: JPG, PNG, GIF, WEBP.")
+    declared_type = (file.content_type or "").lower()
+    if declared_type and declared_type not in ALLOWED_UPLOAD_MIME:
+        raise HTTPException(status_code=400, detail="Unsupported content type.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 5 MB.")
+    kind = _sniff_image_kind(data)
+    if kind is None:
+        raise HTTPException(status_code=400, detail="File content is not a valid image.")
+    ext_norm = "jpeg" if ext == "jpg" else ext
+    if kind != ext_norm:
+        raise HTTPException(status_code=400, detail="File content does not match its extension.")
     file_id = str(uuid.uuid4())
     path = f"{APP_NAME}/uploads/{file_id}.{ext}"
-    data = await file.read()
-    content_type = MIME_TYPES.get(ext, file.content_type or "application/octet-stream")
+    content_type = MIME_TYPES.get(ext, f"image/{kind}")
     result = put_object(path, data, content_type)
     await db.files.insert_one({
         "id": file_id, "storage_path": result["path"],
@@ -1779,6 +2314,63 @@ async def root():
 
 # ------------------------------------------------------------------ startup
 
+# ---- Transactional email scheduler (idempotent): trial lifecycle + meeting reminders ----
+async def _run_trial_emails():
+    """Trial 'ends in 3 days' + 'expired' emails. Reads the EXISTING trial dates only; sets an
+    additive email_flags marker so each reminder is sent at most once. Never mutates trial logic."""
+    now = datetime.now(timezone.utc)
+    now_i = now.isoformat()
+    soon = (now + timedelta(days=3)).isoformat()
+    cur = db.workspaces.find({"subscription.status": "trialing", "subscription.trial_ends_at": {"$ne": None}},
+                             {"_id": 0, "id": 1, "owner_id": 1, "subscription": 1})
+    async for ws in cur:
+        sub = ws.get("subscription") or {}
+        ends = sub.get("trial_ends_at")
+        flags = sub.get("email_flags") or {}
+        if not ends:
+            continue
+        owner = await db.users.find_one({"id": ws.get("owner_id")}, {"_id": 0, "email": 1, "language": 1})
+        if not owner or not owner.get("email"):
+            continue
+        lang = owner.get("language", "en")
+        if ends <= now_i and not flags.get("expired"):
+            if await send_localized(owner["email"], "trial_expired", lang, f"{PUBLIC_APP_URL}/billing"):
+                await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"subscription.email_flags.expired": now_i}})
+        elif now_i < ends <= soon and not flags.get("reminder_3d"):
+            if await send_localized(owner["email"], "trial_3d", lang, f"{PUBLIC_APP_URL}/billing"):
+                await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"subscription.email_flags.reminder_3d": now_i}})
+
+
+REMINDER_STATUSES = {"scheduled", "confirmed", "rescheduled"}
+
+
+async def _run_meeting_reminders():
+    """~1h-before reminder to guest + host for active meetings only. Idempotent via reminder_email_sent."""
+    now = datetime.now(timezone.utc)
+    window_end = (now + timedelta(minutes=75)).isoformat()
+    now_i = now.isoformat()
+    cur = db.meetings.find({"status": {"$in": list(REMINDER_STATUSES)},
+                            "start_utc": {"$gt": now_i, "$lte": window_end},
+                            "reminder_email_sent": {"$ne": True}}, {"_id": 0})
+    async for m in cur:
+        await db.meetings.update_one({"id": m["id"]}, {"$set": {"reminder_email_sent": True, "reminder_email_at": now_i}})
+        await _send_meeting_emails(m, "reminder")
+
+
+async def _email_scheduler():
+    await asyncio.sleep(20)  # let startup settle
+    while True:
+        try:
+            await _run_trial_emails()
+        except Exception as e:
+            logger.error(f"[scheduler] trial emails: {e}")
+        try:
+            await _run_meeting_reminders()
+        except Exception as e:
+            logger.error(f"[scheduler] meeting reminders: {e}")
+        await asyncio.sleep(900)  # every 15 minutes
+
+
 @app.on_event("startup")
 async def startup():
     try:
@@ -1787,19 +2379,22 @@ async def startup():
     except Exception as e:
         logger.warning(f"Index setup: {e}")
 
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-    existing = await db.users.find_one({"email": admin_email})
-    if not existing:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()), "email": admin_email,
-            "password_hash": hash_password(admin_password), "name": "Admin", "role": "admin",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        logger.info("Admin seeded")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email},
-                                  {"$set": {"password_hash": hash_password(admin_password)}})
+    admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD", "")
+    if not admin_email or not admin_password:
+        logger.warning("ADMIN_EMAIL/ADMIN_PASSWORD not set — skipping admin seed (no fallback credentials).")
+    else:
+        existing = await db.users.find_one({"email": admin_email})
+        if not existing:
+            await db.users.insert_one({
+                "id": str(uuid.uuid4()), "email": admin_email,
+                "password_hash": hash_password(admin_password), "name": "Admin", "role": "admin",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info("Admin seeded")
+        elif not verify_password(admin_password, existing["password_hash"]):
+            await db.users.update_one({"email": admin_email},
+                                      {"$set": {"password_hash": hash_password(admin_password)}})
 
     demo = await db.digital_cards.find_one({"slug": DEMO_CARD["slug"]})
     if not demo:
@@ -1817,6 +2412,12 @@ async def startup():
         logger.info("Storage initialized")
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
+
+    try:
+        asyncio.create_task(_email_scheduler())
+        logger.info("Email scheduler started (trial lifecycle + meeting reminders)")
+    except Exception as e:
+        logger.error(f"Email scheduler failed to start: {e}")
 
 
 app.include_router(api_router)

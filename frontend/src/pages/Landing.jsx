@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion, useScroll, useMotionValueEvent } from "framer-motion";
 import { Sparkles, ArrowRight, Users, Nfc, PlayCircle, Star, BrainCircuit, LineChart, Linkedin, Twitter, Instagram, Apple, Play } from "lucide-react";
+import { useSeo, ORG_JSONLD, WEBSITE_JSONLD, SOFTWARE_APP_JSONLD } from "@/lib/seo";
+import { trackTrialClick } from "@/lib/ga";
+import { SEO_FOOTER_LINKS, COMPANY_FOOTER_LINKS } from "@/pages/seo/landingContent";
 import "@/components/landing/landing.css";
 import HeroVisual from "@/components/landing/HeroVisual";
 import GoldWaveCanvas from "@/components/landing/GoldWaveCanvas";
@@ -21,7 +24,7 @@ const Reveal = ({ children, delay = 0, className = "", ...rest }) => (
 );
 
 const AriadniMark = ({ className = "" }) => (
-  <img src="/tp-mark.png" alt="TapPresence" className={`object-contain ${className}`} aria-hidden />
+  <img src="/tp-mark-tight.png" alt="TapPresence" className={`object-contain ${className}`} aria-hidden />
 );
 
 const goTo = (hash) => {
@@ -29,9 +32,9 @@ const goTo = (hash) => {
   if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
-const Brand = ({ size = "text-xl" }) => (
-  <span className={`flex items-center gap-2 ${size} font-semibold tracking-tight`} data-testid="brand">
-    <AriadniMark className="h-8 w-8 text-[#D6A653]" />
+const Brand = ({ size = "text-base lg:text-lg" }) => (
+  <span className={`flex items-center gap-2 leading-none ${size} font-semibold tracking-tight`} data-testid="brand">
+    <AriadniMark className="h-11 w-11 lg:h-12 lg:w-12 text-[#D6A653]" />
     TapPresence
   </span>
 );
@@ -60,7 +63,7 @@ function Navbar() {
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
           <Link to="/login" className="lp-navlink text-[15px]" data-testid="nav-login">{t("landing.login")}</Link>
-          <Link to="/register" className="lp-btn-gold lp-press lp-sweep rounded-xl px-5 py-2.5 text-[14px]" data-testid="nav-register">{t("landing.createId")}</Link>
+          <Link to="/register" onClick={() => trackTrialClick("home_nav")} className="lp-btn-gold lp-press lp-sweep rounded-xl px-5 py-2.5 text-[14px]" data-testid="nav-register">{t("landing.createId")}</Link>
         </div>
       </div>
     </motion.header>
@@ -91,12 +94,19 @@ function Hero() {
             {t("landing.hero.subtitle")}
           </motion.p>
 
+          <h2 className="mt-5 max-w-[560px] text-[16px] font-medium leading-relaxed text-[#D7DAE0]" data-testid="hero-purpose">
+            {t("landing.hero.purpose")}
+          </h2>
+          <p className="mt-2.5 max-w-[560px] text-[14px] leading-relaxed text-[#9096A0]" data-testid="hero-capabilities">
+            {t("landing.hero.capabilities")}
+          </p>
+
           <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.42 }}
             className="mt-8 flex flex-wrap gap-3">
-            <Link to="/register" className="lp-btn-gold lp-press lp-sweep inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-create">
+            <Link to="/register" onClick={() => trackTrialClick("home_hero")} className="lp-btn-gold lp-press lp-sweep inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-create">
               {t("landing.hero.ctaCreate")} <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link to="/register?intent=team" className="lp-btn-ghost lp-press inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-team">
+            <Link to="/register?intent=team" onClick={() => trackTrialClick("home_hero_team")} className="lp-btn-ghost lp-press inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-[15px]" data-testid="cta-team">
               <Users className="h-4 w-4 text-[#D6A653]" /> {t("landing.hero.ctaTeams")}
             </Link>
           </motion.div>
@@ -383,7 +393,7 @@ function FinalCTA() {
         <p className="mx-auto mt-4 max-w-[520px] text-[15px] text-[#A2A6AD]">
           {t("landing.finalCta.subtitle")}
         </p>
-        <Link to="/register" className="lp-btn-gold lp-press lp-sweep mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-[15px]" data-testid="cta-final">
+        <Link to="/register" onClick={() => trackTrialClick("home_final")} className="lp-btn-gold lp-press lp-sweep mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 text-[15px]" data-testid="cta-final">
           {t("landing.finalCta.cta")} <ArrowRight className="h-4 w-4" />
         </Link>
       </Reveal>
@@ -413,6 +423,10 @@ function Footer() {
             <Link to="/privacy" data-testid="footer-privacy-policy" className="inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">Privacy Policy</Link>
             <Link to="/privacy-center" data-testid="footer-privacy-choices" className="inline-block text-[12px] text-[#8A8F97] underline underline-offset-2 transition-colors hover:text-white">{t("landing.footer.privacyChoices")}</Link>
           </div>
+          <div className="mt-3 flex gap-3">
+            <a href="https://www.linkedin.com/company/tappresence/" target="_blank" rel="noreferrer" className="text-[12px] text-[#8A8F97] hover:text-white">LinkedIn</a>
+            <a href="https://www.instagram.com/tappresence/" target="_blank" rel="noreferrer" className="text-[12px] text-[#8A8F97] hover:text-white">Instagram</a>
+          </div>
         </div>
         {FOOTER_GROUPS.map((g) => (
           <div key={g.title}>
@@ -435,20 +449,61 @@ function Footer() {
             </button>
           </form>
           <div className="mt-4 flex items-center gap-3">
-            {[Linkedin, Twitter, Instagram].map((Icon, i) => (
-              <a key={i} href="#" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 text-[#8A8F97] transition-colors hover:border-[#D6A653]/40 hover:text-[#D6A653]">
+            {[["https://www.linkedin.com/company/tappresence/", Linkedin], ["https://www.instagram.com/tappresence/", Instagram]].map(([href, Icon], i) => (
+              <a key={i} href={href} target="_blank" rel="noreferrer" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 text-[#8A8F97] transition-colors hover:border-[#D6A653]/40 hover:text-[#D6A653]">
                 <Icon className="h-3.5 w-3.5" />
               </a>
             ))}
           </div>
         </div>
       </div>
+      {/* SEO internal links — discoverable landing/solution pages (not in primary nav) */}
+      <div className="mx-auto mt-10 max-w-[1320px] border-t border-white/8 px-5 pt-8 sm:px-8 lg:px-12" data-testid="footer-solutions">
+        <h4 className="text-[12px] font-semibold uppercase tracking-wider text-white/40">Solutions</h4>
+        <nav className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+          {SEO_FOOTER_LINKS.map((l) => (
+            <Link key={l.path} to={l.path} className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]" data-testid={`home-seo-link-${l.path.slice(1)}`}>{l.label}</Link>
+          ))}
+          <Link to="/industries" className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]">Industries</Link>
+        </nav>
+        <h4 className="mt-6 text-[12px] font-semibold uppercase tracking-wider text-white/40">Company</h4>
+        <nav className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+          {COMPANY_FOOTER_LINKS.map((l) => (
+            <Link key={l.path} to={l.path} className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]" data-testid={`home-company-link-${l.path.slice(1)}`}>{l.label}</Link>
+          ))}
+          <Link to="/legal/privacy" className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]">Privacy</Link>
+          <Link to="/legal/terms" className="text-[13px] text-[#8A8F97] transition-colors hover:text-[#D6A653]">Terms</Link>
+        </nav>
+      </div>
     </footer>
+  );
+}
+
+/* ---------------------------------------------------------------- GOOGLE CALENDAR INFO */
+function GoogleCalendarInfo() {
+  const { t } = useLocale();
+  return (
+    <section id="google-calendar" className="mx-auto max-w-[1320px] px-5 py-12 sm:px-8 lg:px-12" data-testid="gcal-info-section">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-white/[0.03] p-7 sm:p-9">
+        <h2 className="text-xl font-semibold tracking-tight text-white" data-testid="gcal-info-title">{t("landing.gcal.title")}</h2>
+        <p className="mt-3 text-[15px] leading-relaxed text-[#A2A6AD]" data-testid="gcal-info-body">{t("landing.gcal.body")}</p>
+        <p className="mt-4 text-[14px] text-[#8B9099]">
+          {t("landing.gcal.linkLabel")}{" "}
+          <a href="https://tappresence.com/privacy" className="text-[#D6A653] underline underline-offset-2 hover:text-[#F0CD84]" data-testid="gcal-info-privacy-link">https://tappresence.com/privacy</a>
+        </p>
+      </div>
+    </section>
   );
 }
 
 /* ---------------------------------------------------------------- PAGE */
 export default function Landing() {
+  useSeo({
+    title: "TapPresence — Digital Business Cards, NFC & QR Networking",
+    description: "TapPresence is a premium digital business card platform — share your profile via NFC & QR, capture leads, book meetings, run a CRM pipeline, send AI follow-ups and track analytics. For individuals and teams.",
+    path: "/",
+    jsonLd: [ORG_JSONLD, WEBSITE_JSONLD, SOFTWARE_APP_JSONLD],
+  });
   return (
     <div className="lp-root min-h-screen">
       <Navbar />
@@ -458,6 +513,7 @@ export default function Landing() {
       <TemplateShowcase />
       <TeamsTestimonials />
       <PricingSection />
+      <GoogleCalendarInfo />
       <FinalCTA />
       <Footer />
     </div>

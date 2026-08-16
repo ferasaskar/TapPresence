@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Camera, Upload, ScanLine, Loader2, RefreshCw, Check, QrCode, Tag } from "lucide-react";
+import { Camera, Upload, ScanLine, Loader2, RefreshCw, Check, QrCode, CalendarDays, Plus, MapPin, CreditCard, Phone, Mail, MessageCircle, ArrowRight, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { decodeQrFromDataUrl, parseContact } from "@/lib/qrContact";
 
 const RTL = ["ar"];
-const EMPTY = { name: "", title: "", company: "", email: "", phone: "", website: "",
-  address: "", city: "", country: "", language: "en", notes: "" };
+const EMPTY = { name: "", first_name: "", last_name: "", title: "", company: "", email: "", phone: "", website: "",
+  linkedin: "", badge_id: "", booth: "", address: "", city: "", country: "", language: "en", notes: "" };
+const digits = (p) => (p || "").replace(/[^\d+]/g, "").replace(/^\+/, "");
 
 const goldBtn = "rounded-lg bg-[#D6A653] font-medium text-[#050607] transition-all hover:bg-[#E8B764] active:scale-[0.98]";
 const ghostBtn = "rounded-lg border border-white/15 bg-transparent text-white hover:bg-white/5";
@@ -43,7 +44,8 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
   const [sc, setSc] = useState(null);
   useEffect(() => { if (open) api.get("/billing").then(({ data }) => setSc(data.usage?.scanner ? { ...data.usage.scanner, active: data.active } : null)).catch(() => {}); }, [open]);
   const [step, setStep] = useState("capture");
-  const [source, setSource] = useState("business_card_scan");
+  const [mode, setMode] = useState("event_badge_scan"); // event_badge_scan | business_card_scan
+  const [source, setSource] = useState("event_badge_scan");
   const [image, setImage] = useState("");
   const [scanning, setScanning] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,25 +56,43 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const fileRef = useRef(null);
-  const [campaigns, setCampaigns] = useState([]);
-  const [eventMode, setEventMode] = useState(() => { try { return JSON.parse(localStorage.getItem("tp_event_mode") || "null"); } catch { return null; } });
-  const [eventDraft, setEventDraft] = useState({ event: "", campaign: "" });
-  const [eventEditing, setEventEditing] = useState(false);
-  useEffect(() => { if (open) api.get("/campaigns").then(({ data }) => setCampaigns(data || [])).catch(() => {}); }, [open]);
-  const applyEventMode = (m) => { setEventMode(m); try { m ? localStorage.setItem("tp_event_mode", JSON.stringify(m)) : localStorage.removeItem("tp_event_mode"); } catch (_) {} };
-  const startEventMode = () => {
-    const ev = eventDraft.event.trim();
-    const camp = eventDraft.campaign && eventDraft.campaign !== "__none" ? eventDraft.campaign : "";
-    if (!ev && !camp) { toast.error(t("scan.eventRequired")); return; }
-    const label = ev || (campaigns.find((c) => c.code === camp)?.name) || camp;
-    applyEventMode({ event: label, campaign: camp });
-    setEventEditing(false);
+
+  // ---- Events
+  const [events, setEvents] = useState([]);
+  const [eventId, setEventId] = useState(() => localStorage.getItem("tp_active_event") || "");
+  const [creatingEvent, setCreatingEvent] = useState(false);
+  const [evForm, setEvForm] = useState({ name: "", location: "", start_date: "", end_date: "" });
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [savedLead, setSavedLead] = useState(null);
+
+  const loadEvents = () => api.get("/events").then(({ data }) => setEvents(data || [])).catch(() => {});
+  useEffect(() => { if (open) loadEvents(); }, [open]);
+  const activeEvent = events.find((e) => e.id === eventId) || null;
+  const setActiveEvent = (id) => { setEventId(id); try { id ? localStorage.setItem("tp_active_event", id) : localStorage.removeItem("tp_active_event"); } catch (_) {} };
+
+  const createEvent = async () => {
+    if (!evForm.name.trim()) { toast.error(t("events.nameRequired")); return; }
+    setSavingEvent(true);
+    try {
+      const { data } = await api.post("/events", { ...evForm });
+      await loadEvents();
+      setActiveEvent(data.id);
+      setCreatingEvent(false);
+      setEvForm({ name: "", location: "", start_date: "", end_date: "" });
+      toast.success(t("events.created"));
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || t("events.createFailed"));
+    } finally { setSavingEvent(false); }
   };
 
   const reset = () => {
     setStep("capture"); setImage(""); setDraft(EMPTY); setScanning(false); setSaving(false);
+    setSavedLead(null); setDupLead(null);
     setCardSlug(scannableCards[0]?.slug || "");
   };
+
+  const isBadge = mode === "event_badge_scan";
+  useEffect(() => { setSource(mode); }, [mode]);
 
   const stopCam = () => {
     if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
@@ -121,7 +141,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
     if (!image) return;
     setScanning(true);
     try {
-      // Universal scanner: try to decode a QR / contact-QR locally first (offline, free, private).
+      // Universal: try a contact QR locally first (offline, free, private).
       const qrText = await decodeQrFromDataUrl(image);
       if (qrText) {
         const parsed = parseContact(qrText);
@@ -133,14 +153,12 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
           return;
         }
       }
-      // No contact QR found → fall back to OCR for business cards / badges.
-      const ocrSource = source === "qr_scan" ? "business_card_scan" : source;
-      const { data } = await api.post("/scan/card", { image_base64: image, source: ocrSource });
+      const { data } = await api.post("/scan/card", { image_base64: image, source: mode });
       if (data.configured === false) { toast.error(data.message || t("scan.notConfigured")); return; }
       setDraft({ ...EMPTY, ...data.draft });
-      setSource(ocrSource);
+      setSource(mode);
       setStep("review");
-      toast.success(t("scan.cardRead"));
+      toast.success(isBadge ? t("scan.badgeRead") : t("scan.cardRead"));
     } catch (err) {
       const msg = err?.response?.data?.detail || t("scan.couldNotRead");
       toast.error(msg);
@@ -149,14 +167,20 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
 
   const [dupLead, setDupLead] = useState(null);
 
+  const scannerType = () => (source === "event_badge_scan" ? "event_badge" : source === "business_card_scan" ? "business_card" : "");
+
   const doSave = async (force) => {
     setSaving(true);
     try {
-      const { data } = await api.post("/scan/confirm", { ...draft, cardSlug, source, event: eventMode?.event || "", campaign: eventMode?.campaign || "", force: !!force });
+      const { data } = await api.post("/scan/confirm", {
+        ...draft, cardSlug, source, scanner_type: scannerType(),
+        event_id: isBadge ? eventId : "", force: !!force,
+      });
       if (data.ok === false && data.duplicate) { setDupLead(data.duplicate); return; }
+      setSavedLead(data.lead);
+      setStep("saved");
       toast.success(t("scan.leadSaved"));
       onSaved?.();
-      onOpenChange(false);
     } catch (err) {
       toast.error(err?.response?.data?.detail || t("scan.couldNotSave"));
     } finally { setSaving(false); }
@@ -173,24 +197,61 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
     if (!dupLead) return;
     setSaving(true);
     try {
-      const payload = {};
-      ["company", "title", "website", "notes"].forEach((k) => { if (draft[k]?.trim()) payload[k] = draft[k].trim(); });
-      if (eventMode?.event) { payload.event = eventMode.event; payload.campaign = eventMode.campaign || ""; }
-      await api.patch(`/admin/leads/${dupLead.id}/fields`, payload);
+      const { data } = await api.post("/scan/confirm", {
+        ...draft, cardSlug, source, scanner_type: scannerType(),
+        event_id: isBadge ? eventId : "", update_lead_id: dupLead.id,
+      });
+      setSavedLead(data.lead);
+      setStep("saved");
+      setDupLead(null);
       toast.success(t("scan.dupUpdated"));
       onSaved?.();
-      onOpenChange(false);
     } catch (err) {
       toast.error(err?.response?.data?.detail || t("scan.couldNotSave"));
-    } finally { setSaving(false); setDupLead(null); }
+    } finally { setSaving(false); }
   };
 
   const field = (key, label, opts = {}) => (
     <div className="space-y-1">
-      <Label className="text-xs text-white/55">{label}</Label>
-      <Input value={draft[key]} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+      <Label className="text-xs text-white/55">{label}{key === "name" ? <span className="text-[#D6A653]"> *</span> : null}</Label>
+      <Input value={draft[key] || ""} onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
         dir={RTL.includes(draft.language) && ["name", "company"].includes(key) ? "rtl" : "ltr"}
+        aria-invalid={key === "name" && !draft.name.trim() ? true : undefined}
+        className={key === "name" && !draft.name.trim() ? "border-red-500/50" : undefined}
         data-testid={`scan-field-${key}`} {...opts} />
+    </div>
+  );
+
+  const EventPicker = () => (
+    <div className="space-y-2" data-testid="scan-event-picker">
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-1.5 text-xs text-white/70"><CalendarDays className="h-3.5 w-3.5 text-[#D6A653]" /> {t("scan.eventLabel")}</Label>
+        {!creatingEvent ? (
+          <button onClick={() => setCreatingEvent(true)} className="flex items-center gap-1 text-[11px] text-[#D6A653] hover:underline" data-testid="scan-event-new"><Plus className="h-3 w-3" /> {t("scan.newEvent")}</button>
+        ) : null}
+      </div>
+      {creatingEvent ? (
+        <div className="space-y-2 rounded-xl border border-[#D6A653]/25 bg-[#D6A653]/[0.05] p-3" data-testid="scan-event-create">
+          <Input value={evForm.name} onChange={(e) => setEvForm((f) => ({ ...f, name: e.target.value }))} placeholder={t("events.namePlaceholder")} className="h-9 text-sm" data-testid="scan-event-name" />
+          <Input value={evForm.location} onChange={(e) => setEvForm((f) => ({ ...f, location: e.target.value }))} placeholder={t("events.locationPlaceholder")} className="h-9 text-sm" data-testid="scan-event-location" />
+          <div className="grid grid-cols-2 gap-2">
+            <Input type="date" value={evForm.start_date} onChange={(e) => setEvForm((f) => ({ ...f, start_date: e.target.value }))} className="h-9 text-sm" data-testid="scan-event-start" />
+            <Input type="date" value={evForm.end_date} onChange={(e) => setEvForm((f) => ({ ...f, end_date: e.target.value }))} className="h-9 text-sm" data-testid="scan-event-end" />
+          </div>
+          <div className="flex gap-2">
+            <Button className={`flex-1 ${goldBtn}`} onClick={createEvent} disabled={savingEvent} data-testid="scan-event-save">{savingEvent ? <Loader2 className="h-4 w-4 animate-spin" /> : t("events.create")}</Button>
+            <Button className={ghostBtn} onClick={() => setCreatingEvent(false)} data-testid="scan-event-cancel">{t("scan.cancel")}</Button>
+          </div>
+        </div>
+      ) : (
+        <Select value={eventId || "__none"} onValueChange={(v) => setActiveEvent(v === "__none" ? "" : v)}>
+          <SelectTrigger className="h-9 text-sm" data-testid="scan-event-select"><SelectValue placeholder={t("scan.selectEvent")} /></SelectTrigger>
+          <SelectContent className="aria-pop">
+            <SelectItem value="__none">{t("scan.noEvent")}</SelectItem>
+            {events.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}{e.location ? ` · ${e.location}` : ""}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 
@@ -213,6 +274,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
                 <p className="text-white">{dupLead.name}</p>
                 <p className="text-xs text-white/50">{[dupLead.title, dupLead.company].filter(Boolean).join(" · ")}</p>
                 <p className="text-xs text-white/50">{[dupLead.email, dupLead.phone].filter(Boolean).join(" · ")}</p>
+                {dupLead.event ? <p className="mt-1 text-xs text-[#D6A653]">{t("scan.dupPrevEvent", { event: dupLead.event })}</p> : null}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -223,7 +285,7 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
           </div>
         ) : null}
 
-        {!dupLead && (<>
+        {!dupLead && step !== "saved" && (<>
 
         {sc ? (
           (!sc.active || sc.limit === 0) ? (
@@ -242,58 +304,27 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
 
         {step === "capture" && (
           <div className="space-y-4">
-            <div className="flex gap-2">
-              <Select value={source} onValueChange={setSource}>
-                <SelectTrigger className="h-9 text-sm" data-testid="scan-source"><SelectValue /></SelectTrigger>
-                <SelectContent className="aria-pop">
-                  <SelectItem value="business_card_scan">{t("scan.sourceBusiness")}</SelectItem>
-                  <SelectItem value="badge_scan">{t("scan.sourceBadge")}</SelectItem>
-                </SelectContent>
-              </Select>
+            {/* Mode selection — fast tap targets */}
+            <div className="grid grid-cols-2 gap-2" data-testid="scan-mode">
+              <button onClick={() => setMode("event_badge_scan")} data-testid="scan-mode-badge"
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-all ${isBadge ? "border-[#D6A653] bg-[#D6A653]/15 text-white" : "border-white/12 bg-white/[0.02] text-white/60 hover:text-white"}`}>
+                <CreditCard className="mx-auto mb-1 h-4 w-4" /> {t("scan.modeBadge")}
+              </button>
+              <button onClick={() => setMode("business_card_scan")} data-testid="scan-mode-card"
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-all ${!isBadge ? "border-[#D6A653] bg-[#D6A653]/15 text-white" : "border-white/12 bg-white/[0.02] text-white/60 hover:text-white"}`}>
+                <ScanLine className="mx-auto mb-1 h-4 w-4" /> {t("scan.modeCard")}
+              </button>
             </div>
+
             <p className="flex items-center gap-1.5 text-xs text-white/45" data-testid="scan-universal-hint">
               <QrCode className="h-3.5 w-3.5 text-[#D6A653]" /> {t("scan.universalHint")}
             </p>
 
-            {/* Event Capture Mode — every scan inherits the active event/campaign */}
-            {eventMode ? (
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/[0.07] px-3 py-2.5" data-testid="event-mode-active">
-                <span className="flex min-w-0 items-center gap-2 text-xs text-emerald-200/90">
-                  <Tag className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{t("scan.eventModeOn", { event: eventMode.event })}</span>
-                </span>
-                <div className="flex shrink-0 gap-1.5">
-                  <button onClick={() => { setEventDraft({ event: eventMode.event, campaign: eventMode.campaign || "__none" }); setEventEditing(true); }} className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/70 hover:text-white" data-testid="event-mode-switch">{t("scan.switch")}</button>
-                  <button onClick={() => applyEventMode(null)} className="rounded-lg border border-white/15 px-2 py-1 text-[11px] text-white/60 hover:text-white" data-testid="event-mode-off">{t("scan.turnOff")}</button>
-                </div>
-              </div>
-            ) : eventEditing ? (
-              <div className="space-y-2 rounded-xl border border-[#D6A653]/25 bg-[#D6A653]/[0.05] p-3" data-testid="event-mode-editor">
-                <p className="flex items-center gap-1.5 text-xs text-white/70"><Tag className="h-3.5 w-3.5 text-[#D6A653]" /> {t("scan.eventModeTitle")}</p>
-                <Input value={eventDraft.event} onChange={(e) => setEventDraft((d) => ({ ...d, event: e.target.value }))} placeholder={t("scan.eventNamePlaceholder")} className="h-9 text-sm" data-testid="event-name-input" />
-                {campaigns.length ? (
-                  <Select value={eventDraft.campaign || "__none"} onValueChange={(v) => setEventDraft((d) => ({ ...d, campaign: v }))}>
-                    <SelectTrigger className="h-9 text-sm" data-testid="event-campaign-select"><SelectValue placeholder={t("scan.linkCampaign")} /></SelectTrigger>
-                    <SelectContent className="aria-pop">
-                      <SelectItem value="__none">{t("scan.noCampaign")}</SelectItem>
-                      {campaigns.map((c) => <SelectItem key={c.id} value={c.code}>{c.name} ({c.code})</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                ) : null}
-                <div className="flex gap-2">
-                  <Button className={`flex-1 ${goldBtn}`} onClick={startEventMode} data-testid="event-mode-start">{t("scan.startEventMode")}</Button>
-                  <Button className={ghostBtn} onClick={() => setEventEditing(false)} data-testid="event-mode-cancel">{t("scan.cancel")}</Button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => { setEventDraft({ event: "", campaign: "__none" }); setEventEditing(true); }} className="flex items-center gap-1.5 text-xs text-[#D6A653] hover:underline" data-testid="event-mode-enable">
-                <Tag className="h-3.5 w-3.5" /> {t("scan.enableEventMode")}
-              </button>
-            )}
+            {isBadge ? <EventPicker /> : null}
 
             <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black">
               {image ? (
-                <img src={image} alt="captured card" className="h-full w-full object-contain" data-testid="scan-preview" />
+                <img src={image} alt="captured" className="h-full w-full object-contain" data-testid="scan-preview" />
               ) : camActive ? (
                 <video ref={videoRef} playsInline muted className="h-full w-full object-cover" data-testid="scan-camera" />
               ) : (
@@ -322,15 +353,14 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
             </div>
 
             <Button className={`w-full ${goldBtn}`} disabled={!image || scanning} onClick={runScan} data-testid="scan-run">
-              {scanning ? <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> {t("scan.reading")}</> : <><ScanLine className="mr-1 h-4 w-4" /> {t("scan.scanCard")}</>}
+              {scanning ? <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> {t("scan.reading")}</> : <><ScanLine className="mr-1 h-4 w-4" /> {isBadge ? t("scan.scanBadge") : t("scan.scanCard")}</>}
             </Button>
           </div>
         )}
 
         {step === "review" && (
           <div className="space-y-3">
-            <p className="text-xs text-white/50">{source === "qr_scan" ? t("scan.qrReviewIntro") : t("scan.reviewIntro")}</p>
-            {eventMode ? <p className="flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/[0.06] px-2.5 py-1.5 text-[11px] text-emerald-200/90" data-testid="review-event-tag"><Tag className="h-3 w-3" /> {t("scan.willTag", { event: eventMode.event })}</p> : null}
+            <p className="text-xs text-white/50">{source === "qr_scan" ? t("scan.qrReviewIntro") : isBadge ? t("scan.badgeReviewIntro") : t("scan.reviewIntro")}</p>
             {field("name", t("scan.fFullName"))}
             <div className="grid grid-cols-2 gap-3">
               {field("title", t("scan.fJobTitle"))}
@@ -341,11 +371,13 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
               {field("phone", t("scan.fPhone"))}
             </div>
             {field("website", t("scan.fWebsite"))}
-            {field("address", t("scan.fAddress"))}
-            <div className="grid grid-cols-2 gap-3">
-              {field("city", t("scan.fCity"))}
-              {field("country", t("scan.fCountry"))}
-            </div>
+            {isBadge ? (
+              <div className="grid grid-cols-2 gap-3">
+                {field("linkedin", t("scan.fLinkedin"))}
+                {field("badge_id", t("scan.fBadgeId"))}
+              </div>
+            ) : null}
+            {isBadge ? <EventPicker /> : null}
             <div className="space-y-1">
               <Label className="text-xs text-white/55">{t("scan.fNotes")}</Label>
               <Textarea rows={2} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} data-testid="scan-field-notes" />
@@ -378,13 +410,37 @@ export default function ScanCardDialog({ open, onOpenChange, cards = [], onSaved
               <Button className={`flex-1 ${ghostBtn}`} onClick={() => { setStep("capture"); setImage(""); startCam(); }} data-testid="scan-back">
                 <RefreshCw className="mr-1 h-4 w-4" /> {t("scan.rescan")}
               </Button>
-              <Button className={`flex-1 ${goldBtn}`} disabled={saving} onClick={save} data-testid="scan-save">
+              <Button className={`flex-1 ${goldBtn}`} disabled={saving || !draft.name.trim()} onClick={save} data-testid="scan-save">
                 {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />} {t("scan.saveLead")}
               </Button>
             </div>
           </div>
         )}
         </>)}
+
+        {/* Saved — immediate follow-up actions (reuses existing lead management) */}
+        {step === "saved" && savedLead ? (
+          <div className="space-y-4" data-testid="scan-saved">
+            <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/[0.07] p-4 text-center">
+              <Check className="mx-auto mb-1 h-6 w-6 text-emerald-300" />
+              <p className="text-sm font-medium text-white">{t("scan.savedTitle")}</p>
+              <p className="mt-0.5 text-xs text-white/60">{savedLead.name}{savedLead.company ? ` · ${savedLead.company}` : ""}</p>
+              {savedLead.event ? <p className="mt-1 flex items-center justify-center gap-1 text-xs text-[#D6A653]"><CalendarDays className="h-3 w-3" /> {savedLead.event}</p> : null}
+            </div>
+            <p className="text-xs uppercase tracking-wider text-white/45">{t("scan.followUpNow")}</p>
+            <div className="grid grid-cols-3 gap-2">
+              {savedLead.phone ? <a href={`tel:${savedLead.phone}`} className={`flex flex-col items-center gap-1 rounded-lg border border-white/12 py-2.5 text-xs text-white hover:border-[#D6A653]/50`} data-testid="saved-call"><Phone className="h-4 w-4 text-[#D6A653]" /> {t("leads.call")}</a> : null}
+              {savedLead.phone ? <a href={`https://wa.me/${digits(savedLead.phone)}`} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-1 rounded-lg border border-white/12 py-2.5 text-xs text-white hover:border-[#D6A653]/50" data-testid="saved-wa"><MessageCircle className="h-4 w-4 text-[#D6A653]" /> {t("leads.whatsapp")}</a> : null}
+              {savedLead.email ? <a href={`mailto:${savedLead.email}`} className="flex flex-col items-center gap-1 rounded-lg border border-white/12 py-2.5 text-xs text-white hover:border-[#D6A653]/50" data-testid="saved-email"><Mail className="h-4 w-4 text-[#D6A653]" /> {t("leads.email")}</a> : null}
+            </div>
+            <button onClick={() => { onOpenChange(false); navigate(`/leads?lead=${savedLead.id}`); }} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 py-2.5 text-sm font-medium text-[#D6A653] hover:bg-[#D6A653]/20" data-testid="saved-view-lead">
+              <Bell className="h-4 w-4" /> {t("scan.openLeadFollowUp")}
+            </button>
+            <Button className={`w-full ${goldBtn}`} onClick={() => { reset(); startCam(); }} data-testid="saved-scan-next">
+              <ArrowRight className="mr-1 h-4 w-4" /> {t("scan.scanNext")}
+            </Button>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

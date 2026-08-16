@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useSeo, breadcrumb } from "@/lib/seo";
 import IndustryCustomizer from "@/components/admin/IndustryCustomizer";
 import IndustryCards from "@/components/landing/IndustryCards";
 import { IndustryCard } from "@/components/landing/IndustryCard";
@@ -32,6 +33,12 @@ const DEMO = {
 };
 
 export default function IndustryShowcase() {
+  useSeo({
+    title: "Digital Business Cards by Industry — TapPresence",
+    description: "See how TapPresence digital business cards work across industries — one template, endless possibilities. NFC & QR sharing, lead capture and analytics for every profession.",
+    path: "/industries",
+    jsonLd: [breadcrumb([{ name: "Home", path: "/" }, { name: "Industries", path: "/industries" }])],
+  });
   const [demo, setDemo] = useState(DEMO);
 
   const set = (path, value) => {

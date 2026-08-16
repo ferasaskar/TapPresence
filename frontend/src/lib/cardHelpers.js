@@ -49,3 +49,30 @@ export const orderedServices = (services = []) =>
 
 export const orderedProjects = (projects = []) =>
   [...projects].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+// ONE source of truth for the public "Book Meeting" call-to-action label.
+// Industry personalization only changes the WORDING — the booking flow/engine
+// (BookMeetingDialog / external bookingUrl) stays identical across all templates.
+const BOOKING_LABELS = {
+  real_estate: "Book a Viewing",
+  business: "Schedule a Consultation",
+  sales: "Book a Call",
+  technology: "Schedule a Demo",
+  healthcare: "Book an Appointment",
+  legal: "Schedule a Consultation",
+  education: "Book a Session",
+  hospitality: "Book a Meeting",
+  automotive: "Book an Appointment",
+  beauty: "Book an Appointment",
+  finance: "Schedule a Consultation",
+  custom: "Book a Meeting",
+};
+
+export const bookingLabel = (card) => BOOKING_LABELS[card?.industry] || "Book a Meeting";
+
+// A booking CTA is shown ONLY when there is a valid booking path:
+// native booking enabled, OR a non-empty external booking URL.
+export const hasBooking = (card) => {
+  const b = card?.booking || {};
+  return !!(b.nativeEnabled || (b.bookingUrl && String(b.bookingUrl).trim()));
+};

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
+import { trackEvent } from "@/lib/ga";
 import { useAuth } from "@/context/AuthContext";
 import { useLocale } from "@/i18n/useLocale";
 import { OwnerNav } from "@/components/admin/OwnerNav";
@@ -19,6 +20,7 @@ const STATUS_LABEL = {
 };
 
 const fmtMoney = (sym, n) => `${sym}${Number(n).toFixed(2).replace(/\.00$/, "")}`;
+const fmtLong = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "");
 const daysLeft = (iso) => {
   if (!iso) return null;
   const ms = new Date(iso).getTime() - Date.now();
@@ -49,6 +51,8 @@ export default function Billing() {
   const navigate = useNavigate();
   const [data, setData] = useState(undefined);
   const [ref, setRef] = useState(null);
+  const [featureUsage, setFeatureUsage] = useState([]);
+  const [invoices, setInvoices] = useState(undefined);
   const [interval, setInterval] = useState("year");
   const [market, setMarket] = useState("USD");
   const [busy, setBusy] = useState("");
@@ -59,7 +63,7 @@ export default function Billing() {
       if (!mk && data?.commercial?.pricing?.market) setMarket(data.commercial.pricing.market);
     }).catch(() => setData(null));
   };
-  useEffect(() => { load(); api.get("/referral").then(({ data }) => setRef(data)).catch(() => {}); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load(); api.get("/referral").then(({ data }) => setRef(data)).catch(() => {}); api.get("/usage/me").then(({ data }) => setFeatureUsage(data.items || [])).catch(() => {}); api.get("/billing/invoices").then(({ data }) => setInvoices(data.invoices || [])).catch(() => setInvoices([])); /* eslint-disable-next-line */ }, []);
   useEffect(() => { if (data) load(market); /* eslint-disable-next-line */ }, [market]);
 
   const c = data?.commercial;
@@ -109,6 +113,11 @@ export default function Billing() {
     try {
       const seats = planId === "team" ? (c.plans.team.min_seats || 3) : 1;
       const { data: res } = await api.post("/billing/checkout", { plan: planId, interval, seats, market, origin_url: window.location.origin });
+      trackEvent("begin_checkout", {
+        currency: res.currency ? String(res.currency).toUpperCase() : undefined,
+        value: typeof res.amount === "number" ? res.amount / 100 : undefined,
+        items: [{ item_id: planId, item_name: planId === "team" ? "TapPresence Team" : "TapPresence Pro" }],
+      });
       window.location.href = res.checkout_url;
     } catch (e) {
       const st = e?.response?.status;
@@ -126,6 +135,25 @@ export default function Billing() {
     catch { toast.error("Could not cancel."); }
     finally { setBusy(""); }
   };
+
+  const resume = async () => {
+    setBusy("resume");
+    try { await api.post("/billing/resume"); toast.success(t("billing.resumed")); load(market); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Could not resume subscription."); }
+    finally { setBusy(""); }
+  };
+
+  const openPortal = async () => {
+    setBusy("portal");
+    try { const { data: res } = await api.post("/billing/portal"); window.location.href = res.url; }
+    catch (e) { toast.error(e?.response?.data?.detail || t("billing.portalError")); setBusy(""); }
+  };
+
+  const ps = data?.payment_state;
+
+  const isPaid = currentPlan === "pro" || currentPlan === "team";
+  const cycleLabel = data?.interval === "year" ? t("billing.annual") : t("billing.monthly");
+  const willCancel = data?.cancel_at_period_end;
 
   return (
     <div className="aria-dark relative min-h-screen bg-[#050607] text-white" style={{ fontFamily: "'Outfit', sans-serif" }} data-testid="billing-page">
@@ -151,6 +179,31 @@ export default function Billing() {
           <div className="mt-8 rounded-2xl border border-dashed border-white/12 py-24 text-center text-white/55">{t("billing.loadError")}</div>
         ) : (
           <>
+            {/* failed-payment recovery banner */}
+            {ps?.failed ? (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-red-500/40 bg-red-500/[0.08] p-5" data-testid="billing-payment-failed">
+                <div className="flex items-start gap-3">
+                  <CreditCard className="mt-0.5 h-6 w-6 shrink-0 text-red-400" />
+                  <div>
+                    <p className="text-sm font-medium text-red-200">{t("billing.paymentFailedTitle")}</p>
+                    <p className="mt-1 text-xs text-white/60">
+                      {t("billing.paymentFailedBody")}
+                      {ps.amount_due ? ` (${ps.currency} ${(ps.amount_due / 100).toFixed(2)})` : ""}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={openPortal} disabled={busy === "portal" || !ps.has_customer} data-testid="fix-payment-btn"
+                  className="rounded-full bg-red-500 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-red-400 disabled:opacity-50">
+                  {busy === "portal" ? <Loader2 className="h-4 w-4 animate-spin" /> : t("billing.fixPayment")}
+                </button>
+              </div>
+            ) : ps?.recovered ? (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.06] p-4" data-testid="billing-payment-recovered">
+                <ShieldCheck className="h-5 w-5 text-emerald-400" />
+                <p className="text-sm text-emerald-200">{t("billing.paymentRecovered")}</p>
+              </div>
+            ) : null}
+
             {/* current status banner */}
             <div className={`mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 ${locked ? "border-red-500/30 bg-red-500/[0.06]" : "border-[#D6A653]/25 bg-[#D6A653]/[0.06]"}`} data-testid="billing-status">
               <div className="flex items-center gap-3">
@@ -158,18 +211,27 @@ export default function Billing() {
                 <div>
                   <p className="text-sm text-white/55">{t("billing.currentPlan")}</p>
                   <p className="text-lg font-medium capitalize text-white" data-testid="billing-current-plan">
-                    {currentPlan} · <span className={locked ? "text-red-400" : "text-[#D6A653]"}>{STATUS_LABEL[data.status] || data.status}</span>
+                    {currentPlan} · <span className={locked ? "text-red-400" : (willCancel ? "text-amber-400" : "text-[#D6A653]")}>{STATUS_LABEL[data.status] || data.status}</span>
                   </p>
+                  {isPaid && data.provider === "stripe" ? (
+                    <p className="mt-0.5 text-xs text-white/45" data-testid="billing-cycle">{t("billing.billingCycle")}: {cycleLabel}</p>
+                  ) : null}
                 </div>
               </div>
               <div className="text-right">
                 {isTrial && data.trial_ends_at ? (
                   <p className="text-sm text-white/70" data-testid="billing-trial-days"><span className="text-xl font-light text-[#D6A653]">{daysLeft(data.trial_ends_at)}</span> {t("billing.daysLeft")}</p>
-                ) : data.current_period_end ? (
-                  <p className="text-xs text-white/45">{t("billing.renews")} {new Date(data.current_period_end).toLocaleDateString()}</p>
+                ) : willCancel && data.current_period_end ? (
+                  <p className="text-sm text-amber-300/90" data-testid="billing-access-until">{t("billing.remainsActiveUntil", { plan: (currentPlan || "").replace(/^\w/, (c) => c.toUpperCase()) })} <span className="font-medium">{fmtLong(data.current_period_end)}</span></p>
+                ) : isPaid && data.current_period_end ? (
+                  <p className="text-sm text-white/70" data-testid="billing-next-date">{t("billing.nextBilling")}: <span className="font-medium text-white">{fmtLong(data.current_period_end)}</span></p>
                 ) : null}
-                {data.active && (currentPlan === "pro" || currentPlan === "team") && data.status !== "cancel_at_period_end" ? (
-                  <button onClick={cancel} disabled={busy === "cancel"} data-testid="billing-cancel" className="mt-2 text-xs text-white/45 underline underline-offset-2 hover:text-white/70">{t("billing.cancel")}</button>
+                {data.active && isPaid && willCancel ? (
+                  <button onClick={resume} disabled={busy === "resume"} data-testid="billing-resume" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[#D6A653] px-4 py-1.5 text-xs font-semibold text-black transition-all hover:brightness-110 disabled:opacity-50">
+                    {busy === "resume" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}{t("billing.resume")}
+                  </button>
+                ) : data.active && isPaid && data.status !== "cancel_at_period_end" ? (
+                  <button onClick={cancel} disabled={busy === "cancel"} data-testid="billing-cancel" className="mt-2 block text-xs text-white/45 underline underline-offset-2 hover:text-white/70">{t("billing.cancel")}</button>
                 ) : null}
               </div>
             </div>
@@ -187,6 +249,24 @@ export default function Billing() {
               <UsageMeter icon={ScanLine} label={t("billing.usageScanner")} used={data.usage.scanner.used} limit={data.usage.scanner.limit} testid="usage-scanner" />
             </div>
 
+            {/* feature usage allowances (only shown when a limit is active for this account) */}
+            {featureUsage.length > 0 && (
+              <div className="mt-4 space-y-2" data-testid="billing-feature-usage">
+                {featureUsage.map((f) => (
+                  <div key={f.key} className="rounded-xl border border-white/10 bg-white/[0.02] p-3" data-testid={`feature-usage-${f.key}`}>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-white/80">{f.name}</span>
+                      <span className={f.over ? "text-red-300" : f.warning ? "text-amber-300" : "text-white/50"}>{f.used} / {f.limit} used · {f.remaining} remaining</span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div className={`h-full rounded-full ${f.over ? "bg-red-400" : f.warning ? "bg-amber-400" : "bg-[#D6A653]"}`} style={{ width: `${Math.min(100, f.pct)}%` }} />
+                    </div>
+                    <p className="mt-1 text-[10px] text-white/40">{f.scope_label}{f.warning && !f.over ? ` — you've used ${f.pct}% of your allowance` : ""}{f.over ? " — allowance reached" : ""}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* interval toggle */}
             <div className="mt-8 flex items-center justify-center gap-2">
               <div className="inline-flex rounded-full border border-white/12 bg-white/5 p-1" data-testid="billing-interval-toggle">
@@ -200,9 +280,11 @@ export default function Billing() {
               {interval === "year" ? <span className="text-xs text-[#D6A653]">{t("billing.saveBadge", { pct: pricing.pro_annual_savings_pct })}</span> : null}
             </div>
 
+            <p className="mt-3 text-center text-[12px] text-white/45" data-testid="billing-tax-note">{t("billing.taxNote")}</p>
+
             {/* plan comparison */}
             <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4" data-testid="billing-plans">
-              {plans.map((p) => {
+              {plans.filter((p) => !(p.id === "trial" && !data.trial_eligible)).map((p) => {
                 const isCurrent = currentPlan === p.id && data.active;
                 const Icon = p.icon;
                 return (
@@ -235,6 +317,60 @@ export default function Billing() {
             </div>
 
             {/* referral engine */}
+            {/* Invoice & receipt history (Stripe is the source of truth) */}
+            <div className="mt-8 rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="billing-history">
+              <div className="mb-4 flex items-center justify-between">
+                <p className="flex items-center gap-2 text-sm font-medium text-white"><CreditCard className="h-4 w-4 text-[#D6A653]" /> {t("billing.historyTitle")}</p>
+                {ps?.has_customer ? (
+                  <button onClick={openPortal} disabled={busy === "portal"} data-testid="manage-billing-btn"
+                    className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-white/80 transition-colors hover:border-[#D6A653]/50">
+                    {t("billing.manageBilling")}</button>
+                ) : null}
+              </div>
+              {invoices === undefined ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-[#D6A653]" /></div>
+              ) : invoices.length === 0 ? (
+                <p className="py-8 text-center text-sm text-white/40" data-testid="billing-history-empty">{t("billing.historyEmpty")}</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-[10px] uppercase tracking-wider text-white/40"><tr className="border-b border-white/8">
+                      <th className="py-2 pr-3">{t("billing.colDate")}</th><th className="pr-3">{t("billing.colInvoice")}</th><th className="pr-3">{t("billing.colPlan")}</th>
+                      <th className="pr-3 text-right">{t("billing.colSubtotal")}</th><th className="pr-3 text-right">{t("billing.colDiscount")}</th>
+                      <th className="pr-3 text-right">{t("billing.colTax")}</th><th className="pr-3 text-right">{t("billing.colTotal")}</th>
+                      <th className="pr-3">{t("billing.colStatus")}</th><th className="pr-3 text-right">{t("billing.colActions")}</th>
+                    </tr></thead>
+                    <tbody className="text-white/80">
+                      {invoices.map((inv) => {
+                        const cur = inv.currency;
+                        const m = (v) => `${cur} ${((v || 0) / 100).toFixed(2)}`;
+                        const stStyle = inv.status === "paid" ? "text-emerald-300" : inv.refunded ? "text-sky-300" : (inv.status === "open" || inv.status === "draft") ? "text-amber-300" : "text-red-300";
+                        return (
+                          <tr key={inv.id} className="border-b border-white/5" data-testid={`invoice-row-${inv.id}`}>
+                            <td className="py-2 pr-3 text-white/70">{fmtLong(inv.date)}</td>
+                            <td className="pr-3 text-white/60">{inv.number || "—"}</td>
+                            <td className="pr-3 capitalize">{inv.plan || "—"}</td>
+                            <td className="pr-3 text-right tabular-nums">{m(inv.subtotal)}</td>
+                            <td className="pr-3 text-right tabular-nums text-white/50">{inv.discount ? `−${m(inv.discount)}` : "—"}</td>
+                            <td className="pr-3 text-right tabular-nums text-white/60">{m(inv.tax)}</td>
+                            <td className="pr-3 text-right tabular-nums text-white">{m(inv.total)}</td>
+                            <td className={`pr-3 capitalize ${stStyle}`} data-testid={`invoice-status-${inv.id}`}>{inv.refunded ? t("billing.stRefunded") : (STATUS_LABEL[inv.status] || inv.status)}</td>
+                            <td className="pr-3 text-right">
+                              <div className="flex justify-end gap-2">
+                                {inv.hosted_invoice_url ? <a href={inv.hosted_invoice_url} target="_blank" rel="noreferrer" data-testid={`invoice-view-${inv.id}`} className="text-[#D6A653] hover:underline">{t("billing.view")}</a> : null}
+                                {inv.invoice_pdf ? <a href={inv.invoice_pdf} target="_blank" rel="noreferrer" data-testid={`invoice-pdf-${inv.id}`} className="text-white/60 hover:underline">PDF</a> : null}
+                                {inv.receipt_url ? <a href={inv.receipt_url} target="_blank" rel="noreferrer" data-testid={`invoice-receipt-${inv.id}`} className="text-white/60 hover:underline">{t("billing.receipt")}</a> : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             {ref?.enabled ? (
               <div className="mt-8 rounded-2xl border border-white/10 bg-[#0A0B0D] p-5" data-testid="billing-referral">
                 <div className="flex items-start gap-3">

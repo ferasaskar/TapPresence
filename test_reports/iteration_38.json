@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 38 — Super Admin USAGE & COST CONTROL (backend + frontend). Backend pytest: 29/29 PASS covering RBAC (non-admin 403 on all 6 endpoints, SUPER_ADMIN 200), GET /admin/control/usage/overview (KPIs shape + 12 features + top_users/top_ws + cost_by_plan/feature + estimated_cost = usage*unit_cost consistency check for business_card_scan), GET /admin/control/usage/config (12 features, all default enforcement_enabled=false, USD), PUT config (unit_cost update + cost_history entry + reset, invalid feature 404, invalid scope/hard_behavior/mode 400, enforcement toggle writes audit action admin.usage.config), Overrides (POST create + GET list w/ scope_label + DELETE, invalid scope_type 400, unknown feature 404, invalid mode 400), Detail (type=bogus 400, type=workspace 200 with header/breakdown/total_estimated_cost), Timeseries series shape, CSV export with UTF-8 BOM + exact 12-column header, /usage/me default empty for a fresh non-admin user, /usage/me populates ai_followup with used/limit/remaining/pct/scope_label after enabling enforcement + monthly limits, then verified reset to empty. Regression: /api/billing loads, /api/config still returns stripe/integrations, POST /api/ai/followup still returns a valid draft (200). Frontend E2E (playwright, admin login): /control/usage loads; control-nav-usage in sidebar; Overview tab all 6 KPI cards present (kpi-active-users/kpi-ai-ops/kpi-ai-cost/kpi-total-cost/kpi-hi-user/kpi-hi-ws); usage-feature-table renders 12 usage-row-*; usage-top-users + usage-top-ws + sort-users + sort-ws present; timeseries + Export CSV button present; clicking a top-user opens right-side usage-detail drawer, detail-close closes it. Cost & Limits tab: 12 cfg-row-*, cfg-edit-ai_followup opens cfg-dialog with cfg-unit-cost/cfg-scope/cfg-soft/cfg-hard/cfg-plan-mode-{trial,pro,team,enterprise} and cfg-save-btn. cfg-plan-limit-* is CORRECTLY hidden when a plan's mode is 'unlimited' and appears when mode is monthly/custom (design confirmed at line 309). Overrides tab: ov-feature/ov-scope/ov-id/ov-mode/ov-limit/ov-create-btn all present; created + listed (ov-row-*) + deleted (ov-del-*) via UI + audit; verified round-trip. Billing page (user-facing): with no active limits, billing-feature-usage panel is HIDDEN (correct, /usage/me empty). After enabling enforcement + monthly limits on ai_followup, /usage/me returns items and Billing page shows billing-feature-usage + feature-usage-ai_followup panel with progress bar (used 29/100, remaining 71). Enforcement restored to disabled and plan_limits back to unlimited — /usage/me returns [] — preview default preserved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter38_usage_cost_control.py",
+    "/app/test_reports/pytest/iter38.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Design confirmed CORRECT: /api/usage/me gates on the feature's global enforcement_enabled flag first — a per-user override alone does not activate the user-facing panel unless Super Admin also enables enforcement globally on that feature. This matches the requirement 'no customer is blocked until a Super Admin explicitly enables a limit'. Overrides only take effect when the master enforcement toggle is ON for the feature.",
+    "usage_config_set (platform_v1.py L5288-5323) does NOT persist a plan_limits change unless every plan sent in the patch is valid; a single invalid mode aborts with 400 and no partial write — good.",
+    "usage_export_csv writes UTF-8 BOM and correct 12-column header; verified against spec. Note: for very large usage_events collections, the current find(...).to_list(50000) is bounded but not streamed row-by-row — acceptable for preview, consider chunked streaming if platform-wide event volume grows past 50k in the queried window.",
+    "/api/usage/me computes 'used' via db.usage_events.count_documents rather than reading the atomic usage_meters counter used by the reservation path. That's fine for a display value but the display can lag behind the meter (concurrency reservation increments the meter before the usage_event is written). Not a bug — but Super Admin should be aware that the user-facing 'used' number is the settled count, not the in-flight reservation.",
+    "platform_v1.py is now 5827 lines — over the 700-line guideline. Consider splitting into modules (auth, billing, admin_control, usage_cost) in a future refactor."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter38_usage_cost_control.py (new pytest suite, 29 tests, all passing)"
+  ],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "100% (all required data-testids present, all flows verified)"},
+  "test_credentials": "SUPER_ADMIN admin@ariadni.id / Ariadni@2026; test user was auto-registered via /api/auth/register (TEST_usage_* prefix)",
+  "seed_data_creation": "One throwaway user (TEST_usage_<hex>@example.com) created via /api/auth/register for RBAC + override target tests. Two throwaway overrides created and deleted (one via API, one via UI). ai_followup config unit_cost was bumped +0.001 and reset to original within a single test. ai_followup enforcement was temporarily enabled and RESET to disabled+unlimited at the end of both backend and frontend tests — verified /usage/me returns items:[] and billing-feature-usage panel is hidden after reset, so preview is back to default no-limit state.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Test suite lives at /app/backend/tests/test_iter38_usage_cost_control.py — run with `env REACT_APP_BACKEND_URL=$(grep REACT_APP_BACKEND_URL /app/frontend/.env | cut -d= -f2) pytest backend/tests/test_iter38_usage_cost_control.py -o addopts=''`. USAGE_PLANS = ['trial','pro','team','enterprise'] (NOT 'free' — a newly-registered account is on 'trial'). /usage/me returns [] unless BOTH a feature's enforcement_enabled=True AND the caller's plan has mode!=unlimited (or an override applies). cfg-plan-limit-{plan} testid only renders when that plan's mode is monthly/custom. Frontend admin nav item testid = control-nav-usage. When enabling enforcement to test, ALWAYS reset (enforcement_enabled:false + all plan_limits:{mode:unlimited}) at the end — otherwise preview customers would suddenly see quota panels.",
+  "rca of the issue": "No blocking bugs. One nuance to be aware of: /usage/me gates on the global enforcement_enabled flag before considering overrides — this is intentional and matches the 'globally OFF by default' requirement. If a future test creates an override and expects /usage/me to reflect it without also enabling enforcement, it will incorrectly conclude the endpoint is broken; the endpoint is behaving as designed."
+}

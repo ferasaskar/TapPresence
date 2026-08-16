@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
+import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { resolveImg } from "@/lib/api";
-import { buildActions, getIcon, orderedServices, orderedProjects } from "@/lib/cardHelpers";
+import { buildActions, getIcon, orderedServices, orderedProjects, bookingLabel, hasBooking } from "@/lib/cardHelpers";
 import { AvailabilityBadge } from "@/components/profile/AvailabilityBadge";
 import { SocialIcons } from "@/components/profile/SocialIcons";
 import { SaveContactButton } from "@/components/profile/SaveContactButton";
@@ -9,7 +10,7 @@ import { QRBlock } from "@/components/profile/QRBlock";
 import { ActionButton } from "@/components/profile/ActionButton";
 import { InquiryForm } from "@/components/profile/InquiryForm";
 import { ShareBar } from "@/components/profile/ShareBar";
-import { WalletButtons } from "@/components/profile/WalletButtons";
+import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
 import { accentValue, hexToRgba } from "@/lib/accents";
 import { industryRootStyle, BASE_RGB } from "@/lib/industries";
 
@@ -36,6 +37,11 @@ export const FutureProfessional = ({ data }) => {
   const panel = [actions.message || actions.whatsapp, actions.email, actions.call, actions.meet].filter(Boolean);
 
   const { p, s } = accentValue("future-professional", data.accent, data.custom_accent_color);
+  const [bookOpen, setBookOpen] = useState(false);
+  const portraitTransform = `translate(${id.imageOffsetX || 0}%, ${id.imageOffsetY || 0}%) scale(${id.imageScale || 1})`;
+  const bookAction = b.nativeEnabled
+    ? { key: "book", label: bookingLabel(data), icon: "CalendarClock", onClick: () => setBookOpen(true) }
+    : (actions.book || null);
 
   return (
     <div className="relative min-h-screen font-sans text-slate-200 overflow-hidden" style={{ backgroundColor: "#070A16", "--ac": p, ...industryRootStyle(data, BASE_RGB["future-professional"], p) }}>
@@ -50,13 +56,15 @@ export const FutureProfessional = ({ data }) => {
             <div className="absolute -inset-[6px] rounded-full opacity-80 blur-[6px]" style={{ background: `conic-gradient(from 90deg, ${p}, ${s}, ${p})` }} />
             <div className="absolute -inset-[6px] rounded-full" style={{ background: `conic-gradient(from 90deg, ${p}, ${s}, ${p})` }} />
             {id.profilePhoto ? (
-              <img
-                src={resolveImg(id.profilePhoto)}
-                alt={id.fullName}
-                data-testid="hero-portrait"
-                className="relative w-40 h-40 rounded-full object-cover"
-                style={{ border: "3px solid #070A16" }}
-              />
+              <div className="relative w-40 h-40 overflow-hidden rounded-full" style={{ border: "3px solid #070A16" }}>
+                <img
+                  src={resolveImg(id.profilePhoto)}
+                  alt={id.fullName}
+                  data-testid="hero-portrait"
+                  className="h-full w-full object-cover"
+                  style={{ transform: portraitTransform, transformOrigin: "center" }}
+                />
+              </div>
             ) : (
               <div data-testid="hero-portrait" className="relative w-40 h-40 rounded-full bg-slate-800" style={{ border: "3px solid #070A16" }} />
             )}
@@ -168,11 +176,11 @@ export const FutureProfessional = ({ data }) => {
         )}
 
         {/* MAIN CTA — purple glow bar */}
-        {(b.bookingUrl || c.phone) && (
+        {(hasBooking(data) || c.phone) && (
           <motion.section {...fade(0)} className="mt-16 relative" data-testid="cta-bar">
             <div className="absolute inset-0 rounded-full blur-2xl opacity-50" style={{ background: `linear-gradient(90deg,${s},${p})` }} />
             <ActionButton
-              action={actions.book || actions.call}
+              action={bookAction || actions.call}
               testId="cta-book-button"
               className="relative flex w-full items-center justify-center gap-3 rounded-full px-8 py-5 text-sm font-semibold uppercase tracking-widest text-white transition-transform duration-300 hover:scale-[1.02]"
               iconClassName="w-5 h-5"
@@ -203,7 +211,6 @@ export const FutureProfessional = ({ data }) => {
 
         {/* SHARE */}
         <ShareBar slug={slug} name={id.fullName} variant="future" iconColor={p} />
-        <WalletButtons slug={slug} variant="future" iconColor={p} />
 
         {/* FOOTER */}
         <footer className="mt-16 border-t border-white/10 pt-8 text-center">
@@ -218,6 +225,7 @@ export const FutureProfessional = ({ data }) => {
           </p>
         </footer>
       </div>
+      <BookMeetingDialog open={bookOpen} onOpenChange={setBookOpen} slug={slug} accent={p} ownerName={id.fullName} title={bookingLabel(data)} />
     </div>
   );
 };

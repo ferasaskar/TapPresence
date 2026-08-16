@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import UsageCostControl from "./UsageCostControl";
+import TaxRevenue from "./TaxRevenue";
 import { DateFilter, buildRange } from "@/components/admin/DateFilter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,7 +11,7 @@ import { toast } from "sonner";
 import {
   LayoutDashboard, Users, Building2, CreditCard, TrendingUp, Tags, SlidersHorizontal, Gift,
   LayoutTemplate, Flag, Plug, Activity, ShieldAlert, ScrollText, Settings as SettingsIcon,
-  ExternalLink, LogOut, ShieldCheck, Menu, X, Search, Loader2, CheckCircle2, XCircle, AlertTriangle,
+  ExternalLink, LogOut, ShieldCheck, Menu, X, Search, Loader2, CheckCircle2, XCircle, AlertTriangle, Ticket, Gauge, Landmark,
 } from "lucide-react";
 
 const cget = (p, params) => api.get(`/admin/control${p}`, { params }).then((r) => r.data);
@@ -20,7 +22,10 @@ const SECTIONS = [
   { key: "companies", label: "Workspaces", icon: Building2 },
   { key: "subscriptions", label: "Subscriptions", icon: CreditCard },
   { key: "revenue", label: "Revenue & Analytics", icon: TrendingUp },
+  { key: "usage", label: "Usage & Cost Control", icon: Gauge },
+  { key: "tax", label: "Tax & Global Revenue", icon: Landmark },
   { key: "plans", label: "Plans & Pricing", icon: Tags },
+  { key: "promotions", label: "Promotions", icon: Ticket },
   { key: "product", label: "Product & Entitlements", icon: SlidersHorizontal },
   { key: "referrals", label: "Referral Program", icon: Gift },
   { key: "templates", label: "Templates & Industries", icon: LayoutTemplate },
@@ -362,14 +367,43 @@ const Plans = () => {
   const [applyTo, setApplyTo] = useState("new_only");
   const [reason, setReason] = useState("");
   const [versions, setVersions] = useState([]);
+  const [resolved, setResolved] = useState({});
+  const [resolvedDraft, setResolvedDraft] = useState({});
   const load = () => api.get("/admin/commercial").then((r) => { setCfg(r.data.config); setDraft(JSON.parse(JSON.stringify(r.data.config))); }).catch(() => {});
-  useEffect(() => { load(); cget("/pricing/versions").then((r) => setVersions(r.items || [])).catch(() => {}); }, []);
+  const loadResolved = () => api.get("/commercial/pricing").then((r) => setResolved(r.data.resolved_all || {})).catch(() => {});
+  useEffect(() => { load(); loadResolved(); cget("/pricing/versions").then((r) => setVersions(r.items || [])).catch(() => {}); }, []);
+  const patch = () => {
+    const rp = { USD: draft?.regional_pricing?.USD };
+    (draft?.manual_price_markets || []).forEach((m) => { if (draft?.regional_pricing?.[m]) rp[m] = draft.regional_pricing[m]; });
+    return {
+      trial: { days: draft?.trial?.days, enabled: draft?.trial?.enabled },
+      plans: { team: { min_seats: draft?.plans?.team?.min_seats } },
+      regional_pricing: rp,
+      fx_rates: draft?.fx_rates,
+      manual_price_markets: draft?.manual_price_markets || [],
+    };
+  };
+  // Live server-side resolve of the (unsaved) draft — no currency math in the frontend.
+  useEffect(() => {
+    if (!draft) return;
+    const t = setTimeout(() => {
+      api.post("/admin/control/pricing/resolve", { patch: patch() }).then((r) => setResolvedDraft(r.data.resolved_all || {})).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [draft]); // eslint-disable-line
   if (!draft) return <Loader />;
   const setP = (path, val) => { const d = { ...draft }; let o = d; const keys = path.split("."); for (let i = 0; i < keys.length - 1; i++) { o[keys[i]] = { ...(o[keys[i]] || {}) }; o = o[keys[i]]; } o[keys[keys.length - 1]] = val; setDraft(d); };
-  const patch = () => ({
-    trial: { days: draft.trial?.days, enabled: draft.trial?.enabled },
-    plans: { team: { min_seats: draft.plans?.team?.min_seats } },
-    regional_pricing: { [draft.default_market || "USD"]: draft.regional_pricing?.[draft.default_market || "USD"] },
+  const isManual = (m) => (draft.manual_price_markets || []).includes(m);
+  const toggleManual = (m, makeManual) => setDraft((prev) => {
+    const d = JSON.parse(JSON.stringify(prev));
+    const set = new Set(d.manual_price_markets || []);
+    if (makeManual) {
+      set.add(m);
+      const r = resolvedDraft[m] || resolved[m] || {};
+      d.regional_pricing[m] = { symbol: r.symbol, pro_month: r.pro_month, pro_year: r.pro_year, team_seat_month: r.team_seat_month, team_seat_year: r.team_seat_year };
+    } else { set.delete(m); }
+    d.manual_price_markets = [...set];
+    return d;
   });
   const doPreview = async () => { try { setPreview(await api.post("/admin/control/pricing/preview", { patch: patch(), apply_to: applyTo }).then((r) => r.data)); setStep(1); } catch (e) { toast.error("Preview failed"); } };
   const doPublish = async () => { try { await api.post("/admin/control/pricing/publish", { patch: patch(), apply_to: applyTo, reason }); toast.success("Pricing published & live on public site"); setStep(2); load(); cget("/pricing/versions").then((r) => setVersions(r.items || [])); } catch (e) { toast.error("Publish failed"); } };
@@ -391,6 +425,57 @@ const Plans = () => {
         <div className="mt-4 flex items-center gap-2">
           <button onClick={doPreview} className="rounded-lg bg-[#D6A653] px-4 py-2 text-sm font-medium text-[#050607] hover:bg-[#E8B764]" data-testid="plans-preview-btn">Preview Impact</button>
           <button onClick={() => setDraft(JSON.parse(JSON.stringify(cfg)))} className="rounded-lg border border-white/12 px-4 py-2 text-sm text-white/60">Reset</button>
+        </div>
+      </Panel>
+      <Panel title="Regional currencies" testId="plans-converted">
+        <p className="mb-3 text-[11px] text-white/40">USD is the base. Non-base currencies are <b className="text-white/60">Auto</b> (convert from USD via an editable FX rate) or <b className="text-sky-300">Manual</b> (fixed local price). Switch Manual→Auto to resume converting from the current USD base. Prices below are resolved live from your unsaved draft; click <b className="text-[#D6A653]">Preview Impact</b> then Publish to go live.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-xs">
+            <thead><tr className="text-left uppercase tracking-wide text-white/35">
+              <th className="pb-2 pr-3">Market</th><th className="pb-2 pr-3">Source</th><th className="pb-2 pr-3">FX ×USD</th><th className="pb-2 pr-3">Pro mo / yr</th><th className="pb-2 pr-3">Pro save</th><th className="pb-2 pr-3">Team mo / yr</th><th className="pb-2">Team save</th>
+            </tr></thead>
+            <tbody>
+              {(draft.fx_rates ? Object.keys({ USD: 1, ...draft.fx_rates }) : ["USD"]).map((m) => {
+                const p = resolvedDraft[m] || resolved[m] || {};
+                const base = m === "USD";
+                const manual = !base && isManual(m);
+                const sym = p.symbol || "";
+                const inp = "w-16 rounded border border-white/12 bg-white/5 px-1.5 py-1 text-white outline-none focus:border-[#D6A653]/50";
+                return (
+                  <tr key={m} className="border-t border-white/6 text-white/70 align-middle" data-testid={`converted-${m}`}>
+                    <td className="py-1.5 pr-3 font-medium text-white/85">{m}</td>
+                    <td className="py-1.5 pr-3">
+                      {base ? (
+                        <span className="rounded-full bg-[#D6A653]/15 px-2 py-0.5 text-[10px] uppercase tracking-wider text-[#D6A653]" data-testid={`converted-src-${m}`}>BASE</span>
+                      ) : (
+                        <button onClick={() => toggleManual(m, !manual)} data-testid={`toggle-manual-${m}`}
+                          className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${manual ? "bg-sky-500/15 text-sky-300" : "bg-white/10 text-white/55"}`} title="Toggle Auto/Manual">
+                          <span data-testid={`converted-src-${m}`}>{manual ? "MANUAL" : "AUTO"}</span>
+                        </button>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3">
+                      {base ? <span className="text-white/40">1.0</span> : (
+                        <input type="number" step="0.0001" disabled={manual} value={draft.fx_rates?.[m] ?? ""} onChange={(e) => setP(`fx_rates.${m}`, Number(e.target.value))} data-testid={`fx-${m}`} className={`w-20 rounded border border-white/12 bg-white/5 px-1.5 py-1 text-white outline-none focus:border-[#D6A653]/50 disabled:opacity-40`} />
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {manual ? (
+                        <span className="inline-flex items-center gap-1">{sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.pro_month ?? ""} onChange={(e) => setP(`regional_pricing.${m}.pro_month`, Number(e.target.value))} data-testid={`man-${m}-pro_month`} className={inp} /> / {sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.pro_year ?? ""} onChange={(e) => setP(`regional_pricing.${m}.pro_year`, Number(e.target.value))} data-testid={`man-${m}-pro_year`} className={inp} /></span>
+                      ) : <span data-testid={`res-${m}-pro`}>{sym}{p.pro_month} / {sym}{p.pro_year}</span>}
+                    </td>
+                    <td className="py-1.5 pr-3" data-testid={`save-${m}-pro`}>{p.pro_annual_savings_pct}%</td>
+                    <td className="py-1.5 pr-3 whitespace-nowrap">
+                      {manual ? (
+                        <span className="inline-flex items-center gap-1">{sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.team_seat_month ?? ""} onChange={(e) => setP(`regional_pricing.${m}.team_seat_month`, Number(e.target.value))} data-testid={`man-${m}-team_seat_month`} className={inp} /> / {sym}<input type="number" step="0.01" value={draft.regional_pricing?.[m]?.team_seat_year ?? ""} onChange={(e) => setP(`regional_pricing.${m}.team_seat_year`, Number(e.target.value))} data-testid={`man-${m}-team_seat_year`} className={inp} /></span>
+                      ) : <span data-testid={`res-${m}-team`}>{sym}{p.team_seat_month} / {sym}{p.team_seat_year}</span>}
+                    </td>
+                    <td className="py-1.5" data-testid={`save-${m}-team`}>{p.team_annual_savings_pct}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </Panel>
       <Panel title="Version history" testId="plans-versions">
@@ -647,6 +732,105 @@ const Audit = () => {
   );
 };
 
+const Promotions = () => {
+  const [items, setItems] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({ code: "", discount_type: "percent", percent_off: 20, amount_off: 10, currency: "usd", duration: "once", duration_in_months: 3, max_redemptions: "" });
+  const set = (k, v) => setForm((s) => ({ ...s, [k]: v }));
+
+  const load = () => {
+    setErr("");
+    cget("/promotions").then((r) => setItems(r.items || [])).catch((e) => { setItems([]); setErr(e?.response?.data?.detail || "Could not load promotions"); });
+  };
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!form.code.trim()) { toast.error("Enter a promo code"); return; }
+    setBusy(true);
+    try {
+      const payload = { code: form.code.trim().toUpperCase(), discount_type: form.discount_type, duration: form.duration };
+      if (form.discount_type === "percent") payload.percent_off = Number(form.percent_off);
+      else { payload.amount_off = Number(form.amount_off); payload.currency = form.currency; }
+      if (form.duration === "repeating") payload.duration_in_months = Number(form.duration_in_months);
+      if (form.max_redemptions) payload.max_redemptions = Number(form.max_redemptions);
+      await api.post("/admin/control/promotions", payload);
+      toast.success(`Promo code ${payload.code} created`);
+      setForm((s) => ({ ...s, code: "", max_redemptions: "" }));
+      load();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Create failed"); }
+    finally { setBusy(false); }
+  };
+
+  const toggle = async (pc) => {
+    try { await api.post(`/admin/control/promotions/${pc.id}/toggle`, { active: !pc.active }); load(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Update failed"); }
+  };
+
+  const fmtDiscount = (c) => c.percent_off ? `${c.percent_off}% off` : c.amount_off ? `${(c.amount_off / 100).toFixed(2)} ${(c.currency || "").toUpperCase()} off` : "—";
+
+  return (
+    <div className="space-y-5" data-testid="ctrl-promotions">
+      <h2 className="text-xl font-light text-white">Promotions</h2>
+      <p className="text-[11px] text-white/40">Create real Stripe promo codes. Customers enter them on the Stripe-hosted checkout page — pricing, trials and referrals are unaffected.</p>
+      {err ? <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" data-testid="promo-error">{err}</div> : null}
+
+      <Panel title="Create promo code" testId="promo-editor">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TextField label="Code (what customers type)" value={form.code} onChange={(v) => set("code", v.toUpperCase())} testId="promo-code" />
+          <label className="block"><span className="mb-1 block text-[11px] uppercase tracking-wider text-white/40">Discount type</span>
+            <div className="flex gap-2">
+              <RadioPill on={form.discount_type === "percent"} onClick={() => set("discount_type", "percent")} testId="promo-type-percent">Percent</RadioPill>
+              <RadioPill on={form.discount_type === "amount"} onClick={() => set("discount_type", "amount")} testId="promo-type-amount">Fixed amount</RadioPill>
+            </div>
+          </label>
+          {form.discount_type === "percent" ? (
+            <NumField label="Percent off (%)" value={form.percent_off} onChange={(v) => set("percent_off", v)} testId="promo-percent" />
+          ) : (
+            <>
+              <NumField label="Amount off" value={form.amount_off} onChange={(v) => set("amount_off", v)} testId="promo-amount" />
+              <TextField label="Currency" value={form.currency} onChange={(v) => set("currency", v.toLowerCase())} testId="promo-currency" />
+            </>
+          )}
+          <label className="block"><span className="mb-1 block text-[11px] uppercase tracking-wider text-white/40">Duration</span>
+            <div className="flex flex-wrap gap-2">
+              {["once", "repeating", "forever"].map((d) => <RadioPill key={d} on={form.duration === d} onClick={() => set("duration", d)} testId={`promo-duration-${d}`}>{d}</RadioPill>)}
+            </div>
+          </label>
+          {form.duration === "repeating" ? <NumField label="Months" value={form.duration_in_months} onChange={(v) => set("duration_in_months", v)} testId="promo-months" /> : <span />}
+          <NumField label="Max redemptions (optional)" value={form.max_redemptions} onChange={(v) => set("max_redemptions", v)} testId="promo-max" />
+        </div>
+        <div className="mt-4">
+          <button onClick={create} disabled={busy} className="rounded-lg bg-[#D6A653] px-4 py-2 text-sm font-medium text-[#050607] hover:bg-[#E8B764] disabled:opacity-50" data-testid="promo-create-btn">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create promo code"}</button>
+        </div>
+      </Panel>
+
+      <Panel title="Active & past promo codes" testId="promo-list">
+        {items === null ? <Loader /> : items.length === 0 ? (
+          <p className="py-6 text-center text-sm text-white/40" data-testid="promo-empty">No promo codes yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map((pc) => (
+              <div key={pc.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/8 px-4 py-3" data-testid={`promo-row-${pc.code}`}>
+                <div className="min-w-0">
+                  <span className="font-mono text-sm font-medium text-white">{pc.code}</span>
+                  <span className="ml-3 text-xs text-[#D6A653]">{fmtDiscount(pc.coupon)}</span>
+                  <span className="ml-3 text-[11px] text-white/40">{pc.coupon.duration}{pc.coupon.duration === "repeating" ? ` · ${pc.coupon.duration_in_months}mo` : ""} · {pc.times_redeemed} used{pc.max_redemptions ? ` / ${pc.max_redemptions}` : ""}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatePill ok={pc.active} labelOk="Active" labelBad="Inactive" />
+                  <ActBtn onClick={() => toggle(pc)} tone={pc.active ? "danger" : "ok"} testId={`promo-toggle-${pc.code}`}>{pc.active ? "Deactivate" : "Activate"}</ActBtn>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+};
+
+
 const ControlSettings = () => (
   <div className="space-y-4" data-testid="ctrl-settings">
     <h2 className="text-xl font-light text-white">Settings</h2>
@@ -667,7 +851,7 @@ const RadioPill = ({ on, onClick, children, testId }) => <button onClick={onClic
 const ActBtn = ({ onClick, busy, children, tone, testId }) => <button onClick={onClick} disabled={busy} data-testid={testId} className={`rounded-lg border px-3 py-1.5 text-sm disabled:opacity-50 ${tone === "danger" ? "border-red-500/40 text-red-300 hover:bg-red-500/10" : tone === "ok" ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10" : "border-white/15 text-white/70 hover:bg-white/5"}`}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}</button>;
 const HRow = ({ k, v, ok, warn }) => <div className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2.5"><span className="text-sm text-white/70">{k}</span><StatePill ok={ok} warn={warn} labelOk={v} labelBad={v} /></div>;
 
-const RENDER = { overview: Overview, customers: Customers, companies: Companies, subscriptions: Subscriptions, revenue: Revenue, plans: Plans, product: Product, referrals: Referrals, templates: Templates, flags: Flags, integrations: Integrations, health: Health, security: Security, audit: Audit, settings: ControlSettings };
+const RENDER = { overview: Overview, customers: Customers, companies: Companies, subscriptions: Subscriptions, revenue: Revenue, usage: UsageCostControl, tax: TaxRevenue, plans: Plans, promotions: Promotions, product: Product, referrals: Referrals, templates: Templates, flags: Flags, integrations: Integrations, health: Health, security: Security, audit: Audit, settings: ControlSettings };
 
 export default function ControlCenter() {
   const { section = "overview" } = useParams();

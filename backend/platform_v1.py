@@ -22,6 +22,9 @@ import json
 import re
 import uuid
 import secrets
+import asyncio
+import base64
+import time
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
@@ -45,13 +48,15 @@ PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
 import stripe
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY") or ""
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_MODE = os.environ.get("STRIPE_MODE", "test")
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
 import asyncio
 import resend
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY") or ""
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL") or "onboarding@resend.dev"
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL") or ""
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
@@ -60,45 +65,168 @@ def _email_configured() -> bool:
     return bool(RESEND_API_KEY)
 
 
-def _email_shell(title: str, intro: str, cta_text: str, cta_url: str, footnote: str = "") -> str:
-    """Branded, email-safe HTML (inline CSS, table layout) for TapPresence transactional mail."""
+def _email_shell(title: str, intro: str, cta_text: str, cta_url: str, footnote: str = "", lang: str = "en") -> str:
+    """Branded, email-safe HTML (inline CSS, table layout) for TapPresence transactional mail.
+    Localized: Arabic renders RTL; English/Spanish render LTR. Single shared shell for ALL emails."""
+    rtl = (lang == "ar")
+    direction = "rtl" if rtl else "ltr"
+    align = "right" if rtl else "left"
+    ignore = {"ar": "إذا لم تطلب هذا، يمكنك تجاهل هذه الرسالة بأمان.",
+              "es": "Si no solicitaste esto, puedes ignorar este correo.",
+              "en": "If you didn't request this, you can safely ignore this email."}.get(lang, "If you didn't request this, you can safely ignore this email.")
+    orlink = {"ar": "أو انسخ هذا الرابط في متصفحك:", "es": "O pega este enlace en tu navegador:",
+              "en": "Or paste this link into your browser:"}.get(lang, "Or paste this link into your browser:")
     return f"""\
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#050607;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
+<table dir="{direction}" width="100%" cellpadding="0" cellspacing="0" style="background:#050607;padding:32px 0;font-family:Arial,Helvetica,sans-serif;">
   <tr><td align="center">
-    <table width="480" cellpadding="0" cellspacing="0" style="background:#0d0f13;border:1px solid #1e2128;border-radius:16px;overflow:hidden;">
-      <tr><td style="padding:28px 32px 8px 32px;">
+    <table dir="{direction}" width="480" cellpadding="0" cellspacing="0" style="background:#0d0f13;border:1px solid #1e2128;border-radius:16px;overflow:hidden;">
+      <tr><td style="padding:28px 32px 8px 32px;text-align:{align};">
         <span style="font-size:20px;font-weight:700;color:#ffffff;">Tap<span style="color:#D6A653;">Presence</span></span>
       </td></tr>
-      <tr><td style="padding:8px 32px 0 32px;">
+      <tr><td style="padding:8px 32px 0 32px;text-align:{align};">
         <h1 style="margin:0;font-size:20px;line-height:1.3;color:#ffffff;">{title}</h1>
         <p style="margin:14px 0 0 0;font-size:14px;line-height:1.6;color:#a2a6ad;">{intro}</p>
       </td></tr>
-      <tr><td style="padding:24px 32px 8px 32px;">
+      <tr><td style="padding:24px 32px 8px 32px;text-align:{align};">
         <a href="{cta_url}" style="display:inline-block;background:#D6A653;color:#050607;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:10px;">{cta_text}</a>
       </td></tr>
-      <tr><td style="padding:12px 32px 28px 32px;">
-        <p style="margin:0;font-size:12px;line-height:1.6;color:#70757e;">Or paste this link into your browser:<br><span style="color:#8a8f97;word-break:break-all;">{cta_url}</span></p>
+      <tr><td style="padding:12px 32px 28px 32px;text-align:{align};">
+        <p style="margin:0;font-size:12px;line-height:1.6;color:#70757e;">{orlink}<br><span style="color:#8a8f97;word-break:break-all;">{cta_url}</span></p>
         {f'<p style="margin:14px 0 0 0;font-size:12px;color:#70757e;">{footnote}</p>' if footnote else ''}
       </td></tr>
-      <tr><td style="padding:16px 32px;border-top:1px solid #1e2128;">
-        <p style="margin:0;font-size:11px;color:#5b6068;">© TapPresence. If you didn't request this, you can safely ignore this email.</p>
+      <tr><td style="padding:16px 32px;border-top:1px solid #1e2128;text-align:{align};">
+        <p style="margin:0;font-size:11px;color:#5b6068;">© TapPresence. {ignore}</p>
       </td></tr>
     </table>
   </td></tr>
 </table>"""
 
 
+def _norm_lang(lang) -> str:
+    lang = (lang or "en").split("-")[0].lower()
+    return lang if lang in ("en", "ar", "es") else "en"
+
+
+# Localized copy for platform (auth / trial / referral / team) emails. Placeholders via str.format.
+# Booking/meeting emails localize in server.py using the same _email_shell primitive (no second system).
+EMAIL_MSGS = {
+    "verify": {
+        "en": {"subject": "Verify your TapPresence email", "title": "Confirm your email", "cta": "Verify email",
+               "intro": "Welcome to TapPresence — please confirm your email address to secure your account and unlock everything in your 14-day trial."},
+        "ar": {"subject": "تأكيد بريدك الإلكتروني في TapPresence", "title": "تأكيد بريدك الإلكتروني", "cta": "تأكيد البريد",
+               "intro": "مرحبًا بك في TapPresence — يُرجى تأكيد عنوان بريدك الإلكتروني لتأمين حسابك وفتح كل الميزات خلال فترتك التجريبية لمدة 14 يومًا."},
+        "es": {"subject": "Verifica tu correo de TapPresence", "title": "Confirma tu correo", "cta": "Verificar correo",
+               "intro": "Bienvenido a TapPresence — confirma tu dirección de correo para asegurar tu cuenta y desbloquear todo en tu prueba de 14 días."},
+    },
+    "verify_resend": {
+        "en": {"subject": "Verify your TapPresence email", "title": "Confirm your email", "cta": "Verify email",
+               "intro": "Here's a fresh link to confirm your TapPresence email address."},
+        "ar": {"subject": "تأكيد بريدك الإلكتروني في TapPresence", "title": "تأكيد بريدك الإلكتروني", "cta": "تأكيد البريد",
+               "intro": "هذا رابط جديد لتأكيد عنوان بريدك الإلكتروني في TapPresence."},
+        "es": {"subject": "Verifica tu correo de TapPresence", "title": "Confirma tu correo", "cta": "Verificar correo",
+               "intro": "Aquí tienes un nuevo enlace para confirmar tu correo de TapPresence."},
+    },
+    "reset": {
+        "en": {"subject": "Reset your TapPresence password", "title": "Reset your password", "cta": "Reset password",
+               "intro": "We received a request to reset your TapPresence password. This link expires in 1 hour.",
+               "footnote": "If you didn't request a password reset, no action is needed."},
+        "ar": {"subject": "إعادة تعيين كلمة مرور TapPresence", "title": "إعادة تعيين كلمة المرور", "cta": "إعادة التعيين",
+               "intro": "تلقّينا طلبًا لإعادة تعيين كلمة مرور TapPresence. تنتهي صلاحية هذا الرابط خلال ساعة واحدة.",
+               "footnote": "إذا لم تطلب إعادة التعيين، فلا حاجة لأي إجراء."},
+        "es": {"subject": "Restablece tu contraseña de TapPresence", "title": "Restablece tu contraseña", "cta": "Restablecer",
+               "intro": "Recibimos una solicitud para restablecer tu contraseña de TapPresence. Este enlace caduca en 1 hora.",
+               "footnote": "Si no solicitaste el restablecimiento, no necesitas hacer nada."},
+    },
+    "invite": {
+        "en": {"subject": "You've been invited to a TapPresence team", "title": "Join your team on TapPresence", "cta": "Accept invite",
+               "intro": "You've been invited to join <b>{ws}</b> on TapPresence. Set up your account to get started. This invite expires in 7 days."},
+        "ar": {"subject": "تمت دعوتك إلى فريق على TapPresence", "title": "انضم إلى فريقك على TapPresence", "cta": "قبول الدعوة",
+               "intro": "تمت دعوتك للانضمام إلى <b>{ws}</b> على TapPresence. أنشئ حسابك للبدء. تنتهي صلاحية هذه الدعوة خلال 7 أيام."},
+        "es": {"subject": "Te invitaron a un equipo de TapPresence", "title": "Únete a tu equipo en TapPresence", "cta": "Aceptar invitación",
+               "intro": "Te invitaron a unirte a <b>{ws}</b> en TapPresence. Configura tu cuenta para empezar. Esta invitación caduca en 7 días."},
+    },
+    "trial_3d": {
+        "en": {"subject": "Your TapPresence trial ends in 3 days", "title": "Your trial ends soon", "cta": "Upgrade now",
+               "intro": "Your 14-day TapPresence trial ends in about 3 days. Upgrade to keep your card live, your leads, analytics and premium features without interruption."},
+        "ar": {"subject": "تنتهي فترتك التجريبية في TapPresence خلال 3 أيام", "title": "تنتهي فترتك التجريبية قريبًا", "cta": "الترقية الآن",
+               "intro": "تنتهي فترتك التجريبية في TapPresence (14 يومًا) خلال 3 أيام تقريبًا. قم بالترقية للحفاظ على بطاقتك والعملاء المحتملين والتحليلات والميزات المميزة دون انقطاع."},
+        "es": {"subject": "Tu prueba de TapPresence termina en 3 días", "title": "Tu prueba termina pronto", "cta": "Mejorar ahora",
+               "intro": "Tu prueba de 14 días de TapPresence termina en unos 3 días. Mejora tu plan para mantener tu tarjeta activa, tus contactos, analíticas y funciones premium sin interrupción."},
+    },
+    "trial_expired": {
+        "en": {"subject": "Your TapPresence trial has ended", "title": "Your trial has ended", "cta": "Reactivate",
+               "intro": "Your 14-day TapPresence trial has ended. Your data is safe — upgrade any time to bring your card back online and unlock premium features again."},
+        "ar": {"subject": "انتهت فترتك التجريبية في TapPresence", "title": "انتهت فترتك التجريبية", "cta": "إعادة التفعيل",
+               "intro": "انتهت فترتك التجريبية في TapPresence (14 يومًا). بياناتك محفوظة — يمكنك الترقية في أي وقت لإعادة تفعيل بطاقتك وفتح الميزات المميزة مجددًا."},
+        "es": {"subject": "Tu prueba de TapPresence ha terminado", "title": "Tu prueba ha terminado", "cta": "Reactivar",
+               "intro": "Tu prueba de 14 días de TapPresence ha terminado. Tus datos están a salvo — mejora tu plan cuando quieras para reactivar tu tarjeta y las funciones premium."},
+    },
+    "payment_failed": {
+        "en": {"subject": "Action needed: your TapPresence payment failed", "title": "Your payment didn't go through", "cta": "Update payment method",
+               "intro": "We couldn't process your latest TapPresence payment of <b>{amount}</b>. Your account is still active for now — please update your payment method to avoid any interruption.",
+               "footnote": "You're taken to Stripe's secure billing page — TapPresence never sees your card details."},
+        "ar": {"subject": "إجراء مطلوب: فشل الدفع في TapPresence", "title": "لم تتم عملية الدفع", "cta": "تحديث طريقة الدفع",
+               "intro": "لم نتمكن من معالجة دفعتك الأخيرة في TapPresence بقيمة <b>{amount}</b>. لا يزال حسابك نشطًا حاليًا — يُرجى تحديث طريقة الدفع لتجنب أي انقطاع.",
+               "footnote": "سيتم توجيهك إلى صفحة الفوترة الآمنة من Stripe — لا يطّلع TapPresence على بيانات بطاقتك."},
+        "es": {"subject": "Acción requerida: falló tu pago de TapPresence", "title": "Tu pago no se procesó", "cta": "Actualizar método de pago",
+               "intro": "No pudimos procesar tu último pago de TapPresence de <b>{amount}</b>. Tu cuenta sigue activa por ahora — actualiza tu método de pago para evitar interrupciones.",
+               "footnote": "Se te redirige a la página segura de facturación de Stripe — TapPresence nunca ve los datos de tu tarjeta."},
+    },
+    "payment_recovered": {
+        "en": {"subject": "You're all set — TapPresence payment received", "title": "Payment successful", "cta": "View billing",
+               "intro": "Good news — your TapPresence payment went through and your subscription is healthy again. No further action is needed."},
+        "ar": {"subject": "تمت العملية — تم استلام الدفع في TapPresence", "title": "تم الدفع بنجاح", "cta": "عرض الفوترة",
+               "intro": "أخبار جيدة — تمت عملية الدفع في TapPresence واشتراكك الآن سليم مجددًا. لا حاجة لأي إجراء إضافي."},
+        "es": {"subject": "Todo listo — pago de TapPresence recibido", "title": "Pago exitoso", "cta": "Ver facturación",
+               "intro": "Buenas noticias — tu pago de TapPresence se procesó y tu suscripción está activa de nuevo. No necesitas hacer nada más."},
+    },
+    "referral_reward": {
+        "en": {"subject": "You've earned a free month of TapPresence", "title": "Reward unlocked — 1 month free", "cta": "View my rewards",
+               "intro": "Great news! You've reached {per} successful paid referrals and earned <b>{months} month(s) free</b> on TapPresence. Your reward is ready to apply to your billing."},
+        "ar": {"subject": "لقد حصلت على شهر مجاني في TapPresence", "title": "تم فتح المكافأة — شهر مجاني", "cta": "عرض مكافآتي",
+               "intro": "أخبار رائعة! لقد وصلت إلى {per} إحالات مدفوعة ناجحة وحصلت على <b>{months} شهر مجاني</b> على TapPresence. مكافأتك جاهزة للتطبيق على فاتورتك."},
+        "es": {"subject": "Has ganado un mes gratis de TapPresence", "title": "Recompensa desbloqueada — 1 mes gratis", "cta": "Ver mis recompensas",
+               "intro": "¡Buenas noticias! Alcanzaste {per} referidos de pago exitosos y ganaste <b>{months} mes(es) gratis</b> en TapPresence. Tu recompensa está lista para aplicarse a tu facturación."},
+    },
+}
+
+
+def build_email(kind: str, lang: str, cta_url: str, **ctx):
+    """Return (subject, html) for a platform email in the requested language (fallback en)."""
+    lang = _norm_lang(lang)
+    block = (EMAIL_MSGS.get(kind) or {}).get(lang) or (EMAIL_MSGS.get(kind) or {}).get("en") or {}
+    subject = (block.get("subject") or "TapPresence").format(**ctx)
+    title = (block.get("title") or "").format(**ctx)
+    intro = (block.get("intro") or "").format(**ctx)
+    cta = (block.get("cta") or "Open").format(**ctx)
+    footnote = (block.get("footnote") or "").format(**ctx)
+    return subject, _email_shell(title, intro, cta, cta_url, footnote, lang=lang)
+
+
+async def send_localized(to: str, kind: str, lang: str, cta_url: str, **ctx) -> bool:
+    subject, html = build_email(kind, lang, cta_url, **ctx)
+    return await send_email(to, subject, html)
+
+
 async def send_email(to: str, subject: str, html: str) -> bool:
     """Send a transactional email via Resend (non-blocking). Returns False if not configured/failed."""
     if not RESEND_API_KEY:
+        logger.error("[email] not sent: RESEND_API_KEY is not configured")
+        return False
+    if not SENDER_EMAIL:
+        # Fail clearly rather than silently falling back to a resend.dev test sender in production.
+        logger.error("[email] not sent: SENDER_EMAIL is not configured (refusing default resend.dev fallback)")
         return False
     try:
         await asyncio.to_thread(resend.Emails.send, {
             "from": SENDER_EMAIL, "to": [to], "subject": subject, "html": html,
         })
+        logger.info(f"[email] sent '{subject}' to {to}")
+        await meter_usage("email", quantity=1, result="success", source="resend", paid=True)
         return True
     except Exception as e:
-        logger.error(f"[email] send failed to {to}: {e}")
+        logger.error(f"[email] send failed to {to} ('{subject}'): {e}")
+        await meter_usage("email", quantity=1, result="failed", source="resend", paid=False)
         return False
 
 
@@ -196,7 +324,9 @@ PLAN_ENTITLEMENTS = {
 }
 
 # provider-neutral subscription states; card stays live through cancel_at_period_end
-ACTIVE_STATES = {"trialing", "active", "cancel_at_period_end"}
+# past_due is RECOVERABLE (Stripe is still retrying) → keep access during the dunning/grace window.
+# unpaid / incomplete / incomplete_expired / cancelled are terminal → access ends.
+ACTIVE_STATES = {"trialing", "active", "cancel_at_period_end", "past_due"}
 
 DEFAULT_PLANS = [
     {"id": "free", "name": "Legacy", "price_month": 0, "price_year": 0, "public": False},
@@ -452,6 +582,10 @@ ALLOW_DEMO_BILLING = os.environ.get("ALLOW_DEMO_BILLING", "true").lower() in ("1
 COMMERCIAL_MARKETS = ["USD", "AED", "SAR", "EUR", "GBP"]
 _MARKET_SYMBOL = {"USD": "$", "AED": "AED ", "SAR": "SAR ", "EUR": "€", "GBP": "£"}
 
+# Currency conversion vs the USD base. AED & SAR are official pegs; EUR/GBP are
+# Super-Admin editable defaults (commercial_config.fx_rates overrides these).
+DEFAULT_FX_RATES = {"USD": 1.0, "AED": 3.6725, "SAR": 3.75, "EUR": 0.92, "GBP": 0.79}
+
 DEFAULT_COMMERCIAL_CONFIG = {
     "id": "global",
     "trial": {"enabled": True, "days": 14},
@@ -468,6 +602,7 @@ DEFAULT_COMMERCIAL_CONFIG = {
         "reward_months": 1,
     },
     "default_market": "USD",
+    "stripe_tax_code": "txcd_10103001",
     "regional_pricing": {
         "USD": {"symbol": "$", "pro_month": 9.99, "pro_year": 99.99, "team_seat_month": 5.0, "team_seat_year": 50.0},
         "AED": {"symbol": "AED ", "pro_month": 36.99, "pro_year": 369.99, "team_seat_month": 18.0, "team_seat_year": 180.0},
@@ -475,6 +610,11 @@ DEFAULT_COMMERCIAL_CONFIG = {
         "EUR": {"symbol": "€", "pro_month": 9.99, "pro_year": 99.99, "team_seat_month": 5.0, "team_seat_year": 50.0},
         "GBP": {"symbol": "£", "pro_month": 8.99, "pro_year": 89.99, "team_seat_month": 4.5, "team_seat_year": 45.0},
     },
+    # USD is the authoritative base. Every other currency is AUTO-converted from USD
+    # via fx_rates unless its code is listed in manual_price_markets (then the stored
+    # regional_pricing[market] block is used as an intentional manual override).
+    "fx_rates": dict(DEFAULT_FX_RATES),
+    "manual_price_markets": [],
 }
 
 
@@ -514,14 +654,58 @@ def _annual_savings_pct(monthly, yearly) -> int:
     return 0
 
 
+def _round_price(x) -> float:
+    """Exact 2-decimal currency conversion. Keeping the true converted value (rather
+    than snapping to .99) preserves the USD monthly:annual ratio, so derived annual
+    savings stay coherent across every auto-converted currency. Markets that want a
+    clean local price (e.g. AED 369.99) use a manual override instead."""
+    try:
+        x = float(x or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(x, 2) if x > 0 else 0.0
+
+
 def resolve_market_pricing(cfg: dict, market: str) -> dict:
+    """Authoritative price resolver used by EVERY price surface (landing, pricing,
+    registration, billing, checkout, admin preview).
+
+    USD is the base. Any other currency is AUTO-converted from the USD base using
+    fx_rates, UNLESS the market is an explicit manual override (in manual_price_markets
+    with a stored regional_pricing block). Annual savings are always DERIVED from the
+    resolved monthly vs yearly prices for that same currency."""
     market = (market or cfg.get("default_market") or "USD").upper()
-    rp = (cfg.get("regional_pricing") or {}).get(market)
-    if not rp:
-        market = cfg.get("default_market", "USD")
-        rp = (cfg.get("regional_pricing") or {}).get(market, DEFAULT_COMMERCIAL_CONFIG["regional_pricing"]["USD"])
-    out = {"market": market, "symbol": rp.get("symbol", _MARKET_SYMBOL.get(market, "")), **rp}
-    # annual savings are DERIVED from the configured monthly vs annual prices (never hard-coded)
+    rp_all = cfg.get("regional_pricing") or {}
+    base = rp_all.get("USD") or DEFAULT_COMMERCIAL_CONFIG["regional_pricing"]["USD"]
+    fx = {**DEFAULT_FX_RATES, **(cfg.get("fx_rates") or {})}
+    manual = {m.upper() for m in (cfg.get("manual_price_markets") or [])}
+
+    if market == "USD":
+        rp = dict(base)
+        source = "base"
+    elif market in manual and rp_all.get(market):
+        rp = dict(rp_all[market])
+        source = "manual"
+    else:
+        rate = float(fx.get(market) or 0)
+        if rate <= 0:
+            # Unknown currency with no configured rate -> fall back to USD base (never another market's stale price)
+            rp = dict(base)
+            market = "USD"
+            source = "base"
+        else:
+            rp = {
+                "symbol": _MARKET_SYMBOL.get(market, ""),
+                "pro_month": _round_price(base.get("pro_month", 0) * rate),
+                "pro_year": _round_price(base.get("pro_year", 0) * rate),
+                "team_seat_month": _round_price(base.get("team_seat_month", 0) * rate),
+                "team_seat_year": _round_price(base.get("team_seat_year", 0) * rate),
+            }
+            source = "auto"
+
+    out = {"market": market, "symbol": rp.get("symbol", _MARKET_SYMBOL.get(market, "")),
+           "pricing_source": source, "fx_rate": float(fx.get(market) or 1.0), **rp}
+    # annual savings are DERIVED from the resolved monthly vs annual prices (never hard-coded)
     out["pro_annual_savings_pct"] = _annual_savings_pct(rp.get("pro_month"), rp.get("pro_year"))
     out["team_annual_savings_pct"] = _annual_savings_pct(rp.get("team_seat_month"), rp.get("team_seat_year"))
     return out
@@ -556,6 +740,19 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
     # referral discounts: referred-customer discount on their price + referrer reward on their own bill
     referred = ((ws or {}).get("subscription") or {}).get("referral") or {}
     reward = (ws or {}).get("referral_rewards") or {}
+    sub_obj = (ws or {}).get("subscription") or {}
+    dunning = sub_obj.get("dunning") or {}
+    payment_failed = ent["status"] in ("past_due", "unpaid") or dunning.get("state") == "failed"
+    payment_state = {
+        "failed": bool(payment_failed),
+        "status": ent["status"],
+        "amount_due": dunning.get("amount_due") if payment_failed else None,
+        "currency": dunning.get("currency") if payment_failed else None,
+        "hosted_invoice_url": dunning.get("hosted_invoice_url") if payment_failed else None,
+        "next_attempt": dunning.get("next_attempt") if payment_failed else None,
+        "recovered": dunning.get("state") == "recovered",
+        "has_customer": bool(sub_obj.get("stripe_customer_id")),
+    }
     discount = {
         "referred_month_pct": float(referred.get("discount_month_pct", 0)) if referred else 0,
         "referred_year_pct": float(referred.get("discount_year_pct", 0)) if referred else 0,
@@ -565,10 +762,15 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
     return {
         "plan": ent["plan"], "status": ent["status"], "active": ent["active"],
         "trial_ends_at": ent.get("trial_ends_at"), "current_period_end": ent.get("current_period_end"),
+        "interval": ((ws or {}).get("subscription") or {}).get("interval"),
+        "provider": ((ws or {}).get("subscription") or {}).get("provider"),
+        "cancel_at_period_end": ent["status"] == "cancel_at_period_end",
+        "trial_eligible": _trial_eligible((ws or {}).get("subscription") or {}),
         "seats": ent.get("seats"), "entitlements": ent,
         "commercial": {"trial": cfg["trial"], "plans": cfg["plans"], "referral": cfg["referral"],
                        "pricing": pricing, "markets": COMMERCIAL_MARKETS},
         "discount": discount,
+        "payment_state": payment_state,
         "demo_billing": ALLOW_DEMO_BILLING,
         "usage": {"ai": {"used": ai_used, "limit": ent.get("ai_limit"), "period": ent.get("ai_period")},
                   "scanner": {"used": sc_used, "limit": ent.get("scanner_limit"), "period": ent.get("scanner_period")},
@@ -576,15 +778,94 @@ async def get_billing(user: dict = Depends(current_user), market: Optional[str] 
     }
 
 
+@platform_router.post("/billing/portal")
+async def billing_portal(user: dict = Depends(current_user)):
+    """Stripe-hosted billing portal for 'Update payment method / Fix payment'.
+    TapPresence never sees or stores card details. Owner/admin only."""
+    ws_id = await _primary_ws_id(user)
+    if not ws_id:
+        raise HTTPException(404, "No workspace")
+    await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    customer_id = ((ws or {}).get("subscription") or {}).get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(400, "No Stripe customer on file for this workspace.")
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id, return_url=f"{PUBLIC_APP_URL}/billing")
+    except stripe.error.StripeError as e:
+        logger.error("[billing] portal creation failed ws=%s type=%s", ws_id, type(e).__name__)
+        raise HTTPException(503, "The billing portal is temporarily unavailable. Please try again shortly.")
+    return {"url": session.url}
+
+
+@platform_router.get("/billing/invoices")
+async def billing_invoices(user: dict = Depends(current_user)):
+    """Invoice & receipt history — Stripe is the authoritative source. Owner/admin only; a workspace
+    can only see its OWN invoices (scoped by its Stripe customer id). Returns [] when none."""
+    ws_id = await _primary_ws_id(user)
+    if not ws_id:
+        raise HTTPException(404, "No workspace")
+    await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    customer_id = ((ws or {}).get("subscription") or {}).get("stripe_customer_id")
+    if not customer_id:
+        return {"invoices": [], "has_customer": False}
+    try:
+        inv_list = stripe.Invoice.list(customer=customer_id, limit=24, expand=["data.charge"])
+    except stripe.error.StripeError as e:
+        logger.error("[billing] invoice list failed ws=%s type=%s", ws_id, type(e).__name__)
+        raise HTTPException(503, "Could not load billing history right now. Please try again shortly.")
+    out = []
+    for inv in inv_list.get("data", []):
+        lines = (inv.get("lines") or {}).get("data") or []
+        line0 = lines[0] if lines else {}
+        period = line0.get("period") or {}
+        plan_nick = None
+        price = line0.get("price") or {}
+        if price:
+            plan_nick = price.get("nickname") or ((price.get("product") if isinstance(price.get("product"), str) else None))
+        disc = inv.get("total_discount_amounts") or []
+        charge = inv.get("charge") if isinstance(inv.get("charge"), dict) else None
+        receipt_url = (charge or {}).get("receipt_url")
+        refunded = bool((charge or {}).get("refunded")) or (inv.get("status") == "void")
+        status = "refunded" if (charge or {}).get("refunded") else inv.get("status")
+        out.append({
+            "id": inv.get("id"),
+            "number": inv.get("number"),
+            "date": (datetime.fromtimestamp(inv["created"], timezone.utc).isoformat() if inv.get("created") else None),
+            "plan": (inv.get("metadata") or {}).get("plan") or plan_nick,
+            "period_start": (datetime.fromtimestamp(period["start"], timezone.utc).isoformat() if period.get("start") else None),
+            "period_end": (datetime.fromtimestamp(period["end"], timezone.utc).isoformat() if period.get("end") else None),
+            "subtotal": inv.get("subtotal"),
+            "discount": sum(d.get("amount", 0) for d in disc) if disc else 0,
+            "tax": inv.get("tax") or 0,
+            "total": inv.get("total"),
+            "amount_paid": inv.get("amount_paid"),
+            "currency": (inv.get("currency") or "usd").upper(),
+            "status": status,
+            "paid": bool(inv.get("paid")),
+            "refunded": refunded,
+            "hosted_invoice_url": inv.get("hosted_invoice_url"),
+            "invoice_pdf": inv.get("invoice_pdf"),
+            "receipt_url": receipt_url,
+        })
+    return {"invoices": out, "has_customer": True}
+
+
 @platform_router.get("/commercial/pricing")
 async def commercial_pricing(market: Optional[str] = None):
     """Public resolved pricing for a market — for the billing page + marketing pricing."""
     cfg = await get_commercial_config()
+    resolved_all = {m: resolve_market_pricing(cfg, m) for m in COMMERCIAL_MARKETS}
     return {
         "trial": cfg["trial"], "plans": cfg["plans"], "referral": cfg["referral"],
         "pricing": resolve_market_pricing(cfg, market),
         "markets": COMMERCIAL_MARKETS,
         "all_regional": cfg["regional_pricing"],
+        "resolved_all": resolved_all,
+        "fx_rates": {**DEFAULT_FX_RATES, **(cfg.get("fx_rates") or {})},
+        "manual_price_markets": cfg.get("manual_price_markets") or [],
     }
 
 
@@ -679,8 +960,45 @@ async def referral_qr(code: str):
 async def cancel_subscription(user: dict = Depends(current_user)):
     ws_id = await _primary_ws_id(user)
     await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = (ws or {}).get("subscription") or {}
+    sub_id = sub.get("stripe_subscription_id")
+    # Real Stripe subscription: schedule cancellation at period end (keeps Pro access until then).
+    if sub_id and STRIPE_SECRET_KEY:
+        try:
+            stripe.Subscription.modify(sub_id, cancel_at_period_end=True)
+        except stripe.error.StripeError as e:
+            raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
     await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription.status": "cancel_at_period_end", "subscription.updated_at": now_iso()}})
+    await audit(ws_id, user["id"], "billing.cancel_at_period_end", {"stripe": bool(sub_id)})
     return {"ok": True, "status": "cancel_at_period_end"}
+
+
+@platform_router.post("/billing/resume")
+async def resume_subscription(user: dict = Depends(current_user)):
+    """Undo a scheduled cancellation on the EXISTING Stripe subscription (never creates a new one)."""
+    ws_id = await _primary_ws_id(user)
+    await require_ws_admin(user, ws_id)
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = (ws or {}).get("subscription") or {}
+    if sub.get("status") != "cancel_at_period_end":
+        raise HTTPException(400, "Subscription is not scheduled to cancel")
+    sub_id = sub.get("stripe_subscription_id")
+    if sub_id and STRIPE_SECRET_KEY:
+        try:
+            stripe.Subscription.modify(sub_id, cancel_at_period_end=False)
+            fresh = stripe.Subscription.retrieve(sub_id)
+        except stripe.error.StripeError as e:
+            raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+        # Re-sync from Stripe so status + current_period_end always match Stripe exactly.
+        await _sync_ws_from_stripe_sub(ws_id, fresh, sub.get("plan", "pro"), sub.get("interval", "month"),
+                                       sub.get("seats", 1), sub.get("market", "USD"),
+                                       source="stripe_resume", event_id=f"resume:{sub_id}")
+    else:
+        await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription.status": "active", "subscription.updated_at": now_iso()}})
+    await audit(ws_id, user["id"], "billing.resume", {"stripe": bool(sub_id)})
+    ent = await resolve_entitlements(ws_id)
+    return {"ok": True, "status": ent["status"], "current_period_end": ent.get("current_period_end")}
 
 
 # ------------------------------------------------------------------ Stripe checkout (real payment provider)
@@ -693,6 +1011,15 @@ class CheckoutIn(BaseModel):
     seats: int = 1
     market: Optional[str] = None
     origin_url: str
+
+
+def _trial_eligible(sub: dict) -> bool:
+    """The 14-day trial is a ONE-TIME signup benefit. Any account that has EVER started
+    a trial carries a persistent, immutable marker (trial_started_at / trial_ends_at) and
+    is permanently ineligible for another — regardless of cancel, expiry, payment failure,
+    plan/interval switch, re-login or repeated checkout."""
+    sub = sub or {}
+    return not (sub.get("trial_started_at") or sub.get("trial_ends_at"))
 
 
 def _resolve_checkout_amount(cfg: dict, plan: str, interval: str, seats: int):
@@ -726,19 +1053,16 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
     unit_amount = int(round(amount * 100))
     if unit_amount <= 0:
         raise HTTPException(400, "This plan is not available for self-service checkout")
-    # honour any remaining free-trial days from the workspace subscription
+    # SaaS product tax code (Stripe Tax decides taxability from this + customer location + your registrations).
+    tax_code = (cfg.get("stripe_tax_code") or "txcd_10103001").strip()
+    # Trial eligibility is server-side & persistent (never based on current status alone).
     ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
     sub = (ws or {}).get("subscription") or {}
-    trial_days_left = 0
-    te = sub.get("trial_ends_at")
-    if sub.get("status") == "trialing" and te and te > now_iso():
-        import math
-        secs = (datetime.fromisoformat(te) - datetime.now(timezone.utc)).total_seconds()
-        trial_days_left = max(0, min(30, int(math.ceil(secs / 86400))))
+    trial_eligible = _trial_eligible(sub)
     line_items = [{
         "price_data": {
             "currency": currency,
-            "product_data": {"name": product_name},
+            "product_data": {"name": product_name, "tax_code": tax_code},
             "unit_amount": unit_amount,
             "recurring": {"interval": body.interval},
             "tax_behavior": "exclusive",
@@ -746,8 +1070,12 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
         "quantity": seats,
     }]
     sub_data = {"metadata": {"ws_id": ws_id, "plan": body.plan}}
-    if trial_days_left > 0:
-        sub_data["trial_period_days"] = trial_days_left
+    # Only a trial-eligible (never-trialed) account may receive a free-trial window.
+    # Previously-trialed accounts are charged immediately (no trial_period_days).
+    if trial_eligible:
+        _tdays = await trial_days()
+        if _tdays > 0:
+            sub_data["trial_period_days"] = _tdays
     meta = {"ws_id": ws_id, "plan": body.plan, "interval": body.interval, "seats": str(seats), "market": market}
     base_kwargs = dict(
         mode="subscription",
@@ -759,15 +1087,22 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
         metadata=meta,
         allow_promotion_codes=True,
     )
+    # TAX-SAFE checkout: automatic tax + required billing address + native tax-ID (VAT/TRN) collection.
+    # There is intentionally NO silent no-tax fallback — if the tax-ready session cannot be created
+    # (e.g. Stripe Tax not activated on the account), we fail with a controlled error and NEVER charge
+    # the customer under a degraded, tax-disabled path.
     try:
         session = stripe.checkout.Session.create(
-            **base_kwargs, automatic_tax={"enabled": True}, billing_address_collection="required")
-    except stripe.error.StripeError:
-        # Stripe Tax not enabled on the account (sandbox) — create without automatic tax
-        try:
-            session = stripe.checkout.Session.create(**base_kwargs)
-        except stripe.error.StripeError as e:
-            raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+            **base_kwargs,
+            automatic_tax={"enabled": True},
+            billing_address_collection="required",
+            tax_id_collection={"enabled": True},
+        )
+    except stripe.error.StripeError as e:
+        logger.error("[checkout] tax-ready session creation failed ws=%s code=%s type=%s",
+                     ws_id, getattr(e, "code", None), type(e).__name__)
+        raise HTTPException(503, "Checkout is temporarily unavailable while tax configuration is being verified. "
+                                 "Please try again shortly.")
     await db.payment_transactions.insert_one({
         "id": str(uuid.uuid4()), "session_id": session.id, "user_id": user["id"], "ws_id": ws_id,
         "plan": body.plan, "interval": body.interval, "seats": seats, "market": market,
@@ -775,15 +1110,22 @@ async def billing_checkout(body: CheckoutIn, user: dict = Depends(current_user))
         "status": "initiated", "payment_status": "pending",
         "created_at": now_iso(), "updated_at": now_iso(),
     })
-    return {"checkout_url": session.url, "session_id": session.id}
+    return {"checkout_url": session.url, "session_id": session.id,
+            "amount": unit_amount * seats, "currency": currency}
 
 
 async def _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, market, source, event_id):
     st = (stripe_sub or {}).get("status")
     status_map = {"trialing": "trialing", "active": "active", "past_due": "past_due",
-                  "canceled": "cancelled", "unpaid": "past_due", "incomplete": "past_due"}
-    status = status_map.get(st, "active")
+                  "canceled": "cancelled", "unpaid": "unpaid", "incomplete": "incomplete",
+                  "incomplete_expired": "incomplete_expired", "paused": "past_due"}
+    status = status_map.get(st, st or "active")
     cpe = stripe_sub.get("current_period_end")
+    if not cpe:
+        # Newer Stripe API versions expose the period end on the subscription ITEM, not the subscription.
+        _items = (stripe_sub.get("items") or {}).get("data") or []
+        if _items:
+            cpe = _items[0].get("current_period_end")
     trial_end = stripe_sub.get("trial_end")
     prior = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
     sub = {
@@ -797,6 +1139,10 @@ async def _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, mar
     _rf = ((prior or {}).get("subscription") or {}).get("referral")
     if _rf:
         sub["referral"] = _rf
+    # Preserve the immutable one-time-trial marker so a paid/synced state can never
+    # make the account trial-eligible again. Set it if Stripe reports a trial.
+    _prior_started = ((prior or {}).get("subscription") or {}).get("trial_started_at")
+    sub["trial_started_at"] = _prior_started or sub["trial_ends_at"] or (now_iso() if st == "trialing" else None)
     await db.workspaces.update_one({"id": ws_id}, {"$set": {"subscription": sub, "plan": plan}})
     if status == "active" and plan in ("pro", "team"):
         await record_paid_subscription_event(ws_id, source=source, event_id=event_id)
@@ -819,10 +1165,96 @@ async def _handle_completed_session(session_obj, event_id):
         except stripe.error.StripeError:
             stripe_sub = {"id": sub_id, "status": "active", "customer": session_obj.get("customer")}
     await _sync_ws_from_stripe_sub(ws_id, stripe_sub, plan, interval, seats, market, source="stripe", event_id=event_id)
+    await _record_tax_from_session(session_obj, ws_id, event_id)
     await db.payment_transactions.update_one(
         {"session_id": session_obj.get("id"), "payment_status": {"$ne": "paid"}},
         {"$set": {"status": "completed", "payment_status": "paid",
                   "stripe_subscription_id": sub_id, "updated_at": now_iso()}})
+
+
+def _mask_tax_id(v: str) -> str:
+    """Never store/expose a full tax ID. Keep only a trailing hint for admin recognition."""
+    v = (v or "").strip()
+    return ("•••" + v[-4:]) if len(v) > 4 else "•••"
+
+
+def _map_tax_status(raw: str, tax_amount) -> str:
+    """Distinguish real states — never claim 'no tax' when we simply don't know."""
+    if raw in ("complete", "collected"):
+        return "calculated" if (tax_amount or 0) > 0 else "no_tax_due"
+    if raw == "failed":
+        return "calculation_failed"
+    if raw in ("requires_location_inputs", "not_collecting"):
+        return "location_required"
+    if raw is None:
+        return "unavailable"
+    return str(raw)
+
+
+async def _upsert_tax_record(rec: dict):
+    await db.billing_tax_records.update_one({"source_id": rec["source_id"]}, {"$set": rec}, upsert=True)
+
+
+async def _record_tax_from_session(session_obj, ws_id, event_id):
+    """Capture authoritative tax/amount/location from a completed Checkout Session (no revenue inflation:
+    collected tax is stored separately from base subscription amount)."""
+    try:
+        cd = session_obj.get("customer_details") or {}
+        addr = cd.get("address") or {}
+        td = session_obj.get("total_details") or {}
+        at = session_obj.get("automatic_tax") or {}
+        tax_amount = td.get("amount_tax")
+        tax_ids = cd.get("tax_ids") or []
+        tid = tax_ids[0] if tax_ids else {}
+        country = addr.get("country")
+        rec = {
+            "source_id": f"cs:{session_obj.get('id')}", "kind": "checkout",
+            "workspace_id": ws_id, "country": country, "state": addr.get("state"),
+            "postal_code": addr.get("postal_code"),
+            "currency": (session_obj.get("currency") or "").upper(),
+            "base_amount": session_obj.get("amount_subtotal"),
+            "discount_amount": td.get("amount_discount"),
+            "tax_amount": tax_amount, "total_amount": session_obj.get("amount_total"),
+            "tax_status": _map_tax_status(at.get("status"), tax_amount),
+            "tax_id_type": tid.get("type"), "tax_id_masked": _mask_tax_id(tid.get("value")) if tid else None,
+            "stripe_customer_id": session_obj.get("customer"),
+            "stripe_subscription_id": session_obj.get("subscription"),
+            "created_at": now_iso(),
+        }
+        await _upsert_tax_record(rec)
+        # Mirror non-sensitive authoritative tax location onto the workspace subscription for reporting.
+        mirror = {"subscription.tax_country": country, "subscription.tax_status": rec["tax_status"],
+                  "subscription.tax_id_present": bool(tid), "subscription.tax_updated_at": now_iso()}
+        await db.workspaces.update_one({"id": ws_id}, {"$set": mirror})
+    except Exception as e:
+        logger.warning("[tax] session capture soft-fail: %s", type(e).__name__)
+
+
+async def _record_tax_from_invoice(inv, ws_id, event_id):
+    try:
+        at = inv.get("automatic_tax") or {}
+        tax_amount = inv.get("tax")
+        addr = inv.get("customer_address") or {}
+        tids = inv.get("customer_tax_ids") or []
+        tid = tids[0] if tids else {}
+        disc = inv.get("total_discount_amounts") or []
+        rec = {
+            "source_id": f"inv:{inv.get('id')}", "kind": "invoice",
+            "workspace_id": ws_id, "country": addr.get("country"), "state": addr.get("state"),
+            "postal_code": addr.get("postal_code"),
+            "currency": (inv.get("currency") or "").upper(),
+            "base_amount": inv.get("subtotal"),
+            "discount_amount": sum(d.get("amount", 0) for d in disc) if disc else 0,
+            "tax_amount": tax_amount, "total_amount": inv.get("total"),
+            "tax_status": _map_tax_status(at.get("status"), tax_amount),
+            "tax_id_type": tid.get("type"), "tax_id_masked": _mask_tax_id(tid.get("value")) if tid else None,
+            "stripe_customer_id": inv.get("customer"),
+            "stripe_subscription_id": inv.get("subscription"),
+            "created_at": now_iso(),
+        }
+        await _upsert_tax_record(rec)
+    except Exception as e:
+        logger.warning("[tax] invoice capture soft-fail: %s", type(e).__name__)
 
 
 @platform_router.get("/payments/status/{session_id}")
@@ -840,7 +1272,8 @@ async def payment_status(session_id: str):
         except stripe.error.StripeError:
             pass
     return {"session_id": record["session_id"], "status": record["status"],
-            "payment_status": record["payment_status"], "plan": record.get("plan")}
+            "payment_status": record["payment_status"], "plan": record.get("plan"),
+            "amount": record.get("amount"), "currency": record.get("currency")}
 
 
 @platform_router.post("/stripe/webhook")
@@ -852,6 +1285,12 @@ async def stripe_webhook(request: Request):
     except Exception:
         raise HTTPException(400, "Invalid signature")
     obj, t, eid = event["data"]["object"], event["type"], event.get("id")
+    # Idempotency: dedupe multi-delivered webhooks so we never double-process or double-email.
+    if eid:
+        try:
+            await db.stripe_events.insert_one({"id": eid, "type": t, "created_at": now_iso()})
+        except Exception:
+            return {"status": "duplicate"}
     if t == "checkout.session.completed":
         await _handle_completed_session(obj, event_id=eid)
     elif t in ("invoice.paid", "invoice.payment_succeeded"):
@@ -867,12 +1306,95 @@ async def stripe_webhook(request: Request):
                 await _sync_ws_from_stripe_sub(ws["id"], stripe_sub, sub.get("plan", "pro"),
                     sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
                     source="stripe", event_id=eid)
+                await _record_tax_from_invoice(obj, ws["id"], eid)
+                await _maybe_notify_recovery(ws["id"], eid)
+    elif t == "invoice.payment_failed":
+        await _handle_invoice_failed(obj, eid)
+    elif t == "customer.subscription.updated":
+        sub_id = obj.get("id")
+        ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": sub_id}, {"_id": 0})
+        if ws:
+            sub = ws.get("subscription") or {}
+            await _sync_ws_from_stripe_sub(ws["id"], obj, sub.get("plan", "pro"),
+                sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
+                source="stripe", event_id=eid)
+            if obj.get("status") == "active":
+                await _maybe_notify_recovery(ws["id"], eid)
     elif t == "customer.subscription.deleted":
         ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": obj.get("id")}, {"_id": 0, "id": 1})
         if ws:
             await db.workspaces.update_one({"id": ws["id"]},
                 {"$set": {"subscription.status": "cancelled", "subscription.updated_at": now_iso()}})
     return {"status": "ok"}
+
+
+async def _billing_owner(ws: dict):
+    """The account/workspace billing owner (never every team member)."""
+    return await db.users.find_one({"id": (ws or {}).get("owner_id")}, {"_id": 0, "email": 1, "language": 1})
+
+
+async def _handle_invoice_failed(inv, event_id):
+    """Renewal payment failed. Keep access while Stripe still considers it recoverable (past_due),
+    surface the failure to the customer, and email the billing owner ONCE per failed invoice."""
+    sub_id = inv.get("subscription")
+    if not sub_id:
+        return
+    ws = await db.workspaces.find_one({"subscription.stripe_subscription_id": sub_id}, {"_id": 0})
+    if not ws:
+        return
+    sub = ws.get("subscription") or {}
+    try:
+        stripe_sub = stripe.Subscription.retrieve(sub_id)
+    except stripe.error.StripeError:
+        stripe_sub = {"id": sub_id, "status": "past_due", "customer": inv.get("customer")}
+    await _sync_ws_from_stripe_sub(ws["id"], stripe_sub, sub.get("plan", "pro"),
+        sub.get("interval", "month"), sub.get("seats", 1), sub.get("market", "USD"),
+        source="stripe", event_id=event_id)
+    invoice_id = inv.get("id")
+    amount_minor = inv.get("amount_due") or inv.get("total") or 0
+    currency = (inv.get("currency") or "usd").upper()
+    dunning = {
+        "state": "failed", "invoice_id": invoice_id, "amount_due": amount_minor, "currency": currency,
+        "hosted_invoice_url": inv.get("hosted_invoice_url"),
+        "attempt_count": inv.get("attempt_count"),
+        "next_attempt": (datetime.fromtimestamp(inv["next_payment_attempt"], timezone.utc).isoformat()
+                         if inv.get("next_payment_attempt") else None),
+        "failed_at": now_iso(),
+    }
+    await db.workspaces.update_one({"id": ws["id"]}, {"$set": {"subscription.dunning": dunning}})
+    # Email the billing owner ONCE per failed invoice (idempotent on invoice_id).
+    prior_inv = (sub.get("dunning") or {}).get("invoice_id")
+    prior_state = (sub.get("dunning") or {}).get("state")
+    if not (prior_inv == invoice_id and prior_state == "failed"):
+        owner = await _billing_owner(ws)
+        if owner and owner.get("email"):
+            amount_str = _fmt_money_minor(amount_minor, currency)
+            portal_url = f"{PUBLIC_APP_URL}/billing"
+            await send_localized(owner["email"], "payment_failed", owner.get("language", "en"),
+                                 portal_url, amount=amount_str)
+
+
+async def _maybe_notify_recovery(ws_id, event_id):
+    """After a successful payment, if the account was previously in a failed/dunning state,
+    clear it and email the billing owner ONCE that billing is healthy again."""
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0})
+    sub = (ws or {}).get("subscription") or {}
+    dunning = sub.get("dunning") or {}
+    if dunning.get("state") == "failed":
+        await db.workspaces.update_one({"id": ws_id},
+            {"$set": {"subscription.dunning": {"state": "recovered", "recovered_at": now_iso(),
+                                               "invoice_id": dunning.get("invoice_id")}}})
+        owner = await _billing_owner(ws)
+        if owner and owner.get("email"):
+            await send_localized(owner["email"], "payment_recovered", owner.get("language", "en"),
+                                 f"{PUBLIC_APP_URL}/billing")
+
+
+def _fmt_money_minor(minor, currency):
+    zero_dec = {"JPY", "KRW", "VND", "CLP", "BHD", "KWD", "OMR"}
+    cur = (currency or "USD").upper()
+    amt = (minor or 0) / (1 if cur in zero_dec else 100)
+    return f"{cur} {amt:,.2f}"
 
 
 async def audit(workspace_id, actor_id, action, meta=None):
@@ -907,6 +1429,8 @@ async def get_config():
             "error_monitoring": _configured("SENTRY_DSN"),
         },
         "public_app_url": PUBLIC_APP_URL,
+        "stripe_mode": STRIPE_MODE,
+        "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY,
         "languages": ["en", "ar", "es"],
     }
 
@@ -1033,6 +1557,18 @@ async def _recompute_referral_rewards(referrer_ws_id: str):
             })
         except Exception:
             pass  # unique index guards against double insert
+    # Email layer ONLY reacts to the existing confirmed reward state: a reward was newly earned
+    # this run (earned crossed a new threshold). Idempotent — a later recompute with no new
+    # qualified referral will not re-enter this branch.
+    if earned > existing and _email_configured():
+        try:
+            ws = await db.workspaces.find_one({"id": referrer_ws_id}, {"_id": 0, "owner_id": 1})
+            owner = await db.users.find_one({"id": (ws or {}).get("owner_id")}, {"_id": 0, "email": 1, "language": 1}) if ws else None
+            if owner and owner.get("email"):
+                await send_localized(owner["email"], "referral_reward", owner.get("language", "en"),
+                                     f"{PUBLIC_APP_URL}/referral", per=per, months=months)
+        except Exception as e:
+            logger.error(f"[email] referral reward email failed for {referrer_ws_id}: {e}")
     redeemed = await db.referral_reward_grants.count_documents({"referrer_ws_id": referrer_ws_id, "redeemed": True, "voided": {"$ne": True}})
     ledger = {
         "qualified_count": qualified,
@@ -1176,10 +1712,12 @@ async def _provision_account(*, email, name, account_type="individual", company_
     _pending = "team" if is_team else "pro"
     if _tdays > 0:
         _sub = {"plan": "trial", "pending_plan": _pending, "status": "trialing",
+                "trial_started_at": now_iso(),
                 "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=_tdays)).isoformat(),
                 "current_period_end": None, "seats": seats_n, "interval": interval}
     else:
         _sub = {"plan": "trial", "pending_plan": _pending, "status": "trial_expired",
+                "trial_started_at": now_iso(),
                 "trial_ends_at": now_iso(), "current_period_end": None, "seats": seats_n, "interval": interval}
     _ws_name = (company_name.strip() if is_team else "") or (workspace_name or "").strip() or ((name or "").strip() or "My Workspace")
     await db.workspaces.insert_one({
@@ -1215,11 +1753,10 @@ async def register(body: RegisterIn, request: Request):
         "id": str(uuid.uuid4()), "user_id": user["id"], "token": verify_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(), "used": False,
     })
-    # Email: send verification via Resend if configured, else log link (dev).
+    # Email: send localized verification via Resend if configured, else log link (dev).
     link = f"{PUBLIC_APP_URL}/verify?token={verify_token}"
     if _email_configured():
-        await send_email(user["email"], "Verify your TapPresence email",
-                         _email_shell("Confirm your email", "Welcome to TapPresence — please confirm your email address to secure your account and unlock everything in your 14-day trial.", "Verify email", link))
+        await send_localized(user["email"], "verify", user.get("language", "en"), link)
     else:
         logger.info(f"[email:NOT_CONFIGURED] verification link for {user['email']}: {link}")
     return await _auth_payload(user, request)
@@ -1359,8 +1896,7 @@ async def resend_verification(request: Request, user: dict = Depends(current_use
     })
     link = f"{PUBLIC_APP_URL}/verify?token={token}"
     if _email_configured():
-        await send_email(user["email"], "Verify your TapPresence email",
-                         _email_shell("Confirm your email", "Here's a fresh link to confirm your TapPresence email address.", "Verify email", link))
+        await send_localized(user["email"], "verify_resend", user.get("language", "en"), link)
     else:
         logger.info(f"[email:NOT_CONFIGURED] verification link for {user['email']}: {link}")
     return {"ok": True}
@@ -1392,8 +1928,7 @@ async def forgot(body: ForgotIn, request: Request):
         })
         link = f"{PUBLIC_APP_URL}/reset?token={token}"
         if _email_configured():
-            await send_email(email, "Reset your TapPresence password",
-                             _email_shell("Reset your password", "We received a request to reset your TapPresence password. This link expires in 1 hour.", "Reset password", link, "If you didn't request a password reset, no action is needed."))
+            await send_localized(email, "reset", user.get("language", "en"), link)
         else:
             logger.info(f"[email:NOT_CONFIGURED] reset link for {email}: {link}")
     return {"ok": True}  # do not reveal account existence
@@ -1510,7 +2045,13 @@ async def export_account(user: dict = Depends(current_user)):
     cards = await db.digital_cards.find(q, {"_id": 0}).to_list(1000)
     slugs = [c["slug"] for c in cards]
     leads = await db.leads.find({"cardSlug": {"$in": slugs}}, {"_id": 0}).to_list(5000)
-    return {"user": user, "cards": cards, "leads": leads, "exported_at": now_iso()}
+    # Explicit safe whitelist — never export password hashes, auth identifiers
+    # (google_id/auth_provider), session/security internals or system metadata.
+    safe_user = {k: user[k] for k in (
+        "id", "email", "name", "created_at", "language", "locale", "timezone",
+        "account_type", "email_verified",
+    ) if k in user}
+    return {"user": safe_user, "cards": cards, "leads": leads, "exported_at": now_iso()}
 
 # ------------------------------------------------------------------ plans / entitlements
 @platform_router.get("/plans")
@@ -1693,22 +2234,166 @@ async def lead_activities(lead_id: str, user: dict = Depends(current_user)):
     return await db.lead_activities.find({"lead_id": lead_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
 
 
+CRM_HIDDEN = ()  # placeholder
+
+
+LEAD_CSV_COLS = [
+    ("name", "Name"), ("first_name", "First Name"), ("last_name", "Last Name"),
+    ("email", "Email"), ("phone", "Phone"), ("company", "Company"), ("title", "Job Title"),
+    ("website", "Website"), ("linkedin", "LinkedIn"),
+    ("source", "Source"), ("scanner_type", "Scanner Type"), ("event", "Event"),
+    ("event_id", "Event ID"), ("captured_by_name", "Captured By"), ("captured_at", "Captured At"),
+    ("status", "Pipeline Stage"), ("tags", "Tags"), ("next_follow_up", "Next Follow-up"),
+    ("follow_up_completed_at", "Follow-up Completed"), ("lead_score", "Lead Score"),
+    ("effective_temperature", "Temperature"), ("classification", "Classification"),
+    ("opportunity_value", "Opportunity Value"), ("opportunity_currency", "Opportunity Currency"),
+    ("expected_close_date", "Expected Close Date"), ("actual_revenue", "Actual Revenue"),
+    ("actual_revenue_currency", "Revenue Currency"), ("revenue_recorded_at", "Revenue Date"),
+    ("revenue_attribution_event", "Revenue Attribution Event"),
+    ("revenue_attribution_type", "Revenue Attribution Type"),
+]
+
+
+async def _lead_csv_row(l: dict, uname: dict, ev_names: dict) -> list:
+    ra = l.get("revenue_attribution") or {}
+    eff = effective_temperature(l) if "effective_temperature" in globals() else (l.get("lead_temperature") or "")
+    classification = "Manual" if l.get("lead_temperature_override") else "Automatic"
+    att_ev = ""
+    if ra.get("event_id"):
+        att_ev = ev_names.get(ra["event_id"]) or ra["event_id"]
+    elif ra.get("type") in ("organic", "other"):
+        att_ev = ra.get("type").capitalize()
+    computed = {
+        "captured_by_name": uname.get(l.get("captured_by"), l.get("captured_by") or ""),
+        "effective_temperature": eff, "classification": classification,
+        "revenue_attribution_event": att_ev, "revenue_attribution_type": ra.get("type") or "",
+    }
+    out = []
+    for key, _ in LEAD_CSV_COLS:
+        if key == "tags":
+            out.append(", ".join(l.get("tags") or []))
+        elif key in computed:
+            out.append(computed[key])
+        else:
+            v = l.get(key)
+            out.append("" if v is None else v)
+    return out
+
+
+def _csv_response(rows, header, filename):
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(header)
+    for r in rows:
+        w.writerow(r)
+    # UTF-8 BOM so Excel renders Arabic correctly
+    data = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return StreamingResponse(io.BytesIO(data), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @platform_router.get("/crm/leads.csv")
 async def export_leads_csv(user: dict = Depends(current_user)):
     slugs = await _owned_slugs(user)
-    leads = await db.leads.find({"cardSlug": {"$in": slugs}}, {"_id": 0}).to_list(5000)
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    cols = ["name", "email", "phone", "company", "title", "website", "status", "source", "campaign", "event",
-            "interest", "notes", "tags", "cardSlug", "met_at", "created_at", "next_follow_up"]
-    w.writerow(cols)
+    leads = await db.leads.find({"cardSlug": {"$in": slugs}}, {"_id": 0}).to_list(20000)
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(5000) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    evids = list({(l.get("revenue_attribution") or {}).get("event_id") for l in leads if (l.get("revenue_attribution") or {}).get("event_id")})
+    evs = await db.events.find({"id": {"$in": evids}}, {"_id": 0, "id": 1, "name": 1}).to_list(1000) if evids else []
+    ev_names = {e["id"]: e.get("name") for e in evs}
+    rows = [await _lead_csv_row(l, uname, ev_names) for l in leads]
+    return _csv_response(rows, [h for _, h in LEAD_CSV_COLS], "tappresence-leads.csv")
+
+
+@platform_router.get("/events/{event_id}/leads.csv")
+async def export_event_leads_csv(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    leads = await db.leads.find(_event_lead_query(event_id), {"_id": 0}).sort("created_at", -1).to_list(20000)
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(5000) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    ev_names = {event_id: ev.get("name")}
     for l in leads:
-        w.writerow([",".join(l.get("tags", [])) if c == "tags" else l.get(c, "") for c in cols])
-    buf.seek(0)
-    return StreamingResponse(io.BytesIO(buf.getvalue().encode()), media_type="text/csv",
-                             headers={"Content-Disposition": 'attachment; filename="leads.csv"'})
+        raid = (l.get("revenue_attribution") or {}).get("event_id")
+        if raid and raid not in ev_names:
+            oe = await db.events.find_one({"id": raid}, {"_id": 0, "name": 1})
+            ev_names[raid] = (oe or {}).get("name") or raid
+    rows = [await _lead_csv_row(l, uname, ev_names) for l in leads]
+    safe = "".join(c for c in (ev.get("name") or "event") if c.isalnum() or c in " -_")[:40].strip() or "event"
+    return _csv_response(rows, [h for _, h in LEAD_CSV_COLS], f"{safe}-leads.csv")
 
 # ------------------------------------------------------------------ wallet passes (Phase 5, provider-abstracted)
+_GW_SCOPE = "https://www.googleapis.com/auth/wallet_object.issuer"
+
+
+def _gw_sa_info():
+    """Decode the base64 service-account JSON (server-side only). Never returned/logged."""
+    return json.loads(base64.b64decode(os.environ["GOOGLE_WALLET_SA_JSON"]))
+
+
+def _gw_object_suffix(slug):
+    return re.sub(r"[^A-Za-z0-9._-]", "-", slug)
+
+
+def _gw_build_object(card, slug):
+    issuer = os.environ["GOOGLE_WALLET_ISSUER_ID"]
+    class_id = f"{issuer}.tappresence_business_card"
+    obj_id = f"{issuer}.{_gw_object_suffix(slug)}"
+    ident = card.get("identity", {}) or {}
+    name = (ident.get("fullName") or "TapPresence").strip()
+    title = (ident.get("jobTitle") or "").strip()
+    company = (ident.get("company") or "").strip()
+    profile_url = f"{PUBLIC_APP_URL}/{slug}"
+    text_modules = []
+    if company:
+        text_modules.append({"id": "company", "header": "Company", "body": company})
+    if title:
+        text_modules.append({"id": "title", "header": "Job Title", "body": title})
+    obj = {
+        "id": obj_id,
+        "classId": class_id,
+        "state": "ACTIVE",
+        "cardTitle": {"defaultValue": {"language": "en", "value": "TapPresence"}},
+        "header": {"defaultValue": {"language": "en", "value": name}},
+        "subheader": {"defaultValue": {"language": "en", "value": title or company}},
+        "hexBackgroundColor": "#0B0D12",
+        "logo": {"sourceUri": {"uri": f"{PUBLIC_APP_URL}/tp-mark.png"},
+                 "contentDescription": {"defaultValue": {"language": "en", "value": "TapPresence"}}},
+        "textModulesData": text_modules,
+        "linksModuleData": {"uris": [{"uri": profile_url, "description": "View TapPresence card", "id": "profile"}]},
+        "barcode": {"type": "QR_CODE", "value": profile_url, "alternateText": name},
+    }
+    return obj_id, class_id, obj
+
+
+def _gw_upsert_object(obj):
+    """Insert or update the generic object via Wallet REST API (sync; call via to_thread)."""
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from google.oauth2 import service_account
+    creds = service_account.Credentials.from_service_account_info(_gw_sa_info(), scopes=[_GW_SCOPE])
+    svc = build("walletobjects", "v1", credentials=creds, cache_discovery=False)
+    try:
+        svc.genericobject().get(resourceId=obj["id"]).execute()
+        svc.genericobject().patch(resourceId=obj["id"], body=obj).execute()
+        return "updated"
+    except HttpError as e:
+        if getattr(e, "resp", None) is not None and e.resp.status == 404:
+            svc.genericobject().insert(body=obj).execute()
+            return "created"
+        raise
+
+
+def _gw_save_jwt(generic_objects):
+    info = _gw_sa_info()
+    payload = {"iss": info["client_email"], "aud": "google", "typ": "savetowallet",
+               "iat": int(time.time()), "origins": [PUBLIC_APP_URL],
+               "payload": {"genericObjects": generic_objects}}
+    token = jwt.encode(payload, info["private_key"], algorithm="RS256")
+    return token if isinstance(token, str) else token.decode()
+
+
 def _wallet_capability():
     return {
         "apple": {"configured": _configured("APPLE_WALLET_CERT_B64", "APPLE_WALLET_TEAM_ID"),
@@ -1726,14 +2411,22 @@ async def wallet_status():
 
 
 @platform_router.get("/cards/{slug}/wallet/{platform}")
-async def card_wallet_pass(slug: str, platform: str):
-    """Return a wallet pass for the card's contact. Provider-abstracted:
-    reports Not Configured until Apple/Google Wallet credentials are supplied."""
+async def card_wallet_pass(slug: str, platform: str, user: dict = Depends(current_user)):
+    """Owner-only wallet pass for the card's contact. Provider-abstracted:
+    reports Not Configured until Apple/Google Wallet credentials are supplied.
+    Only the card owner (or an authorized workspace admin) may generate the pass."""
     if platform not in ("apple", "google"):
         raise HTTPException(400, "Unsupported wallet platform")
     card = await db.digital_cards.find_one({"slug": slug, "status": "published"}, {"_id": 0})
     if not card:
         raise HTTPException(404, "Card not found")
+    # Authorization: SUPER_ADMIN, workspace admin roles, or the card's own owner.
+    if user.get("role") != "SUPER_ADMIN":
+        m = await db.memberships.find_one(
+            {"user_id": user["id"], "workspace_id": card.get("workspace_id")}, {"_id": 0})
+        admin_roles = ("WORKSPACE_OWNER", "WORKSPACE_ADMIN", "MANAGER")
+        if not m or (m.get("role") not in admin_roles and card.get("owner_user_id") != user["id"]):
+            raise HTTPException(403, "Not authorized to generate a wallet pass for this card")
     cap = _wallet_capability()[platform]
     ident = card.get("identity", {})
     contact = card.get("contact", {})
@@ -1750,8 +2443,23 @@ async def card_wallet_pass(slug: str, platform: str):
         return {"configured": False, "platform": platform,
                 "message": f"{platform.title()} Wallet is Not Configured",
                 "pass_data": pass_data}
-    # When configured, the signed .pkpass (Apple) or save-to-wallet JWT link (Google)
-    # would be produced by the provider adapter here.
+    if platform == "google":
+        obj_id, class_id, obj = _gw_build_object(card, slug)
+        try:
+            sync = await asyncio.to_thread(_gw_upsert_object, obj)
+            token = _gw_save_jwt([{"id": obj_id, "classId": class_id}])
+        except Exception as e:
+            logging.error(f"[gwallet] object upsert failed ({type(e).__name__}); embedding full object in JWT")
+            sync = "jwt_inline"
+            token = _gw_save_jwt([obj])
+        await meter_usage("wallet_pass", user_id=user["id"], workspace_id=card.get("workspace_id"),
+                          quantity=1, result="success", source="wallet:google", paid=True)
+        return {"configured": True, "platform": "google", "pass_data": pass_data,
+                "object_id": obj_id, "class_id": class_id, "sync": sync,
+                "save_url": f"https://pay.google.com/gp/v/save/{token}"}
+    # Apple (unchanged): the signed .pkpass would be produced by the provider adapter here.
+    await meter_usage("wallet_pass", user_id=user["id"], workspace_id=card.get("workspace_id"),
+                      quantity=1, result="success", source=f"wallet:{platform}", paid=True)
     return {"configured": True, "platform": platform, "pass_data": pass_data,
             "pass_url": f"{PUBLIC_APP_URL}/api/cards/{slug}/wallet/{platform}/download"}
 
@@ -1961,7 +2669,10 @@ class CommercialConfigIn(BaseModel):
     plans: Optional[dict] = None
     referral: Optional[dict] = None
     default_market: Optional[str] = None
+    stripe_tax_code: Optional[str] = None
     regional_pricing: Optional[dict] = None
+    fx_rates: Optional[dict] = None
+    manual_price_markets: Optional[list] = None
 
 
 @platform_router.get("/admin/commercial")
@@ -2450,10 +3161,126 @@ async def control_pricing_publish(body: PricingChangeIn, user: dict = Depends(cu
     return {"ok": True, "version_id": version["id"], "migrated_existing": migrated, "config": merged}
 
 
+@platform_router.post("/admin/control/pricing/resolve")
+async def control_pricing_resolve(body: PricingChangeIn, user: dict = Depends(current_user)):
+    """Resolve a PROPOSED (unsaved) pricing draft for every market — read-only, no writes.
+    Lets the Control Center show live converted prices/savings as the admin edits,
+    with all currency conversion done server-side (never in the frontend)."""
+    _require_super(user)
+    current = await get_commercial_config()
+    proposed = _deep_merge(dict(current), body.patch or {})
+    return {
+        "resolved_all": {m: resolve_market_pricing(proposed, m) for m in COMMERCIAL_MARKETS},
+        "fx_rates": {**DEFAULT_FX_RATES, **(proposed.get("fx_rates") or {})},
+        "manual_price_markets": proposed.get("manual_price_markets") or [],
+    }
+
+
 @platform_router.get("/admin/control/pricing/versions")
 async def control_pricing_versions(user: dict = Depends(current_user)):
     _require_super(user)
     return {"items": await db.commercial_config_versions.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)}
+
+
+# ------------------------------------------------------------------ Promotions / Promo Codes (real Stripe Coupons + Promotion Codes)
+# The sandbox account's default API version renames PromotionCode params; pin a stable
+# version for promo calls so `coupon` is accepted (does not affect existing checkout).
+STRIPE_PROMO_API_VERSION = "2024-06-20"
+
+
+class PromotionIn(BaseModel):
+    code: str
+    discount_type: str = "percent"          # percent | amount
+    percent_off: Optional[float] = None
+    amount_off: Optional[float] = None      # major currency units (e.g. 10.00)
+    currency: str = "usd"
+    duration: str = "once"                  # once | repeating | forever
+    duration_in_months: Optional[int] = None
+    max_redemptions: Optional[int] = None
+    name: Optional[str] = None
+
+
+def _promo_out(pc: dict) -> dict:
+    cp = pc.get("coupon") or {}
+    return {
+        "id": pc.get("id"), "code": pc.get("code"), "active": pc.get("active"),
+        "times_redeemed": pc.get("times_redeemed", 0), "max_redemptions": pc.get("max_redemptions"),
+        "created": pc.get("created"),
+        "coupon": {
+            "id": cp.get("id"), "name": cp.get("name"),
+            "percent_off": cp.get("percent_off"), "amount_off": cp.get("amount_off"),
+            "currency": cp.get("currency"), "duration": cp.get("duration"),
+            "duration_in_months": cp.get("duration_in_months"), "valid": cp.get("valid"),
+        },
+    }
+
+
+@platform_router.get("/admin/control/promotions")
+async def control_promotions_list(user: dict = Depends(current_user)):
+    """List all Stripe promotion codes (with their coupon detail). Applied at Stripe-hosted checkout."""
+    _require_super(user)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe is not configured")
+    try:
+        res = await asyncio.to_thread(lambda: stripe.PromotionCode.list(limit=100, stripe_version=STRIPE_PROMO_API_VERSION))
+    except stripe.error.StripeError as e:
+        raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+    return {"items": [_promo_out(pc) for pc in (res.get("data") or [])]}
+
+
+@platform_router.post("/admin/control/promotions")
+async def control_promotions_create(body: PromotionIn, user: dict = Depends(current_user)):
+    """Create a real Stripe Coupon + Promotion Code. The code is entered by customers on the
+    existing Stripe-hosted Checkout page (allow_promotion_codes is already enabled there)."""
+    _require_super(user)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe is not configured")
+    code = (body.code or "").strip().upper()
+    if not code:
+        raise HTTPException(400, "A promo code is required")
+    duration = body.duration if body.duration in ("once", "repeating", "forever") else "once"
+    coupon_kwargs = {"duration": duration}
+    if duration == "repeating":
+        coupon_kwargs["duration_in_months"] = max(1, int(body.duration_in_months or 1))
+    if body.discount_type == "amount":
+        if not body.amount_off or float(body.amount_off) <= 0:
+            raise HTTPException(400, "A positive amount is required")
+        coupon_kwargs["amount_off"] = int(round(float(body.amount_off) * 100))
+        coupon_kwargs["currency"] = (body.currency or "usd").lower()
+    else:
+        if not body.percent_off or not (0 < float(body.percent_off) <= 100):
+            raise HTTPException(400, "Percent off must be between 0 and 100")
+        coupon_kwargs["percent_off"] = float(body.percent_off)
+    if body.name:
+        coupon_kwargs["name"] = body.name.strip()
+    try:
+        coupon = await asyncio.to_thread(lambda: stripe.Coupon.create(**coupon_kwargs, stripe_version=STRIPE_PROMO_API_VERSION))
+        pc_kwargs = {"coupon": coupon["id"], "code": code}
+        if body.max_redemptions:
+            pc_kwargs["max_redemptions"] = int(body.max_redemptions)
+        pc = await asyncio.to_thread(lambda: stripe.PromotionCode.create(**pc_kwargs, stripe_version=STRIPE_PROMO_API_VERSION))
+    except stripe.error.StripeError as e:
+        raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+    await audit(None, user["id"], "admin.promotion.create", {"code": code, "coupon_id": coupon["id"]})
+    return {"ok": True, **_promo_out(pc)}
+
+
+class PromotionToggleIn(BaseModel):
+    active: bool
+
+
+@platform_router.post("/admin/control/promotions/{promo_id}/toggle")
+async def control_promotions_toggle(promo_id: str, body: PromotionToggleIn, user: dict = Depends(current_user)):
+    """Activate / deactivate a Stripe promotion code (coupons themselves cannot be edited once created)."""
+    _require_super(user)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(503, "Stripe is not configured")
+    try:
+        pc = await asyncio.to_thread(lambda: stripe.PromotionCode.modify(promo_id, active=bool(body.active), stripe_version=STRIPE_PROMO_API_VERSION))
+    except stripe.error.StripeError as e:
+        raise HTTPException(502, f"Stripe error: {getattr(e, 'user_message', None) or str(e)}")
+    await audit(None, user["id"], "admin.promotion.toggle", {"id": promo_id, "active": bool(body.active)})
+    return {"ok": True, **_promo_out(pc)}
 
 
 
@@ -2552,6 +3379,490 @@ async def campaign_stats(campaign_id: str, user: dict = Depends(current_user)):
     leads = await db.leads.count_documents({"campaign": code})
     return {"campaign": camp, "events": events, "leads": leads}
 
+# ------------------------------------------------------------------ Events (Event Badge Scanner V1)
+class EventIn(BaseModel):
+    name: str
+    location: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    notes: str = ""
+    campaign_code: str = ""
+    timezone: str = ""
+    event_cost: Optional[float] = None
+    event_cost_currency: str = ""
+    currency: str = ""  # event reporting currency (financial aggregation)
+
+
+class EventUpdateIn(BaseModel):
+    name: Optional[str] = None
+    location: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    campaign_code: Optional[str] = None
+    timezone: Optional[str] = None
+    event_cost: Optional[float] = None
+    event_cost_currency: Optional[str] = None
+    currency: Optional[str] = None
+
+
+async def _event_or_403(event_id: str, user: dict):
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    ws_ids = await workspace_ids_for(user)
+    if ws_ids != "ALL" and ev.get("workspace_id") not in ws_ids:
+        raise HTTPException(403, "Not your event")
+    return ev
+
+
+async def _event_reporting_currency(ev: dict) -> str:
+    """Single reporting currency for an event's financial aggregation. Financial values are only
+    summed into event totals when their own currency matches this (no FX conversion is performed)."""
+    ccy = (ev.get("currency") or ev.get("event_cost_currency") or "").strip().upper()
+    if ccy:
+        return ccy
+    ws = await db.workspaces.find_one({"id": ev.get("workspace_id")}, {"_id": 0, "region": 1})
+    return (((ws or {}).get("region") or {}).get("default_currency") or "USD").upper()
+
+
+# ---- Event analytics helpers (all derived from real persisted data) ----
+_MEETING_ACTIVE = {"requested", "scheduled", "confirmed", "rescheduled", "time_proposed", "completed"}
+
+
+def _event_lead_query(event_id: str) -> dict:
+    """A lead belongs to an event if its current event_id matches OR any timeline interaction
+    references the event. Timeline preserves cross-event history after a re-scan moves event_id."""
+    return {"$or": [{"event_id": event_id}, {"timeline.event_id": event_id}]}
+
+
+def _lead_new_or_returning(lead: dict, event_id: str) -> str:
+    """NEW = this lead was first created at this event (initial scan/exchange interaction here).
+    RETURNING = an already-existing contact re-engaged at this event (badge_rescanned here)."""
+    entries = [t for t in (lead.get("timeline") or []) if t.get("event_id") == event_id]
+    if any(t.get("event") in ("badge_scanned", "card_scanned") for t in entries):
+        return "new"
+    if any(t.get("event") == "badge_rescanned" for t in entries):
+        return "returning"
+    # fallback: lead attributed only by event_id field with no timeline detail → treat as new
+    return "new"
+
+
+async def _event_meetings_by_lead(lead_ids):
+    """Structured meeting records keyed by lead_id. Excludes cancelled/declined. Deduped by meeting id."""
+    if not lead_ids:
+        return {}
+    meets = await db.meetings.find({"lead_id": {"$in": list(lead_ids)}}, {"_id": 0}).to_list(20000)
+    out = {}
+    seen = set()
+    for m in meets:
+        if m.get("id") in seen:
+            continue
+        seen.add(m.get("id"))
+        if m.get("status") in ("cancelled", "declined"):
+            continue
+        out.setdefault(m["lead_id"], []).append(m)
+    return out
+
+
+@platform_router.get("/events")
+async def list_events(user: dict = Depends(current_user)):
+    ws_ids = await workspace_ids_for(user)
+    q = {} if ws_ids == "ALL" else {"workspace_id": {"$in": ws_ids}}
+    events = await db.events.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for e in events:
+        leads = await db.leads.find(_event_lead_query(e["id"]), {"_id": 0, "id": 1, "status": 1}).to_list(20000)
+        lead_ids = [l["id"] for l in leads]
+        by_lead = await _event_meetings_by_lead(lead_ids)
+        e["lead_count"] = len(leads)
+        e["meeting_count"] = sum(len(v) for v in by_lead.values())
+        e["customer_count"] = sum(1 for l in leads if (l.get("status") or "new").strip().lower() in ("customer", "converted", "won"))
+    return events
+
+
+@platform_router.post("/events")
+async def create_event(body: EventIn, user: dict = Depends(current_user)):
+    ms = await memberships_for(user["id"])
+    ws_id = ms[0]["workspace_id"] if ms else None
+    if not ws_id:
+        raise HTTPException(400, "No workspace")
+    if not body.name.strip():
+        raise HTTPException(400, "Event name is required")
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "region": 1})
+    tz = body.timezone.strip() or ((ws or {}).get("region") or {}).get("timezone") or "UTC"
+    ws_ccy = ((ws or {}).get("region") or {}).get("default_currency") or "USD"
+    report_ccy = (body.currency or body.event_cost_currency or ws_ccy).strip().upper()
+    doc = {"id": str(uuid.uuid4()), "workspace_id": ws_id,
+           "name": body.name.strip(), "location": body.location.strip(),
+           "start_date": body.start_date.strip(), "end_date": body.end_date.strip(),
+           "notes": body.notes.strip(), "campaign_code": body.campaign_code.strip(),
+           "timezone": tz,
+           "currency": report_ccy,
+           "event_cost": body.event_cost if body.event_cost is not None else None,
+           "event_cost_currency": (body.event_cost_currency or report_ccy).strip().upper(),
+           "status": "active", "created_by": user["id"],
+           "created_at": now_iso(), "updated_at": now_iso()}
+    await db.events.insert_one(doc)
+    doc.pop("_id", None)
+    doc["lead_count"] = 0
+    doc["meeting_count"] = 0
+    doc["customer_count"] = 0
+    return doc
+
+
+@platform_router.get("/events/{event_id}")
+async def get_event(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    leads = await db.leads.find(_event_lead_query(event_id), {"_id": 0}).sort("created_at", -1).to_list(20000)
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(500) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    by_lead = await _event_meetings_by_lead([l["id"] for l in leads])
+    for l in leads:
+        l["captured_by_name"] = uname.get(l.get("captured_by"), "")
+        l["new_returning"] = _lead_new_or_returning(l, event_id)
+        ms_l = by_lead.get(l["id"]) or []
+        l["has_meeting"] = bool(ms_l)
+        l["meeting_status"] = (ms_l[0].get("status") if ms_l else "")
+        l["effective_temperature"] = effective_temperature(l)
+        l["crm_sync"] = _crm_public_state(l)
+    ev["lead_count"] = len(leads)
+    return {"event": ev, "leads": leads, "lead_count": len(leads)}
+
+
+@platform_router.patch("/events/{event_id}")
+async def update_event(event_id: str, body: EventUpdateIn, user: dict = Depends(current_user)):
+    await _event_or_403(event_id, user)
+    # exclude_unset lets callers explicitly clear event_cost (send null) vs. omit it entirely
+    raw = body.model_dump(exclude_unset=True)
+    upd = {}
+    for k, v in raw.items():
+        if v is None:
+            # only nullable/clearable fields may be set to null
+            if k in ("event_cost", "event_cost_currency", "notes"):
+                upd[k] = None if k == "event_cost" else ""
+            continue
+        upd[k] = v.strip() if isinstance(v, str) else v
+    if "event_cost_currency" in upd and isinstance(upd["event_cost_currency"], str):
+        upd["event_cost_currency"] = upd["event_cost_currency"].upper()
+    if "currency" in upd and isinstance(upd["currency"], str):
+        upd["currency"] = upd["currency"].upper()
+    if "status" in upd and upd["status"] not in ("active", "archived"):
+        raise HTTPException(400, "Invalid status")
+    upd["updated_at"] = now_iso()
+    await db.events.update_one({"id": event_id}, {"$set": upd})
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    ev["lead_count"] = await db.leads.count_documents(_event_lead_query(event_id))
+    return ev
+
+
+def _event_days(ev: dict) -> int:
+    sd, ed = ev.get("start_date"), ev.get("end_date")
+    try:
+        if sd and ed:
+            d0 = datetime.fromisoformat(sd).date()
+            d1 = datetime.fromisoformat(ed).date()
+            return max(1, (d1 - d0).days + 1)
+        if sd:
+            return 1
+    except Exception:
+        pass
+    return 0
+
+
+def _local_day(iso_str: str, tzname: str) -> str:
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromisoformat((iso_str or "").replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo(tzname or "UTC")).strftime("%Y-%m-%d")
+    except Exception:
+        return (iso_str or "")[:10]
+
+
+@platform_router.get("/events/{event_id}/dashboard")
+async def event_dashboard(event_id: str, user: dict = Depends(current_user)):
+    """Server-side aggregated event analytics. Tenant-scoped via _event_or_403.
+    Every metric is derived from real persisted leads/meetings — no fabricated values."""
+    ev = await _event_or_403(event_id, user)
+    tz = ev.get("timezone") or "UTC"
+    leads = await db.leads.find(_event_lead_query(event_id),
+                                {"_id": 0, "id": 1, "status": 1, "source": 1, "scanner_type": 1,
+                                 "captured_by": 1, "captured_at": 1, "created_at": 1, "name": 1,
+                                 "company": 1, "title": 1, "phone": 1, "email": 1,
+                                 "next_follow_up": 1, "follow_up_completed_at": 1, "timeline": 1,
+                                 "lead_score": 1, "lead_temperature": 1, "lead_temperature_override": 1,
+                                 "opportunity_value": 1, "opportunity_currency": 1, "expected_close_date": 1,
+                                 "actual_revenue": 1, "actual_revenue_currency": 1,
+                                 "revenue_recorded_at": 1, "revenue_attribution": 1}).to_list(50000)
+    lead_ids = [l["id"] for l in leads]
+    by_lead = await _event_meetings_by_lead(lead_ids)
+    total = len(leads)
+
+    # New vs returning
+    nr = {"new": 0, "returning": 0}
+    for l in leads:
+        nr[_lead_new_or_returning(l, event_id)] += 1
+
+    # Pipeline distribution (existing 7 stages, legacy aliased)
+    STAGES = ["new", "contacted", "qualified", "meeting", "opportunity", "customer", "not_interested"]
+    ALIAS = {"meeting_booked": "meeting", "converted": "customer", "archived": "not_interested",
+             "won": "customer", "lost": "not_interested", "follow_up": "contacted"}
+    def stage_of(l):
+        s = (l.get("status") or "new").strip().lower()
+        s = ALIAS.get(s, s)
+        return s if s in STAGES else "new"
+    pipeline = {s: 0 for s in STAGES}
+    for l in leads:
+        pipeline[stage_of(l)] += 1
+    customers = pipeline["customer"]
+
+    # Capture methods
+    caps = {}
+    for l in leads:
+        key = (l.get("source") or "inquiry")
+        caps[key] = caps.get(key, 0) + 1
+    capture_methods = sorted([{"key": k, "count": v, "pct": round(v * 100 / total, 1) if total else 0}
+                              for k, v in caps.items()], key=lambda x: x["count"], reverse=True)
+
+    # Meetings (deduped, non-cancelled)
+    meetings_total = sum(len(v) for v in by_lead.values())
+    leads_with_meeting = len(by_lead)
+    customer_lead_ids = {l["id"] for l in leads if stage_of(l) == "customer"}
+    meetings_to_customers = sum(1 for lid in by_lead if lid in customer_lead_ids)
+
+    # Follow-ups
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
+    fu = {"due": 0, "overdue": 0, "completed": 0, "none": 0}
+    for l in leads:
+        if l.get("follow_up_completed_at"):
+            fu["completed"] += 1; continue
+        nf = (l.get("next_follow_up") or "").strip()
+        if not nf:
+            fu["none"] += 1; continue
+        nfday = nf[:10]
+        if nfday < today:
+            fu["overdue"] += 1
+        elif nf <= now.isoformat() or nfday == today:
+            fu["due"] += 1
+        else:
+            fu["due"] += 0  # scheduled future — counted under 'set' implicitly
+    fu["scheduled_future"] = total - fu["due"] - fu["overdue"] - fu["completed"] - fu["none"]
+
+    # Leaderboard (captured_by → workspace member)
+    uids = list({l.get("captured_by") for l in leads if l.get("captured_by")})
+    users = await db.users.find({"id": {"$in": uids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(1000) if uids else []
+    uname = {u["id"]: (u.get("name") or u.get("email") or u["id"]) for u in users}
+    lb = {}
+    for l in leads:
+        uid = l.get("captured_by") or "unknown"
+        row = lb.setdefault(uid, {"user_id": uid, "name": uname.get(uid, "—"), "leads": 0, "new": 0,
+                                  "returning": 0, "meetings": 0, "customers": 0})
+        row["leads"] += 1
+        row[_lead_new_or_returning(l, event_id)] += 1
+        if by_lead.get(l["id"]):
+            row["meetings"] += 1
+        if stage_of(l) == "customer":
+            row["customers"] += 1
+    for row in lb.values():
+        row["conversion_rate"] = round(row["customers"] * 100 / row["leads"], 1) if row["leads"] else 0
+    leaderboard = sorted(lb.values(), key=lambda x: x["leads"], reverse=True)
+
+    # Daily trend (in event timezone)
+    daily = {}
+    for l in leads:
+        d = _local_day(l.get("captured_at") or l.get("created_at") or "", tz)
+        if d:
+            daily[d] = daily.get(d, 0) + 1
+    daily_trend = [{"date": d, "leads": daily[d]} for d in sorted(daily)]
+
+    created_user = await db.users.find_one({"id": ev.get("created_by")}, {"_id": 0, "name": 1, "email": 1})
+    conversion_rate = round(customers * 100 / total, 1) if total else 0
+
+    # Lead-quality distribution + averages (effective temperature honours manual override)
+    def eff_temp(l):
+        ov = l.get("lead_temperature_override")
+        return ov if ov in ("hot", "warm", "cold") else (l.get("lead_temperature") or "cold")
+    quality = {"hot": 0, "warm": 0, "cold": 0}
+    score_sum = 0
+    for l in leads:
+        quality[eff_temp(l)] += 1
+        score_sum += int(l.get("lead_score") or 0)
+    avg_score = round(score_sum / total, 1) if total else 0
+
+    # Leaderboard: add hot_leads + avg_score per member
+    for row in lb.values():
+        row["hot_leads"] = 0
+        row["_score_sum"] = 0
+    for l in leads:
+        uid = l.get("captured_by") or "unknown"
+        if uid in lb:
+            if eff_temp(l) == "hot":
+                lb[uid]["hot_leads"] += 1
+            lb[uid]["_score_sum"] += int(l.get("lead_score") or 0)
+    for row in lb.values():
+        row["avg_score"] = round(row["_score_sum"] / row["leads"], 1) if row["leads"] else 0
+        row.pop("_score_sum", None)
+    leaderboard = sorted(lb.values(), key=lambda x: x["leads"], reverse=True)
+
+    # Top leads to follow up (exclude Customer + Not Interested; effective temp order, recency tiebreak)
+    open_leads = [l for l in leads if stage_of(l) not in ("customer", "not_interested")]
+    _trank = {"hot": 3, "warm": 2, "cold": 1}
+    top = sorted(open_leads, key=lambda l: (int(l.get("lead_score") or 0), l.get("captured_at") or l.get("created_at") or ""), reverse=True)[:10]
+    top_leads = [{"id": l["id"], "name": l.get("name"), "company": l.get("company"), "title": l.get("title"),
+                  "score": int(l.get("lead_score") or 0), "temperature": eff_temp(l),
+                  "captured_by": uname.get(l.get("captured_by"), ""),
+                  "next_follow_up": l.get("next_follow_up") or "", "follow_up_completed_at": l.get("follow_up_completed_at") or "",
+                  "phone": l.get("phone") or "", "email": l.get("email") or ""} for l in top]
+
+    # -------- Financials (Pipeline Value + Attributed Revenue + ROI) --------
+    # Rules (honest, no fabrication, no FX conversion):
+    #  • Reporting currency = event.currency (falls back to cost currency / workspace default).
+    #  • OPEN pipeline stages = contacted/qualified/meeting/opportunity (excludes new, customer, not_interested).
+    #  • Pipeline Value (ASSOCIATED): sum opportunity_value of OPEN leads associated with THIS event,
+    #    counted only when the opportunity currency matches the reporting currency. A lead's opportunity
+    #    can appear in every event it is associated with (associated, NOT exclusive) — labelled as such.
+    #  • Attributed Revenue (EXCLUSIVE): sum actual_revenue whose revenue_attribution.event_id == this event
+    #    (explicit, user-selected) — one revenue record attributes to at most ONE event, so no double count.
+    #  • Amounts in a different currency are stored on the lead but EXCLUDED from event totals (never summed).
+    report_ccy = await _event_reporting_currency(ev)
+    OPEN_STAGES = ("contacted", "qualified", "meeting", "opportunity")
+    pipeline_value = 0.0
+    pv_by_stage = {s: 0.0 for s in OPEN_STAGES}
+    open_opp_count = 0
+    pv_excluded = 0
+    for l in leads:
+        ov = l.get("opportunity_value")
+        if ov is None:
+            continue
+        st = stage_of(l)
+        if st not in OPEN_STAGES:
+            continue
+        occ = (l.get("opportunity_currency") or report_ccy).upper()
+        if occ != report_ccy:
+            pv_excluded += 1
+            continue
+        pipeline_value += float(ov)
+        pv_by_stage[st] += float(ov)
+        open_opp_count += 1
+
+    attributed_revenue = 0.0
+    rev_count = 0
+    rev_excluded = 0
+    for l in leads:
+        ra = l.get("revenue_attribution") or {}
+        if ra.get("event_id") != event_id:
+            continue
+        amt = l.get("actual_revenue")
+        if amt is None:
+            continue
+        rcc = (l.get("actual_revenue_currency") or report_ccy).upper()
+        if rcc != report_ccy:
+            rev_excluded += 1
+            continue
+        attributed_revenue += float(amt)
+        rev_count += 1
+
+    ev_cost = ev.get("event_cost")
+    cost_ccy = (ev.get("event_cost_currency") or "").upper()
+    cost_usable = (ev_cost is not None and float(ev_cost) > 0 and (not cost_ccy or cost_ccy == report_ccy))
+    roi = None
+    rev_cost_multiple = None
+    if cost_usable and rev_count > 0:
+        roi = round((attributed_revenue - float(ev_cost)) / float(ev_cost) * 100, 1)
+        rev_cost_multiple = round(attributed_revenue / float(ev_cost), 2)
+
+    # Per-member pipeline / revenue (attributed to captured_by — same ownership as all leaderboard metrics)
+    for row in lb.values():
+        row["pipeline_value"] = 0.0
+        row["attributed_revenue"] = 0.0
+        row["_has_pv"] = False
+        row["_has_rev"] = False
+    for l in leads:
+        uid = l.get("captured_by") or "unknown"
+        if uid not in lb:
+            continue
+        ov = l.get("opportunity_value")
+        if ov is not None and stage_of(l) in OPEN_STAGES and (l.get("opportunity_currency") or report_ccy).upper() == report_ccy:
+            lb[uid]["pipeline_value"] += float(ov); lb[uid]["_has_pv"] = True
+        ra = l.get("revenue_attribution") or {}
+        if ra.get("event_id") == event_id and l.get("actual_revenue") is not None and (l.get("actual_revenue_currency") or report_ccy).upper() == report_ccy:
+            lb[uid]["attributed_revenue"] += float(l["actual_revenue"]); lb[uid]["_has_rev"] = True
+    for row in lb.values():
+        if not row.pop("_has_pv", False):
+            row["pipeline_value"] = None
+        if not row.pop("_has_rev", False):
+            row["attributed_revenue"] = None
+    leaderboard = sorted(lb.values(), key=lambda x: x["leads"], reverse=True)
+
+    # Top Opportunities (monetary) — exclude Not Interested and closed Customers (customer w/ recorded revenue)
+    opp_pool = [l for l in leads if l.get("opportunity_value") is not None
+                and stage_of(l) != "not_interested"
+                and not (stage_of(l) == "customer" and l.get("actual_revenue") is not None)]
+    opp_sorted = sorted(opp_pool, key=lambda l: float(l.get("opportunity_value") or 0), reverse=True)[:10]
+    top_opportunities = [{"id": l["id"], "name": l.get("name"), "company": l.get("company"), "title": l.get("title"),
+                          "score": int(l.get("lead_score") or 0), "stage": stage_of(l),
+                          "opportunity_value": l.get("opportunity_value"),
+                          "opportunity_currency": (l.get("opportunity_currency") or report_ccy).upper(),
+                          "expected_close_date": l.get("expected_close_date") or "",
+                          "captured_by": uname.get(l.get("captured_by"), ""),
+                          "next_follow_up": l.get("next_follow_up") or "",
+                          "follow_up_completed_at": l.get("follow_up_completed_at") or ""} for l in opp_sorted]
+
+    financials = {
+        "currency": report_ccy,
+        "pipeline_value": (pipeline_value if open_opp_count > 0 else None),
+        "open_opportunities": open_opp_count,
+        "pipeline_by_stage": [{"stage": s, "value": pv_by_stage[s]} for s in OPEN_STAGES if pv_by_stage[s] > 0],
+        "attributed_revenue": (attributed_revenue if rev_count > 0 else None),
+        "attributed_revenue_count": rev_count,
+        "event_cost": ev_cost,
+        "event_cost_currency": cost_ccy or report_ccy,
+        "roi": roi,
+        "revenue_cost_multiple": rev_cost_multiple,
+        "excluded": {"pipeline_currency_mismatch": pv_excluded, "revenue_currency_mismatch": rev_excluded},
+    }
+
+    return {
+        "event": {**ev, "days": _event_days(ev),
+                  "created_by_name": (created_user or {}).get("name") or (created_user or {}).get("email") or ""},
+        "timezone": tz,
+        "kpis": {
+            "total_leads": total,
+            "new_contacts": nr["new"],
+            "returning_contacts": nr["returning"],
+            "meetings_booked": meetings_total,
+            "followups_due": fu["due"], "followups_overdue": fu["overdue"],
+            "followups_completed": fu["completed"], "followups_none": fu["none"],
+            "customers": customers,
+            "conversion_rate": conversion_rate,
+        },
+        "new_vs_returning": {"new": nr["new"], "returning": nr["returning"],
+                             "new_pct": round(nr["new"] * 100 / total, 1) if total else 0,
+                             "returning_pct": round(nr["returning"] * 100 / total, 1) if total else 0},
+        "pipeline": [{"stage": s, "count": pipeline[s]} for s in STAGES],
+        "capture_methods": capture_methods,
+        "conversion": {"leads": total, "customers": customers, "conversion_rate": conversion_rate,
+                       "meetings": meetings_total, "leads_with_meeting": leads_with_meeting,
+                       "meeting_rate": round(leads_with_meeting * 100 / total, 1) if total else 0,
+                       "meetings_to_customers": meetings_to_customers},
+        "followups": fu,
+        "leaderboard": leaderboard,
+        "quality": {**quality, "avg_score": avg_score},
+        "top_leads": top_leads,
+        "top_opportunities": top_opportunities,
+        "financials": financials,
+        "daily_trend": daily_trend,
+        "cost": {"event_cost": ev.get("event_cost"), "currency": ev.get("event_cost_currency") or report_ccy,
+                 "attributed_revenue": financials["attributed_revenue"], "roi": financials["roi"]},
+    }
+
+
+
+
 # ------------------------------------------------------------------ AI follow-up (provider-abstracted)
 class FollowupIn(BaseModel):
     lead_name: str
@@ -2610,6 +3921,7 @@ async def ai_followup(body: FollowupIn, request: Request, user: dict = Depends(c
     _ms = await memberships_for(user["id"])
     _ws_id = _ms[0]["workspace_id"] if _ms else None
     _ent, _period = await enforce_quota(user, _ws_id, "ai")
+    _usage_handle = await usage_guard("ai_followup", user, _ws_id)
     provider = "template"
     text = _draft_followup(body)
     key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
@@ -2638,6 +3950,12 @@ async def ai_followup(body: FollowupIn, request: Request, user: dict = Depends(c
         "channel": body.channel, "tone": body.tone, "language": body.language, "created_at": now_iso(),
     })
     await incr_usage(user["id"], "ai", _period)
+    # Usage & Cost Control: only a real provider call incurs cost. A template fallback releases the reservation.
+    _real = provider != "template"
+    if not _real:
+        await release_usage_handle(_usage_handle)
+    await meter_usage("ai_followup", user_id=user["id"], workspace_id=_ws_id, quantity=1,
+                      result="success", source="ai_followup", paid=_real)
     _used = await get_usage(user["id"], "ai", _period)
     return {"provider": provider, "channel": body.channel, "language": body.language, "draft": text,
             "rtl": body.language in RTL_LANGUAGES, "usage": {"used": _used, "limit": _ent.get("ai_limit"), "period": _period},
@@ -2654,12 +3972,16 @@ async def _user_entitlements(user: dict) -> dict:
     return await resolve_entitlements(ms[0]["workspace_id"])
 
 
-SCAN_SOURCES = {"business_card_scan", "badge_scan", "qr_scan"}
+SCAN_SOURCES = {"business_card_scan", "badge_scan", "event_badge_scan", "qr_scan"}
+# Scanner "type" the user picked in the UI → canonical lead source.
+SCANNER_TYPE_SOURCE = {"business_card": "business_card_scan", "event_badge": "event_badge_scan"}
+_BADGE_SOURCES = {"badge_scan", "event_badge_scan"}
 
 
 class ScanIn(BaseModel):
     image_base64: str
     source: str = "business_card_scan"
+    event_id: str = ""
 
 
 def _strip_data_url(b64: str) -> str:
@@ -2698,47 +4020,85 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
     _ent, _period = await enforce_quota(user, _ws_id, "scanner")
     await incr_usage(user["id"], "scanner", _period)
     source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
+    is_badge = source in _BADGE_SOURCES
+    _feature_key = "event_badge_scan" if is_badge else "business_card_scan"
+    # Usage & Cost Control gate (no-op unless a Super Admin has enabled a limit for this feature).
+    _usage_handle = await usage_guard(_feature_key, user, _ws_id, body.event_id.strip())
     image_b64 = _strip_data_url(body.image_base64)
     if not image_b64:
+        await release_usage_handle(_usage_handle)
         raise HTTPException(400, "No image provided")
 
     key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
     if not key:
+        await release_usage_handle(_usage_handle)
         return {"configured": False, "message": "Card scanning is Not Configured", "draft": {}}
 
-    empty = {"name": "", "title": "", "company": "", "email": "", "phone": "",
-             "website": "", "address": "", "city": "", "country": "", "language": "en", "notes": ""}
+    base_keys = ["name", "title", "company", "email", "phone", "website",
+                 "address", "city", "country", "language", "notes"]
+    badge_keys = ["first_name", "last_name", "linkedin", "badge_id", "event_name", "booth"]
+    keys = base_keys + (badge_keys if is_badge else [])
+    empty = {k: "" for k in keys}
+    empty["language"] = "en"
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-        sys = (
-            "You are an OCR + information-extraction engine for business cards and event badges. "
-            "Read ALL text in the image (any language / script, including Arabic and Latin-accented) "
-            "and return ONLY a compact JSON object with these exact keys: "
-            "name, title, company, email, phone, website, address, city, country, language, notes. "
-            "Rules: format phone in international E.164 form when a country can be inferred (e.g. +9715...); "
-            "keep the original spelling and script for name/company; "
-            "'language' is the ISO-639-1 code of the card's primary language (en, ar, es, ...); "
-            "'notes' may hold any extra text (tagline, second phone). "
-            "Use empty strings for anything not present. Output JSON only — no prose, no code fences."
-        )
+        if is_badge:
+            sys = (
+                "You are an OCR + information-extraction engine specialised in CONFERENCE / EVENT BADGES. "
+                "Read ALL printed text in the image in any language or script (including Arabic, mixed "
+                "Arabic/English, and Latin-accented). Badges may be horizontal or vertical, may contain a "
+                "QR code, sponsor/company logos, and only partial information. "
+                "Return ONLY a compact JSON object with these exact keys: "
+                "name, first_name, last_name, title, company, email, phone, website, linkedin, badge_id, "
+                "event_name, booth, address, city, country, language, notes. "
+                "Rules: 'name' is the attendee's full printed name; also split it into first_name / last_name "
+                "when possible. 'company' is the attendee's own organisation; 'booth' only if a booth/stand "
+                "number or hall is printed. 'event_name' only if the event/conference title is printed on the "
+                "badge. 'linkedin' only if a LinkedIn/profile URL or handle is visibly printed. 'badge_id' only "
+                "if an attendee/badge ID is printed. Format phone in international E.164 form when a country can "
+                "be inferred. Keep the original spelling and script for name/company. 'language' is the ISO-639-1 "
+                "code of the badge's primary language (en, ar, es, ...). "
+                "CRITICAL: DO NOT guess or hallucinate. If a field is not clearly present, return an EMPTY string "
+                "for it. Output JSON only — no prose, no code fences."
+            )
+            prompt = "Extract the attendee details from this event badge image as JSON. Return empty strings for anything not clearly printed."
+        else:
+            sys = (
+                "You are an OCR + information-extraction engine for business cards and event badges. "
+                "Read ALL text in the image (any language / script, including Arabic and Latin-accented) "
+                "and return ONLY a compact JSON object with these exact keys: "
+                "name, title, company, email, phone, website, address, city, country, language, notes. "
+                "Rules: format phone in international E.164 form when a country can be inferred (e.g. +9715...); "
+                "keep the original spelling and script for name/company; "
+                "'language' is the ISO-639-1 code of the card's primary language (en, ar, es, ...); "
+                "'notes' may hold any extra text (tagline, second phone). "
+                "Use empty strings for anything not present. Output JSON only — no prose, no code fences."
+            )
+            prompt = "Extract the contact details from this card/badge image as JSON."
         chat = LlmChat(api_key=key, session_id=f"scan-{uuid.uuid4()}",
                        system_message=sys).with_model("openai", "gpt-5.4")
-        msg = UserMessage(text="Extract the contact details from this card/badge image as JSON.",
-                          file_contents=[ImageContent(image_base64=image_b64)])
+        msg = UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)])
         resp = await chat.send_message(msg)
         data = _parse_scan_json(str(resp))
     except Exception as e:
         logger.warning(f"scan_card LLM error: {e}")
+        await release_usage_handle(_usage_handle)
+        await meter_usage(_feature_key, user_id=user["id"], workspace_id=_ws_id,
+                          event_id=body.event_id.strip(), quantity=1, result="failed", source="scanner", paid=False)
         raise HTTPException(502, "Could not read the card. Please retake the photo and try again.")
 
     draft = {**empty, **{k: (str(data.get(k, "")).strip() if data.get(k) is not None else "")
-                          for k in empty}}
+                          for k in keys}}
+    if is_badge and not draft.get("name") and (draft.get("first_name") or draft.get("last_name")):
+        draft["name"] = " ".join([draft.get("first_name", ""), draft.get("last_name", "")]).strip()
     if draft["language"] not in SUPPORTED_LANGUAGES:
         draft["language"] = "en" if not draft["language"] else draft["language"][:2].lower()
     await db.ai_usage.insert_one({
         "id": str(uuid.uuid4()), "user_id": user["id"], "provider": "openai:gpt-5.4",
         "channel": "scanner", "tone": source, "language": draft.get("language", "en"), "created_at": now_iso(),
     })
+    await meter_usage(_feature_key, user_id=user["id"], workspace_id=_ws_id,
+                      event_id=body.event_id.strip(), quantity=1, result="success", source="scanner", paid=True)
     return {"configured": True, "source": source, "draft": draft,
             "note": "Review and edit before saving. No lead is created until you confirm."}
 
@@ -2746,12 +4106,18 @@ async def scan_card(body: ScanIn, request: Request, user: dict = Depends(current
 class ScanConfirmIn(BaseModel):
     cardSlug: str
     source: str = "business_card_scan"
+    scanner_type: str = ""            # business_card | event_badge (drives canonical source)
     name: str
+    first_name: str = ""
+    last_name: str = ""
     title: str = ""
     company: str = ""
     email: str = ""
     phone: str = ""
     website: str = ""
+    linkedin: str = ""
+    badge_id: str = ""
+    booth: str = ""
     address: str = ""
     city: str = ""
     country: str = ""
@@ -2759,8 +4125,10 @@ class ScanConfirmIn(BaseModel):
     interest: str = ""
     notes: str = ""
     event: str = ""
+    event_id: str = ""
     campaign: str = ""
     force: bool = False
+    update_lead_id: str = ""          # when set: append this scan to an existing contact
 
 
 import re as _re
@@ -2775,10 +4143,16 @@ def _norm_phone(p):
     return d[-9:] if len(d) >= 7 else ""
 
 
-async def find_duplicate_lead(card_slug, email, phone, exclude_id=None):
-    """Lightweight dedupe within the SAME card: match by normalized email or phone (last 9 digits)."""
+def _norm_text(s):
+    return _re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+async def find_duplicate_lead(card_slug, email, phone, exclude_id=None, name="", company=""):
+    """Lightweight dedupe within the SAME card. Matches by normalized email OR phone (last 9
+    digits) OR a strong full-name + company match (both non-empty, exact after normalization)."""
     ne, np = _norm_email(email), _norm_phone(phone)
-    if not ne and not np:
+    nn, nc = _norm_text(name), _norm_text(company)
+    if not ne and not np and not (nn and nc):
         return None
     cands = await db.leads.find({"cardSlug": card_slug}, {"_id": 0}).to_list(3000)
     for l in cands:
@@ -2788,16 +4162,186 @@ async def find_duplicate_lead(card_slug, email, phone, exclude_id=None):
             return l
         if np and _norm_phone(l.get("phone")) == np:
             return l
+        if nn and nc and _norm_text(l.get("name")) == nn and _norm_text(l.get("company")) == nc:
+            return l
     return None
+
+
+async def _resolve_scan_event(user: dict, event_id: str):
+    """Return (event_doc | None). Enforces tenant ownership of the event."""
+    if not event_id:
+        return None
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not ev:
+        raise HTTPException(404, "Event not found")
+    ws_ids = await workspace_ids_for(user)
+    if ws_ids != "ALL" and ev.get("workspace_id") not in ws_ids:
+        raise HTTPException(403, "Event belongs to another workspace")
+    return ev
+
+
+
+# ------------------------------------------------------------------ Lead Scoring (deterministic, explainable, v1)
+LEAD_SCORE_VERSION = "v1"
+# Max contributions: contact 20 + seniority 20 + engagement 30 + pipeline 25 + completeness 5 = 100
+_SENIORITY_TOP = ["founder", "co-founder", "cofounder", "owner", "ceo", "chief", "c.e.o", "president",
+                  "managing director", "manager director", "partner", "proprietor",
+                  "مؤسس", "شريك مؤسس", "مالك", "رئيس تنفيذي", "المدير التنفيذي", "مدير تنفيذي", "مدير عام", "شريك"]
+_SENIORITY_MID = ["vp", "vice president", "director", "head of", "head ", "chief of staff",
+                  "نائب رئيس", "نائب الرئيس", "مدير", "رئيس قسم", "رئيس"]
+_SENIORITY_LOW = ["manager", "lead", "senior", "مسؤول", "قائد"]
+_PIPELINE_POINTS = {"new": 0, "contacted": 5, "qualified": 12, "meeting": 18, "opportunity": 22,
+                    "customer": 25, "not_interested": 0}
+_STAGE_ALIAS = {"meeting_booked": "meeting", "converted": "customer", "archived": "not_interested",
+                "won": "customer", "lost": "not_interested", "follow_up": "contacted"}
+
+
+def _norm_stage_score(s):
+    s = (s or "new").strip().lower()
+    s = _STAGE_ALIAS.get(s, s)
+    return s if s in _PIPELINE_POINTS else "new"
+
+
+def _seniority_points(title):
+    t = re.sub(r"\s+", " ", (title or "").strip().lower())
+    if not t:
+        return 0, ""
+    for kw in _SENIORITY_TOP:
+        if kw in t:
+            return 20, "senior_decision_maker"
+    for kw in _SENIORITY_MID:
+        if kw in t:
+            return 14, "senior_role"
+    for kw in _SENIORITY_LOW:
+        if kw in t:
+            return 8, "mid_role"
+    return 0, ""
+
+
+def compute_lead_score(lead: dict, active_meetings: int = 0) -> dict:
+    """Deterministic 0–100 lead-quality score with an explainable breakdown. Safe with missing data.
+    Quality only — follow-up urgency is intentionally NOT a factor."""
+    bd = []
+    # A. Contact quality (max 20)
+    cq = 0
+    if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", (lead.get("email") or "").strip()):
+        cq += 4
+    if len(re.sub(r"\D", "", lead.get("phone") or "")) >= 7:
+        cq += 4
+    if (lead.get("company") or "").strip():
+        cq += 4
+    if (lead.get("title") or "").strip():
+        cq += 3
+    if (lead.get("linkedin") or "").strip():
+        cq += 5
+    if cq:
+        bd.append({"code": "contact_quality", "points": cq})
+    # B. Seniority (max 20)
+    sen, sen_code = _seniority_points(lead.get("title"))
+    if sen:
+        bd.append({"code": sen_code, "points": sen})
+    # C. Sales engagement (max 30): meeting 15 + follow-up completed 5 + returning/multi capped 10
+    eng = 0
+    if active_meetings > 0:
+        eng += 15
+        bd.append({"code": "meeting_booked", "points": 15})
+    if (lead.get("follow_up_completed_at") or ""):
+        eng += 5
+        bd.append({"code": "follow_up_completed", "points": 5})
+    tl = lead.get("timeline") or []
+    scan_events = [t for t in tl if t.get("event") in ("badge_scanned", "card_scanned", "badge_rescanned")]
+    distinct_events = len({t.get("event_id") for t in scan_events if t.get("event_id")})
+    interactions = len(scan_events)
+    ret = min(10, max(0, (max(distinct_events, interactions) - 1)) * 4)  # capped at 10
+    if ret:
+        eng += ret
+        bd.append({"code": "multiple_interactions", "points": ret})
+    # D. Pipeline progress (max 25)
+    stage = _norm_stage_score(lead.get("status"))
+    pp = _PIPELINE_POINTS[stage]
+    if pp:
+        bd.append({"code": f"stage_{stage}", "points": pp})
+    # F. Data completeness (max 5)
+    comp = min(5, sum(1 for f in ("address", "city", "website", "notes") if (lead.get(f) or "").strip()))
+    if comp:
+        bd.append({"code": "complete_info", "points": comp})
+
+    total = cq + sen + eng + pp + comp
+    # Not Interested must never read as a hot/warm quality lead regardless of other signals
+    if stage == "not_interested":
+        total = min(total, 20)
+    total = max(0, min(100, total))
+    temp = "hot" if total >= 75 else "warm" if total >= 45 else "cold"
+    return {"lead_score": total, "lead_temperature": temp, "lead_score_breakdown": bd,
+            "lead_score_version": LEAD_SCORE_VERSION, "lead_score_updated_at": now_iso()}
+
+
+async def _active_meeting_count(lead_id: str) -> int:
+    meets = await db.meetings.find({"lead_id": lead_id}, {"_id": 0, "id": 1, "status": 1}).to_list(500)
+    seen, n = set(), 0
+    for m in meets:
+        if m.get("id") in seen:
+            continue
+        seen.add(m.get("id"))
+        if m.get("status") not in ("cancelled", "declined"):
+            n += 1
+    return n
+
+
+async def recalc_lead_score(lead_id: str):
+    """Single source of truth. Recomputes + persists the calculated score. Never touches manual override."""
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        return None
+    res = compute_lead_score(lead, await _active_meeting_count(lead_id))
+    await db.leads.update_one({"id": lead_id}, {"$set": res})
+    return res
+
+
+def effective_temperature(lead: dict) -> str:
+    ov = lead.get("lead_temperature_override")
+    return ov if ov in ("hot", "warm", "cold") else (lead.get("lead_temperature") or "cold")
+
+
+class TemperatureIn(BaseModel):
+    temperature: str  # hot | warm | cold | auto
+
+
+@platform_router.post("/admin/leads/{lead_id}/temperature")
+async def set_lead_temperature(lead_id: str, body: TemperatureIn, user: dict = Depends(current_user)):
+    """Manual override of lead quality. 'auto' clears the override (back to calculated). Preserves calc score."""
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    slugs = await _owned_slugs(user)
+    if lead.get("cardSlug") not in slugs and user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Not your lead")
+    t = (body.temperature or "").lower()
+    if t == "auto":
+        await db.leads.update_one({"id": lead_id}, {"$set": {
+            "lead_temperature_override": None, "lead_temperature_override_by": None,
+            "lead_temperature_override_at": None, "updated_at": now_iso()}})
+    elif t in ("hot", "warm", "cold"):
+        await db.leads.update_one({"id": lead_id}, {"$set": {
+            "lead_temperature_override": t, "lead_temperature_override_by": user["id"],
+            "lead_temperature_override_at": now_iso(), "updated_at": now_iso()}})
+    else:
+        raise HTTPException(400, "Invalid temperature")
+    return await db.leads.find_one({"id": lead_id}, {"_id": 0})
+
 
 
 @platform_router.post("/scan/confirm")
 async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
-    """Persist a reviewed scan as a CRM lead scoped to one of the user's own cards."""
+    """Persist a reviewed scan as a CRM lead scoped to one of the user's own cards.
+    When update_lead_id is provided, append this scan (and its event interaction) to the
+    existing contact instead of creating a duplicate."""
     ent = await _user_entitlements(user)
     if not ent.get("scanner"):
         raise HTTPException(403, "Scanner is not available on your plan")
-    source = body.source if body.source in SCAN_SOURCES else "business_card_scan"
+    # canonical source: scanner_type wins when provided (event_badge → event_badge_scan)
+    source = SCANNER_TYPE_SOURCE.get(body.scanner_type) or (body.source if body.source in SCAN_SOURCES else "business_card_scan")
+    scanner_type = body.scanner_type or ("event_badge" if source in _BADGE_SOURCES else "business_card")
     if not body.name.strip():
         raise HTTPException(400, "A name is required")
     slugs = await _owned_slugs(user)
@@ -2806,32 +4350,91 @@ async def scan_confirm(body: ScanConfirmIn, user: dict = Depends(current_user)):
     card = await db.digital_cards.find_one({"slug": body.cardSlug}, {"_id": 0})
     if not card:
         raise HTTPException(404, "Card not found")
-    # Duplicate guard — let the user decide (update existing vs. save anyway) instead of silent dupes.
+
+    ev_doc = await _resolve_scan_event(user, body.event_id.strip())
+    event_name = (ev_doc.get("name") if ev_doc else "") or body.event.strip()
+    event_id = ev_doc.get("id") if ev_doc else ""
+    now = now_iso()
+
+    def _interaction(kind: str):
+        return {"at": now, "event": kind, "detail": event_name or (card.get("identity", {}) or {}).get("fullName", ""),
+                "event_name": event_name, "event_id": event_id, "captured_by": user["id"],
+                "captured_by_name": user.get("name") or user.get("email", ""),
+                "scanner_type": scanner_type, "source": source}
+
+    # ---- Append to an existing contact (repeat encounter / user chose "update existing")
+    if body.update_lead_id.strip():
+        existing = await db.leads.find_one({"id": body.update_lead_id.strip()}, {"_id": 0})
+        if not existing:
+            raise HTTPException(404, "Lead not found")
+        if existing.get("cardSlug") not in slugs and user.get("role") != "SUPER_ADMIN":
+            raise HTTPException(403, "Not your lead")
+        upd = {"updated_at": now, "last_activity": now}
+        # fill only blank fields — never overwrite data the user already has
+        for k, v in {"email": body.email, "phone": body.phone, "company": body.company,
+                     "title": body.title, "website": body.website, "linkedin": body.linkedin}.items():
+            if v and v.strip() and not (existing.get(k) or "").strip():
+                upd[k] = v.strip()
+        if event_name:
+            upd["event"] = event_name
+        if event_id:
+            upd["event_id"] = event_id
+        tags = list(existing.get("tags") or [])
+        for tg in (["scanned"] + (["event"] if event_name else [])):
+            if tg not in tags:
+                tags.append(tg)
+        upd["tags"] = tags
+        await db.leads.update_one({"id": existing["id"]}, {
+            "$set": upd, "$push": {"timeline": _interaction("badge_rescanned")}})
+        await recalc_lead_score(existing["id"])
+        await db.notifications.insert_one({
+            "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "lead_interaction",
+            "card_slug": existing.get("cardSlug"), "scope": "card",
+            "title": f"Scanned again: {existing.get('name')}",
+            "body": (f"at {event_name}" if event_name else f"via {source}"),
+            "read": False, "created_at": now,
+        })
+        lead = await db.leads.find_one({"id": existing["id"]}, {"_id": 0})
+        asyncio.create_task(crm_maybe_autosync(await _lead_workspace_id(lead), existing["id"]))
+        return {"ok": True, "lead": lead, "updated": True}
+
+    # ---- Duplicate guard — let the user decide (update existing vs. save anyway)
     if not body.force:
-        dup = await find_duplicate_lead(body.cardSlug, body.email, body.phone)
+        dup = await find_duplicate_lead(body.cardSlug, body.email, body.phone,
+                                        name=body.name, company=body.company)
         if dup:
             return {"ok": False, "duplicate": dup}
+
     lang = body.language if body.language in SUPPORTED_LANGUAGES else "en"
+    full_name = body.name.strip()
     lead = {
         "id": str(uuid.uuid4()), "cardSlug": body.cardSlug, "workspace_id": card.get("workspace_id"),
-        "name": body.name.strip(), "email": body.email.strip(), "phone": body.phone.strip(),
+        "name": full_name, "first_name": body.first_name.strip(), "last_name": body.last_name.strip(),
+        "email": body.email.strip(), "phone": body.phone.strip(),
         "company": body.company.strip(), "title": body.title.strip(),
-        "website": body.website.strip(), "message": body.notes.strip(), "interest": body.interest.strip(),
+        "website": body.website.strip(), "linkedin": body.linkedin.strip(),
+        "badge_id": body.badge_id.strip(), "booth": body.booth.strip(),
+        "message": body.notes.strip(), "interest": body.interest.strip(),
         "address": body.address.strip(), "city": body.city.strip(), "country": body.country.strip(),
-        "language": lang, "source": source, "campaign": body.campaign.strip(), "event": body.event.strip(), "consent": True,
-        "status": "new", "tags": ["scanned"] + (["event"] if body.event.strip() else []), "notes": body.notes.strip(),
-        "met_at": now_iso(), "next_follow_up": "",
+        "language": lang, "source": source, "scanner_type": scanner_type,
+        "campaign": body.campaign.strip(), "event": event_name, "event_id": event_id, "consent": True,
+        "status": "new", "tags": ["scanned"] + (["event"] if event_name else []), "notes": body.notes.strip(),
+        "met_at": now, "captured_at": now, "next_follow_up": "",
         "scanned": True, "captured_by": user["id"],
-        "read": False, "created_at": now_iso(), "updated_at": now_iso(), "last_activity": now_iso(),
+        "timeline": [_interaction("badge_scanned" if scanner_type == "event_badge" else "card_scanned")],
+        "read": False, "created_at": now, "updated_at": now, "last_activity": now,
     }
     await db.leads.insert_one(lead)
+    await recalc_lead_score(lead["id"])
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()), "workspace_id": card.get("workspace_id"), "type": "new_lead",
         "card_slug": body.cardSlug, "scope": "card",
-        "title": f"Scanned lead: {lead['name']}", "body": f"via {source}",
-        "read": False, "created_at": now_iso(),
+        "title": f"Scanned lead: {lead['name']}",
+        "body": (f"at {event_name}" if event_name else f"via {source}"),
+        "read": False, "created_at": now,
     })
-    lead.pop("_id", None)
+    lead = await db.leads.find_one({"id": lead["id"]}, {"_id": 0})
+    asyncio.create_task(crm_maybe_autosync(card.get("workspace_id"), lead["id"]))
     return {"ok": True, "lead": lead}
 
 
@@ -3077,11 +4680,15 @@ async def _create_member(wid: str, email: str, name: str, role: str):
         return user, False
     token = secrets.token_urlsafe(24)
     await db.memberships.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "workspace_id": wid,
-                                     "role": role, "status": "invited", "invite_token": token, "created_at": now_iso()})
-    link = f"{PUBLIC_APP_URL}/register?invite={token}"
+                                     "role": role, "status": "invited", "invite_token": token,
+                                     "invite_expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+                                     "created_at": now_iso()})
+    link = f"{PUBLIC_APP_URL}/invite/{token}"
+    ws = await db.workspaces.find_one({"id": wid}, {"_id": 0, "name": 1, "owner_id": 1})
+    inviter = await db.users.find_one({"id": (ws or {}).get("owner_id")}, {"_id": 0, "language": 1}) if ws else None
+    lang = (inviter or {}).get("language") or "en"
     if _email_configured():
-        await send_email(email, "You've been invited to a TapPresence team",
-                         _email_shell("Join your team on TapPresence", "You've been invited to join a team workspace on TapPresence. Set up your account to get started.", "Accept invite", link))
+        await send_localized(email, "invite", lang, link, ws=(ws or {}).get("name", "your team"))
     else:
         logger.info(f"[email:NOT_CONFIGURED] team invite for {email}: {link}")
     return user, True
@@ -3098,6 +4705,55 @@ async def invite_member(wid: str, body: MemberIn, user: dict = Depends(current_u
                                        "title": f"Invited {body.email}", "body": "", "read": False, "created_at": now_iso()})
     await audit(wid, user["id"], "team.invite", {"email": body.email, "created_user": created})
     return {"ok": True, "user_id": u["id"], "created": created}
+
+
+class InviteAcceptIn(BaseModel):
+    password: str
+    name: Optional[str] = ""
+
+
+async def _invite_membership(token: str):
+    return await db.memberships.find_one({"invite_token": token, "status": "invited"}, {"_id": 0})
+
+
+@platform_router.get("/invites/{token}")
+async def invite_info(token: str):
+    """Public: resolve a team-invite token → workspace/email/role + expiry state (for the accept page)."""
+    m = await _invite_membership(token)
+    if not m:
+        raise HTTPException(404, "This invitation is no longer valid.")
+    expired = bool(m.get("invite_expires_at")) and m["invite_expires_at"] < now_iso()
+    ws = await db.workspaces.find_one({"id": m["workspace_id"]}, {"_id": 0, "name": 1})
+    u = await db.users.find_one({"id": m["user_id"]}, {"_id": 0, "email": 1, "name": 1})
+    return {"email": (u or {}).get("email", ""), "name": (u or {}).get("name", ""),
+            "workspace_name": (ws or {}).get("name", "your team"), "role": m.get("role", "MEMBER"),
+            "expired": expired}
+
+
+@platform_router.post("/invites/{token}/accept")
+async def invite_accept(token: str, body: InviteAcceptIn, request: Request):
+    """Public: consume a team-invite token → set the invited user's password, verify email, activate
+    the membership (role/seat already enforced at invite time), and sign the user in."""
+    rate_limit(request, "invite_accept", 10, 3600)
+    m = await _invite_membership(token)
+    if not m:
+        raise HTTPException(404, "This invitation is no longer valid.")
+    if m.get("invite_expires_at") and m["invite_expires_at"] < now_iso():
+        raise HTTPException(400, "This invitation has expired. Please ask your team admin to re-invite you.")
+    if not body.password or len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters.")
+    user = await db.users.find_one({"id": m["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "This invitation is no longer valid.")
+    upd = {"password_hash": hash_pw(body.password), "email_verified": True}
+    if body.name and body.name.strip():
+        upd["name"] = body.name.strip()
+    await db.users.update_one({"id": user["id"]}, {"$set": upd})
+    await db.memberships.update_one({"id": m["id"]},
+        {"$set": {"status": "active", "accepted_at": now_iso()}, "$unset": {"invite_token": "", "invite_expires_at": ""}})
+    await audit(m["workspace_id"], user["id"], "team.invite_accepted", {"role": m.get("role")})
+    user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return await _auth_payload(user, request)
 
 
 @platform_router.patch("/workspaces/{wid}/members/{uid}")
@@ -3125,6 +4781,399 @@ async def remove_member(wid: str, uid: str, user: dict = Depends(current_user)):
     await db.memberships.delete_one({"workspace_id": wid, "user_id": uid})
     await audit(wid, user["id"], "team.remove_member", {"uid": uid})
     return {"ok": True}
+
+
+# ================================================================== CRM CONNECTORS (V1: HubSpot, one-way TapPresence -> CRM)
+# Shared adapter surface so Salesforce/Pipedrive can be added later WITHOUT touching lead/event logic.
+# Tokens live ONLY server-side in Mongo `crm_connections` (never returned to client / logged / in CSV).
+import httpx as _cx
+
+HUBSPOT_CLIENT_ID = os.environ.get("HUBSPOT_CLIENT_ID") or ""
+HUBSPOT_CLIENT_SECRET = os.environ.get("HUBSPOT_CLIENT_SECRET") or ""
+HUBSPOT_REDIRECT_URI = os.environ.get("HUBSPOT_REDIRECT_URI") or ""
+HUBSPOT_SCOPES = ("oauth crm.objects.contacts.read crm.objects.contacts.write "
+                  "crm.objects.deals.read crm.objects.deals.write "
+                  "crm.schemas.contacts.read crm.schemas.contacts.write "
+                  "crm.schemas.deals.read crm.schemas.deals.write")
+HS_API = "https://api.hubspot.com"
+# TapPresence stage -> HubSpot DEFAULT-pipeline stage internal id (controlled map; portals with custom
+# pipelines need per-workspace config — documented V1 limitation, we never move a deal to an arbitrary stage).
+HS_STAGE_MAP = {"new": "appointmentscheduled", "contacted": "appointmentscheduled",
+                "qualified": "qualifiedtobuy", "meeting": "presentationscheduled",
+                "opportunity": "decisionmakerboughtin", "customer": "closedwon", "not_interested": "closedlost"}
+# Custom properties we create once per portal (kept intentionally small).
+HS_CONTACT_PROPS = [
+    ("tap_lead_id", "TapPresence Lead ID", "string", "text", True),
+    ("tap_lead_score", "TapPresence Lead Score", "number", "number", False),
+    ("tap_lead_temperature", "TapPresence Temperature", "string", "text", False),
+    ("tap_pipeline_stage", "TapPresence Pipeline Stage", "string", "text", False),
+    ("tap_source", "TapPresence Source", "string", "text", False),
+    ("tap_capture_method", "TapPresence Capture Method", "string", "text", False),
+    ("tap_event_name", "TapPresence Event", "string", "text", False),
+    ("tap_captured_by", "TapPresence Captured By", "string", "text", False),
+    ("tap_last_interaction", "TapPresence Last Interaction", "string", "text", False),
+]
+HS_DEAL_PROPS = [
+    ("tap_deal_id", "TapPresence Lead ID", "string", "text", True),
+    ("tap_event_name", "TapPresence Event", "string", "text", False),
+    ("tap_currency", "TapPresence Currency", "string", "text", False),
+]
+
+
+def _hubspot_configured() -> bool:
+    return bool(HUBSPOT_CLIENT_ID and HUBSPOT_CLIENT_SECRET and HUBSPOT_REDIRECT_URI)
+
+
+def _hubspot_frontend_base() -> str:
+    suffix = "/api/integrations/hubspot/callback"
+    if HUBSPOT_REDIRECT_URI.endswith(suffix):
+        return HUBSPOT_REDIRECT_URI[: -len(suffix)]
+    return PUBLIC_APP_URL
+
+
+class _CrmNeedsReconnect(Exception):
+    pass
+
+
+async def _lead_workspace_id(lead: dict) -> str:
+    wid = lead.get("workspace_id")
+    if wid:
+        return wid
+    card = await db.digital_cards.find_one({"slug": lead.get("cardSlug")}, {"_id": 0, "workspace_id": 1})
+    return (card or {}).get("workspace_id")
+
+
+async def _crm_conn(ws_id: str, provider: str = "hubspot"):
+    return await db.crm_connections.find_one({"workspace_id": ws_id, "provider": provider}, {"_id": 0})
+
+
+async def _hs_access_token(ws_id: str):
+    """Valid access token for the workspace's HubSpot connection (refresh if needed). Never leaves the server."""
+    conn = await _crm_conn(ws_id)
+    if not conn or conn.get("revoked"):
+        return None
+    now = datetime.now(timezone.utc)
+    exp = conn.get("access_expiry")
+    if conn.get("access_token") and exp and datetime.fromisoformat(exp) > now + timedelta(seconds=60):
+        return conn["access_token"]
+    rt = conn.get("refresh_token")
+    if not rt:
+        return None
+    async with _cx.AsyncClient(timeout=20) as cx:
+        r = await cx.post(f"{HS_API}/oauth/v3/token", data={
+            "grant_type": "refresh_token", "client_id": HUBSPOT_CLIENT_ID,
+            "client_secret": HUBSPOT_CLIENT_SECRET, "refresh_token": rt})
+    if r.status_code != 200:
+        err = ""
+        try:
+            err = (r.json() or {}).get("message", "")
+        except Exception:
+            pass
+        logger.error(f"[hubspot] refresh failed ws={ws_id} http={r.status_code}")
+        if r.status_code in (400, 401, 403):
+            await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+                {"$set": {"revoked": True, "needs_reconnect": True, "updated_at": now.isoformat()}})
+            raise _CrmNeedsReconnect()
+        return None
+    tok = r.json()
+    at = tok.get("access_token")
+    new_rt = tok.get("refresh_token") or rt
+    new_exp = (now + timedelta(seconds=int(tok.get("expires_in", 1800)))).isoformat()
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+        {"$set": {"access_token": at, "refresh_token": new_rt, "access_expiry": new_exp,
+                  "revoked": False, "needs_reconnect": False, "updated_at": now.isoformat()}})
+    return at
+
+
+async def _hs(ws_id: str, method: str, path: str, json=None):
+    """Authenticated HubSpot call. Returns (status_code, json_or_text). Redacts auth in errors."""
+    token = await _hs_access_token(ws_id)
+    if not token:
+        raise _CrmNeedsReconnect()
+    async with _cx.AsyncClient(base_url=HS_API, timeout=30) as cx:
+        r = await cx.request(method, path, headers={"Authorization": f"Bearer {token}",
+                             "Content-Type": "application/json"}, json=json)
+    try:
+        body = r.json() if r.content else {}
+    except Exception:
+        body = {"raw": (r.text or "")[:300]}
+    return r.status_code, body
+
+
+async def _hs_ensure_props(ws_id: str, conn: dict):
+    """Create TapPresence custom properties once per portal (idempotent). Marks props_ready on success."""
+    if conn.get("props_ready"):
+        return
+    for obj, props in (("contacts", HS_CONTACT_PROPS), ("deals", HS_DEAL_PROPS)):
+        group = "contactinformation" if obj == "contacts" else "dealinformation"
+        for name, label, ptype, ftype, uniq in props:
+            st, _ = await _hs(ws_id, "GET", f"/crm/v3/properties/{obj}/{name}")
+            if st == 200:
+                continue
+            payload = {"groupName": group, "name": name, "label": label, "type": ptype, "fieldType": ftype}
+            if uniq:
+                payload["hasUniqueValue"] = True
+            await _hs(ws_id, "POST", f"/crm/v3/properties/{obj}", json=payload)
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+                                        {"$set": {"props_ready": True}})
+
+
+def _lead_contact_props(lead: dict) -> dict:
+    eff = effective_temperature(lead) if "effective_temperature" in globals() else (lead.get("lead_temperature") or "")
+    p = {
+        "email": (lead.get("email") or "").strip(),
+        "firstname": (lead.get("first_name") or (lead.get("name") or "").split(" ")[0]).strip(),
+        "lastname": (lead.get("last_name") or " ".join((lead.get("name") or "").split(" ")[1:])).strip(),
+        "phone": (lead.get("phone") or "").strip(),
+        "jobtitle": (lead.get("title") or "").strip(),
+        "company": (lead.get("company") or "").strip(),
+        "website": (lead.get("website") or "").strip(),
+        "tap_lead_id": lead.get("id"),
+        "tap_lead_score": lead.get("lead_score"),
+        "tap_lead_temperature": eff,
+        "tap_pipeline_stage": (lead.get("status") or "new"),
+        "tap_source": (lead.get("source") or ""),
+        "tap_capture_method": (lead.get("scanner_type") or lead.get("source") or ""),
+        "tap_event_name": (lead.get("event") or ""),
+        "tap_captured_by": (lead.get("captured_by") or ""),
+        "tap_last_interaction": (lead.get("last_activity") or lead.get("updated_at") or ""),
+    }
+    return {k: str(v) for k, v in p.items() if v not in (None, "")}
+
+
+def _sync_signature(lead: dict) -> str:
+    import hashlib as _h
+    basis = "|".join(str(lead.get(k) or "") for k in
+                     ["name", "email", "phone", "company", "title", "website", "status", "source",
+                      "event", "captured_by", "lead_score", "lead_temperature", "lead_temperature_override",
+                      "opportunity_value", "opportunity_currency", "expected_close_date", "actual_revenue"])
+    return _h.sha256(basis.encode()).hexdigest()[:16]
+
+
+async def crm_sync_lead(ws_id: str, lead: dict, provider: str = "hubspot") -> dict:
+    """Idempotent one-way sync of a TapPresence lead into HubSpot (contact + optional deal).
+    Never raises to caller — always records structured crm_sync state on the lead and returns it."""
+    now = datetime.now(timezone.utc).isoformat()
+    prior = lead.get("crm_sync") or {}
+    state = {"provider": provider, "remote_contact_id": prior.get("remote_contact_id"),
+             "remote_deal_id": prior.get("remote_deal_id"), "status": "pending",
+             "last_synced_at": prior.get("last_synced_at"), "last_error": "",
+             "retry_count": int(prior.get("retry_count") or 0), "signature": prior.get("signature")}
+    try:
+        conn = await _crm_conn(ws_id, provider)
+        if not conn or conn.get("revoked"):
+            raise _CrmNeedsReconnect()
+        email = (lead.get("email") or "").strip()
+        if not email:
+            state.update({"status": "failed", "last_error": "email_required"})
+            await _persist_crm_state(lead["id"], state)
+            return state
+        await _hs_ensure_props(ws_id, conn)
+        # --- Contact upsert by email (dedupe-safe) ---
+        st, body = await _hs(ws_id, "POST", "/crm/v3/objects/contacts/batch/upsert",
+                             json={"inputs": [{"idProperty": "email", "id": email,
+                                               "properties": _lead_contact_props(lead)}]})
+        if st >= 400:
+            raise RuntimeError(f"contact_upsert_{st}: {str(body)[:160]}")
+        contact_id = (body.get("results") or [{}])[0].get("id")
+        state["remote_contact_id"] = contact_id
+        # --- Deal upsert (only when a real opportunity value exists) ---
+        ov = lead.get("opportunity_value")
+        if ov is not None:
+            dprops = {"tap_deal_id": lead.get("id"),
+                      "dealname": (lead.get("name") or "TapPresence lead") + (f" — {lead.get('company')}" if lead.get("company") else ""),
+                      "amount": str(ov), "pipeline": "default",
+                      "dealstage": HS_STAGE_MAP.get((lead.get("status") or "new").lower(), "appointmentscheduled"),
+                      "tap_event_name": lead.get("event") or "",
+                      "tap_currency": lead.get("opportunity_currency") or ""}
+            cd = lead.get("expected_close_date")
+            if cd:
+                dprops["closedate"] = str(cd)[:10]
+            st2, body2 = await _hs(ws_id, "POST", "/crm/v3/objects/deals/batch/upsert",
+                                   json={"inputs": [{"idProperty": "tap_deal_id", "id": lead.get("id"), "properties": dprops}]})
+            if st2 >= 400:
+                raise RuntimeError(f"deal_upsert_{st2}: {str(body2)[:160]}")
+            deal_id = (body2.get("results") or [{}])[0].get("id")
+            state["remote_deal_id"] = deal_id
+            if deal_id and contact_id:
+                await _hs(ws_id, "PUT", f"/crm/v4/objects/deals/{deal_id}/associations/default/contacts/{contact_id}", json=None)
+        state.update({"status": "synced", "last_synced_at": now, "last_error": "",
+                      "retry_count": 0, "signature": _sync_signature(lead)})
+    except _CrmNeedsReconnect:
+        state.update({"status": "failed", "last_error": "needs_reconnect", "retry_count": state["retry_count"] + 1})
+    except Exception as e:
+        state.update({"status": "failed", "last_error": str(e)[:200], "retry_count": state["retry_count"] + 1})
+    await meter_usage("crm_sync", user_id=lead.get("captured_by"), workspace_id=ws_id, quantity=1,
+                      result=("success" if state.get("status") == "synced" else "failed"),
+                      source=f"crm:{provider}", paid=(state.get("status") == "synced"))
+    await _persist_crm_state(lead["id"], state)
+    return state
+
+
+async def _persist_crm_state(lead_id: str, state: dict):
+    await db.leads.update_one({"id": lead_id}, {"$set": {"crm_sync": state}})
+
+
+async def crm_maybe_autosync(ws_id: str, lead_id: str):
+    """Fire-and-forget auto-sync: only when the workspace has auto_sync enabled and the lead changed."""
+    try:
+        conn = await _crm_conn(ws_id)
+        if not conn or conn.get("revoked") or not conn.get("auto_sync"):
+            return
+        lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+        if not lead or not (lead.get("email") or "").strip():
+            return
+        if (lead.get("crm_sync") or {}).get("signature") == _sync_signature(lead) and (lead.get("crm_sync") or {}).get("status") == "synced":
+            return  # change-aware: nothing new to push
+        await crm_sync_lead(ws_id, lead)
+    except Exception as e:
+        logger.warning(f"[hubspot] autosync skip lead={lead_id}: {e}")
+
+
+def _crm_public_state(lead: dict) -> dict:
+    """Client-safe CRM sync view for a lead (no tokens/secrets)."""
+    s = lead.get("crm_sync") or {}
+    return {"provider": s.get("provider") or "hubspot", "status": s.get("status") or "not_synced",
+            "remote_contact_id": s.get("remote_contact_id"), "remote_deal_id": s.get("remote_deal_id"),
+            "last_synced_at": s.get("last_synced_at"), "last_error": s.get("last_error") or "",
+            "retry_count": s.get("retry_count") or 0}
+
+
+# ---- OAuth + management routes (workspace-level; owner/admin only) ----
+async def _hs_ws_for_user(user: dict) -> str:
+    ms = await memberships_for(user["id"])
+    if not ms:
+        raise HTTPException(400, "No workspace")
+    return ms[0]["workspace_id"]
+
+
+@platform_router.get("/integrations/hubspot/status")
+async def hubspot_status(user: dict = Depends(current_user)):
+    ws_id = await _hs_ws_for_user(user)
+    conn = await _crm_conn(ws_id)
+    connected = bool(conn and not conn.get("revoked") and conn.get("refresh_token"))
+    return {"configured": _hubspot_configured(), "connected": connected,
+            "needs_reconnect": bool(conn and conn.get("needs_reconnect")),
+            "auto_sync": bool(conn and conn.get("auto_sync")),
+            "hub_id": (conn or {}).get("hub_id") if connected else None,
+            "connected_at": (conn or {}).get("connected_at") if connected else None}
+
+
+@platform_router.get("/integrations/hubspot/connect")
+async def hubspot_connect(user: dict = Depends(current_user)):
+    if not _hubspot_configured():
+        raise HTTPException(400, "HubSpot is not configured on the server")
+    ws_id = await _hs_ws_for_user(user)
+    await require_ws_admin(user, ws_id)
+    state = _secrets.token_urlsafe(24)
+    await db.crm_oauth_states.insert_one({"state": state, "workspace_id": ws_id, "user_id": user["id"],
+                                          "provider": "hubspot", "created_at": now_iso()})
+    from urllib.parse import urlencode as _ue
+    params = {"client_id": HUBSPOT_CLIENT_ID, "scope": HUBSPOT_SCOPES,
+              "redirect_uri": HUBSPOT_REDIRECT_URI, "state": state}
+    return {"authorization_url": f"https://app.hubspot.com/oauth/authorize?{_ue(params)}"}
+
+
+@platform_router.get("/integrations/hubspot/callback")
+async def hubspot_callback(code: str = "", state: str = ""):
+    base = _hubspot_frontend_base()
+    dest = f"{base}/settings?tab=integrations"
+    st = await db.crm_oauth_states.find_one_and_delete({"state": state, "provider": "hubspot"}) if state else None
+    if not st or not code:
+        return RedirectResponse(f"{dest}&hubspot_error=state")
+    async with _cx.AsyncClient(timeout=20) as cx:
+        r = await cx.post(f"{HS_API}/oauth/v3/token", data={
+            "grant_type": "authorization_code", "code": code, "redirect_uri": HUBSPOT_REDIRECT_URI,
+            "client_id": HUBSPOT_CLIENT_ID, "client_secret": HUBSPOT_CLIENT_SECRET})
+    if r.status_code != 200:
+        logger.error(f"[hubspot] code exchange failed http={r.status_code}")
+        return RedirectResponse(f"{dest}&hubspot_error=exchange")
+    tok = r.json()
+    now = datetime.now(timezone.utc)
+    ws_id = st["workspace_id"]
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"}, {"$set": {
+        "workspace_id": ws_id, "provider": "hubspot", "hub_id": tok.get("hub_id"),
+        "scopes": tok.get("scopes") or [], "access_token": tok.get("access_token"),
+        "refresh_token": tok.get("refresh_token"),
+        "access_expiry": (now + timedelta(seconds=int(tok.get("expires_in", 1800)))).isoformat(),
+        "revoked": False, "needs_reconnect": False, "props_ready": False,
+        "connected_by": st.get("user_id"), "connected_at": now.isoformat(), "updated_at": now.isoformat(),
+    }}, upsert=True)
+    await audit(ws_id, st.get("user_id"), "crm.hubspot.connected", {"hub_id": tok.get("hub_id")})
+    return RedirectResponse(f"{dest}&hubspot=connected")
+
+
+@platform_router.post("/integrations/hubspot/disconnect")
+async def hubspot_disconnect(user: dict = Depends(current_user)):
+    ws_id = await _hs_ws_for_user(user)
+    await require_ws_admin(user, ws_id)
+    await db.crm_connections.delete_one({"workspace_id": ws_id, "provider": "hubspot"})
+    await audit(ws_id, user["id"], "crm.hubspot.disconnected", {})
+    return {"ok": True}
+
+
+class HubspotSettingsIn(BaseModel):
+    auto_sync: bool
+
+
+@platform_router.post("/integrations/hubspot/settings")
+async def hubspot_settings(body: HubspotSettingsIn, user: dict = Depends(current_user)):
+    ws_id = await _hs_ws_for_user(user)
+    await require_ws_admin(user, ws_id)
+    conn = await _crm_conn(ws_id)
+    if not conn:
+        raise HTTPException(400, "HubSpot is not connected")
+    await db.crm_connections.update_one({"workspace_id": ws_id, "provider": "hubspot"},
+                                        {"$set": {"auto_sync": bool(body.auto_sync), "updated_at": now_iso()}})
+    await audit(ws_id, user["id"], "crm.hubspot.auto_sync", {"enabled": bool(body.auto_sync)})
+    return {"ok": True, "auto_sync": bool(body.auto_sync)}
+
+
+async def _crm_lead_or_403(lead_id: str, user: dict):
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    slugs = await _owned_slugs(user)
+    if lead.get("cardSlug") not in slugs and user.get("role") != "SUPER_ADMIN":
+        raise HTTPException(403, "Not your lead")
+    return lead
+
+
+@platform_router.post("/admin/leads/{lead_id}/sync-hubspot")
+async def sync_lead_hubspot(lead_id: str, user: dict = Depends(current_user)):
+    lead = await _crm_lead_or_403(lead_id, user)
+    ws_id = await _lead_workspace_id(lead)
+    conn = await _crm_conn(ws_id)
+    if not conn or conn.get("revoked"):
+        raise HTTPException(400, "HubSpot is not connected for this workspace")
+    state = await crm_sync_lead(ws_id, lead)
+    await audit(ws_id, user["id"], "crm.hubspot.lead_synced", {"lead_id": lead_id, "status": state["status"]})
+    if state["status"] != "synced":
+        raise HTTPException(502, {"detail": "sync_failed", "crm_sync": state})
+    return {"ok": True, "crm_sync": _crm_public_state({"crm_sync": state})}
+
+
+@platform_router.post("/events/{event_id}/sync-hubspot")
+async def sync_event_hubspot(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    await require_ws_admin(user, ev.get("workspace_id"))
+    conn = await _crm_conn(ev.get("workspace_id"))
+    if not conn or conn.get("revoked"):
+        raise HTTPException(400, "HubSpot is not connected for this workspace")
+    leads = await db.leads.find(_event_lead_query(event_id), {"_id": 0}).to_list(10000)
+    summary = {"total": len(leads), "synced": 0, "failed": 0, "skipped": 0}
+    MAX_BULK = 1000
+    for l in leads[:MAX_BULK]:
+        if not (l.get("email") or "").strip():
+            summary["skipped"] += 1
+            continue
+        st = await crm_sync_lead(ev.get("workspace_id"), l)
+        summary["synced" if st["status"] == "synced" else "failed"] += 1
+    if len(leads) > MAX_BULK:
+        summary["remaining"] = len(leads) - MAX_BULK
+    await audit(ev.get("workspace_id"), user["id"], "crm.hubspot.event_synced", {"event_id": event_id, **summary})
+    return summary
+
 
 
 @platform_router.put("/workspaces/{wid}/branding")
@@ -3250,6 +5299,992 @@ async def admin_set_regional_price(plan_id: str, market: str, body: dict, user: 
     return await db.plans.find_one({"id": plan_id}, {"_id": 0})
 
 
+# ==================================================================
+# USAGE & COST CONTROL (SUPER_ADMIN) — additive metering + cost engine + limit engine
+# Reuses existing metering/quota/audit. NO arbitrary limits are activated: enforcement is
+# globally OFF per feature by default, so existing customer behavior is 100% preserved until
+# a Super Admin explicitly enables a limit. Estimated costs are labelled ESTIMATED everywhere.
+# ==================================================================
+from pymongo import ReturnDocument as _ReturnDoc
+
+# Feature catalog — the single source of truth for what is measured. `default_unit_cost` is an
+# EXAMPLE only (Super-Admin editable); never treated as authoritative vendor pricing.
+USAGE_FEATURES = [
+    {"key": "business_card_scan", "name": "Business Card AI Scanner", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.02, "cost_unit": "per scan"},
+    {"key": "event_badge_scan", "name": "Event Badge AI Scanner", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.02, "cost_unit": "per scan"},
+    {"key": "ai_followup", "name": "AI Follow-up / Draft", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.03, "cost_unit": "per AI request"},
+    {"key": "ai_lead_insight", "name": "AI Lead Insights", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.03, "cost_unit": "per AI request", "default_scope": "per_user"},
+    {"key": "ai_event_recap", "name": "AI Event Recap", "category": "AI", "metered": True,
+     "enforceable": True, "default_unit_cost": 0.05, "cost_unit": "per AI request", "default_scope": "per_event"},
+    {"key": "email", "name": "Transactional Emails", "category": "Email", "metered": True,
+     "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per email"},
+    {"key": "crm_sync", "name": "CRM Sync", "category": "CRM", "metered": True,
+     "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per API call"},
+    {"key": "wallet_pass", "name": "Wallet Pass Creation", "category": "Wallet", "metered": True,
+     "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per pass"},
+    {"key": "card_view", "name": "Public Card Views", "category": "Traffic", "metered": False,
+     "aggregate": ("analytics_events", "view"), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per view"},
+    {"key": "qr_scan", "name": "QR Scans", "category": "Traffic", "metered": False,
+     "aggregate": ("analytics_events", "scan"), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per scan"},
+    {"key": "lead_captured", "name": "Leads Captured", "category": "Analytics", "metered": False,
+     "aggregate": ("leads", None), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per lead"},
+    {"key": "meeting", "name": "Meetings", "category": "Analytics", "metered": False,
+     "aggregate": ("meetings", None), "enforceable": False, "default_unit_cost": 0.0, "cost_unit": "per meeting"},
+]
+_USAGE_FEATURE_MAP = {f["key"]: f for f in USAGE_FEATURES}
+USAGE_PLANS = ["trial", "pro", "team", "enterprise"]
+LIMIT_MODES = ["unlimited", "monthly", "disabled", "custom"]
+LIMIT_SCOPES = ["per_user", "per_workspace", "per_event", "unlimited"]
+HARD_BEHAVIORS = ["block", "flag", "overage"]
+
+
+def _default_feature_config(meta: dict) -> dict:
+    return {
+        "unit_cost": float(meta.get("default_unit_cost", 0.0)),
+        "currency": "USD",
+        "effective_from": now_iso(),
+        "enforcement_enabled": False,          # OFF by default — preserves existing behavior
+        "scope": meta.get("default_scope", "per_user"),
+        "plan_limits": {p: {"mode": "unlimited", "limit": None} for p in USAGE_PLANS},
+        "soft_pct": 80,
+        "hard_behavior": "flag",               # non-blocking default even if later enabled
+    }
+
+
+def _default_usage_config() -> dict:
+    return {"id": "global",
+            "features": {f["key"]: _default_feature_config(f) for f in USAGE_FEATURES},
+            "cost_history": []}
+
+
+async def get_usage_config() -> dict:
+    """Single source of truth for cost/limit config. Seeds + backfills newly added features."""
+    doc = await db.usage_config.find_one({"id": "global"}, {"_id": 0})
+    if not doc:
+        doc = _default_usage_config()
+        await db.usage_config.insert_one(dict(doc))
+        return doc
+    feats = doc.get("features") or {}
+    changed = False
+    for f in USAGE_FEATURES:
+        if f["key"] not in feats:
+            feats[f["key"]] = _default_feature_config(f)
+            changed = True
+        else:
+            base = _default_feature_config(f)
+            for k, v in base.items():
+                if k not in feats[f["key"]]:
+                    feats[f["key"]][k] = v
+                    changed = True
+    doc["features"] = feats
+    doc.setdefault("cost_history", [])
+    if changed:
+        await db.usage_config.update_one({"id": "global"}, {"$set": {"features": feats}}, upsert=True)
+    return doc
+
+
+def _calendar_period() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+async def _usage_period_for_ws(ws_id: Optional[str]) -> str:
+    """Billing-cycle-aware period key (req 12). Uses the real Stripe current_period_end when present
+    (so the allowance window follows the customer's actual cycle); calendar month otherwise.
+    Historical usage_events are NEVER deleted on reset — only the meter key changes."""
+    if not ws_id:
+        return _calendar_period()
+    ws = await db.workspaces.find_one({"id": ws_id}, {"_id": 0, "subscription": 1})
+    sub = (ws or {}).get("subscription") or {}
+    cpe = sub.get("current_period_end")
+    if cpe and sub.get("provider") == "stripe":
+        return f"cycle:{str(cpe)[:10]}"
+    return _calendar_period()
+
+
+async def _reserve_usage(feature: str, scope_type: str, scope_id: str, period: str, limit) -> bool:
+    """Atomic conditional reservation (req 13). Safe under concurrency: uses find_one_and_update with
+    a count<limit guard so simultaneous requests can never exceed the enabled limit."""
+    key = {"feature": feature, "scope_type": scope_type, "scope_id": scope_id, "period": period}
+    if limit is None:
+        await db.usage_meters.update_one(key, {"$inc": {"count": 1}}, upsert=True)
+        return True
+    if limit <= 0:
+        return False
+    doc = await db.usage_meters.find_one_and_update(
+        {**key, "count": {"$lt": limit}}, {"$inc": {"count": 1}}, return_document=_ReturnDoc.AFTER)
+    if doc:
+        return True
+    try:
+        await db.usage_meters.insert_one({**key, "count": 1})
+        return True
+    except Exception:
+        doc = await db.usage_meters.find_one_and_update(
+            {**key, "count": {"$lt": limit}}, {"$inc": {"count": 1}}, return_document=_ReturnDoc.AFTER)
+        return bool(doc)
+
+
+async def _release_usage(feature: str, scope_type: str, scope_id: str, period: str):
+    await db.usage_meters.update_one(
+        {"feature": feature, "scope_type": scope_type, "scope_id": scope_id, "period": period, "count": {"$gt": 0}},
+        {"$inc": {"count": -1}})
+
+
+async def _resolve_feature_limit(fcfg: dict, plan: str, scope_type: str, scope_id: str):
+    """Returns (limit:int|None, mode, is_override). Customer override wins over plan limit."""
+    ov = await db.usage_overrides.find_one(
+        {"feature": fcfg["_key"], "scope_type": scope_type, "scope_id": scope_id}, {"_id": 0})
+    if ov:
+        mode = ov.get("mode", "unlimited")
+        lim = None if mode == "unlimited" else (0 if mode == "disabled" else ov.get("limit"))
+        return lim, mode, True
+    pl = (fcfg.get("plan_limits") or {}).get(plan) or {"mode": "unlimited", "limit": None}
+    mode = pl.get("mode", "unlimited")
+    lim = None if mode == "unlimited" else (0 if mode == "disabled" else pl.get("limit"))
+    return lim, mode, False
+
+
+async def usage_guard(feature_key: str, user: dict, ws_id: Optional[str], event_id: str = "") -> dict:
+    """Enforcement entry point for metered features. Returns a reservation handle.
+    NO-OP (enforced False) when the feature's enforcement is disabled — this preserves ALL existing
+    behavior until a Super Admin turns a limit on. Raises 429 only for block-mode hard limits."""
+    handle = {"enforced": False, "reserved": False, "feature": feature_key,
+              "scope_type": None, "scope_id": None, "period": None}
+    if user.get("role") == "SUPER_ADMIN":
+        return handle
+    try:
+        cfg = await get_usage_config()
+        fcfg = dict((cfg.get("features") or {}).get(feature_key) or {})
+        if not fcfg or not fcfg.get("enforcement_enabled"):
+            return handle
+        fcfg["_key"] = feature_key
+        scope = fcfg.get("scope", "per_user")
+        if scope == "unlimited":
+            return handle
+        if scope == "per_user":
+            scope_type, scope_id = "user", user["id"]
+        elif scope == "per_workspace":
+            scope_type, scope_id = "workspace", ws_id
+        elif scope == "per_event":
+            if not event_id:
+                return handle  # no event context → cannot enforce per-event; don't block
+            scope_type, scope_id = "event", event_id
+        else:
+            return handle
+        if not scope_id:
+            return handle
+        ent = await resolve_entitlements(ws_id) if ws_id else {}
+        plan = ent.get("plan") if ent.get("plan") in USAGE_PLANS else None
+        if plan is None:
+            return handle  # grandfathered/unknown plan → no arbitrary block
+        limit, mode, _isov = await _resolve_feature_limit(fcfg, plan, scope_type, scope_id)
+        if mode == "unlimited" or limit is None:
+            return handle
+        period = await _usage_period_for_ws(ws_id)
+        handle.update({"enforced": True, "scope_type": scope_type, "scope_id": scope_id, "period": period})
+        behavior = fcfg.get("hard_behavior", "flag")
+        if behavior == "block":
+            ok = await _reserve_usage(feature_key, scope_type, scope_id, period, limit)
+            if not ok:
+                meta = _USAGE_FEATURE_MAP.get(feature_key, {})
+                raise HTTPException(429, f"You've reached your {meta.get('name', feature_key)} allowance for this period.")
+            handle["reserved"] = True
+        # flag / overage → allow through (recorded via meter_usage); Super Admin sees the flag
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"usage_guard soft-fail {feature_key}: {e}")
+        return handle
+    return handle
+
+
+async def release_usage_handle(handle: dict):
+    if handle and handle.get("reserved"):
+        try:
+            await _release_usage(handle["feature"], handle["scope_type"], handle["scope_id"], handle["period"])
+        except Exception as e:
+            logger.warning(f"release_usage_handle: {e}")
+
+
+async def meter_usage(feature_key: str, user_id: Optional[str] = None, workspace_id: Optional[str] = None,
+                      event_id: str = "", plan: Optional[str] = None, quantity: int = 1,
+                      result: str = "success", source: str = "app", paid: bool = True):
+    """Central metering — records ONE usage_event with estimated cost. Best-effort (never breaks the
+    caller). Cost is charged only for successful, provider-incurring operations (req 13/14)."""
+    try:
+        meta = _USAGE_FEATURE_MAP.get(feature_key, {})
+        cfg = await get_usage_config()
+        fcfg = (cfg.get("features") or {}).get(feature_key) or {}
+        unit_cost = float(fcfg.get("unit_cost", 0.0)) if (paid and result == "success") else 0.0
+        if plan is None and workspace_id:
+            ws = await db.workspaces.find_one({"id": workspace_id}, {"_id": 0, "subscription": 1, "plan": 1})
+            plan = ((ws or {}).get("subscription") or {}).get("plan") or (ws or {}).get("plan")
+        period = await _usage_period_for_ws(workspace_id)
+        await db.usage_events.insert_one({
+            "id": str(uuid.uuid4()), "feature": feature_key, "category": meta.get("category", "Other"),
+            "user_id": user_id, "workspace_id": workspace_id, "event_id": event_id or None,
+            "plan": plan, "quantity": int(quantity), "unit_cost": unit_cost,
+            "cost": round(unit_cost * int(quantity), 6), "currency": fcfg.get("currency", "USD"),
+            "result": result, "source": source, "period": period, "created_at": now_iso(),
+        })
+    except Exception as e:
+        logger.warning(f"meter_usage soft-fail {feature_key}: {e}")
+
+
+# ------------------------------------------------------------------ Super-Admin: Usage & Cost Control API
+def _usage_range(start: Optional[str], end: Optional[str]):
+    if end:
+        end_i = end if len(end) > 10 else end + "T23:59:59.999999+00:00"
+    else:
+        end_i = now_iso()
+    if start:
+        start_i = start if len(start) > 10 else start + "T00:00:00+00:00"
+    else:
+        start_i = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    return start_i, end_i
+
+
+def _status_for_pct(pct):
+    if pct is None:
+        return "normal"
+    if pct >= 100:
+        return "critical"
+    if pct >= 80:
+        return "high"
+    if pct >= 50:
+        return "watch"
+    return "normal"
+
+
+@platform_router.get("/admin/control/usage/config")
+async def usage_config_get(user: dict = Depends(current_user)):
+    _require_super(user)
+    cfg = await get_usage_config()
+    feats = cfg.get("features") or {}
+    out = []
+    for f in USAGE_FEATURES:
+        fc = feats.get(f["key"], {})
+        out.append({**{k: f.get(k) for k in ("key", "name", "category", "metered", "enforceable", "cost_unit", "placeholder")},
+                    "config": fc})
+    return {"features": out, "plans": USAGE_PLANS, "limit_modes": LIMIT_MODES,
+            "limit_scopes": LIMIT_SCOPES, "hard_behaviors": HARD_BEHAVIORS,
+            "cost_history": (cfg.get("cost_history") or [])[-100:]}
+
+
+class UsageFeatureConfigIn(BaseModel):
+    unit_cost: Optional[float] = None
+    currency: Optional[str] = None
+    enforcement_enabled: Optional[bool] = None
+    scope: Optional[str] = None
+    plan_limits: Optional[dict] = None
+    soft_pct: Optional[int] = None
+    hard_behavior: Optional[str] = None
+
+
+@platform_router.put("/admin/control/usage/config/{feature}")
+async def usage_config_set(feature: str, body: UsageFeatureConfigIn, user: dict = Depends(current_user)):
+    _require_super(user)
+    if feature not in _USAGE_FEATURE_MAP:
+        raise HTTPException(404, "Unknown feature")
+    cfg = await get_usage_config()
+    feats = cfg.get("features") or {}
+    fc = dict(feats.get(feature) or _default_feature_config(_USAGE_FEATURE_MAP[feature]))
+    before = dict(fc)
+    patch = {k: v for k, v in body.dict().items() if v is not None}
+    if "scope" in patch and patch["scope"] not in LIMIT_SCOPES:
+        raise HTTPException(400, "Invalid scope")
+    if "hard_behavior" in patch and patch["hard_behavior"] not in HARD_BEHAVIORS:
+        raise HTTPException(400, "Invalid hard_behavior")
+    if "plan_limits" in patch:
+        pl = dict(fc.get("plan_limits") or {})
+        for p, v in (patch["plan_limits"] or {}).items():
+            if p in USAGE_PLANS and isinstance(v, dict):
+                mode = v.get("mode", "unlimited")
+                if mode not in LIMIT_MODES:
+                    raise HTTPException(400, f"Invalid mode for {p}")
+                lim = v.get("limit")
+                pl[p] = {"mode": mode, "limit": (int(lim) if (lim not in (None, "") and mode in ("monthly", "custom")) else None)}
+        patch["plan_limits"] = pl
+    cost_changed = ("unit_cost" in patch and float(patch["unit_cost"]) != float(fc.get("unit_cost", 0.0)))
+    fc.update(patch)
+    if cost_changed:
+        fc["effective_from"] = now_iso()
+    feats[feature] = fc
+    hist = cfg.get("cost_history") or []
+    if cost_changed:
+        hist.append({"feature": feature, "unit_cost": fc["unit_cost"], "currency": fc.get("currency", "USD"),
+                     "effective_from": fc["effective_from"], "changed_by": user["id"], "changed_at": now_iso()})
+    await db.usage_config.update_one({"id": "global"}, {"$set": {"features": feats, "cost_history": hist}}, upsert=True)
+    await audit(None, user["id"], "admin.usage.config", {"feature": feature, "before": before, "after": fc})
+    return {"ok": True, "feature": feature, "config": fc}
+
+
+class UsageOverrideIn(BaseModel):
+    feature: str
+    scope_type: str          # user | workspace | event
+    scope_id: str
+    mode: str = "monthly"    # unlimited | monthly | disabled | custom
+    limit: Optional[int] = None
+    note: str = ""
+
+
+@platform_router.get("/admin/control/usage/overrides")
+async def usage_overrides_list(feature: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    q = {"feature": feature} if feature else {}
+    rows = await db.usage_overrides.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for r in rows:
+        if r.get("scope_type") == "user":
+            u = await db.users.find_one({"id": r["scope_id"]}, {"_id": 0, "name": 1, "email": 1})
+            r["scope_label"] = (u or {}).get("email") or r["scope_id"]
+        elif r.get("scope_type") == "workspace":
+            w = await db.workspaces.find_one({"id": r["scope_id"]}, {"_id": 0, "name": 1})
+            r["scope_label"] = (w or {}).get("name") or r["scope_id"]
+        elif r.get("scope_type") == "event":
+            e = await db.events.find_one({"id": r["scope_id"]}, {"_id": 0, "name": 1})
+            r["scope_label"] = (e or {}).get("name") or r["scope_id"]
+    return {"items": rows}
+
+
+@platform_router.post("/admin/control/usage/overrides")
+async def usage_override_create(body: UsageOverrideIn, user: dict = Depends(current_user)):
+    _require_super(user)
+    if body.feature not in _USAGE_FEATURE_MAP:
+        raise HTTPException(404, "Unknown feature")
+    if body.scope_type not in ("user", "workspace", "event"):
+        raise HTTPException(400, "Invalid scope_type")
+    if body.mode not in LIMIT_MODES:
+        raise HTTPException(400, "Invalid mode")
+    lim = int(body.limit) if (body.limit not in (None, "") and body.mode in ("monthly", "custom")) else None
+    doc = {"id": str(uuid.uuid4()), "feature": body.feature, "scope_type": body.scope_type,
+           "scope_id": body.scope_id, "mode": body.mode, "limit": lim, "note": body.note,
+           "created_by": user["id"], "created_at": now_iso()}
+    await db.usage_overrides.update_one(
+        {"feature": body.feature, "scope_type": body.scope_type, "scope_id": body.scope_id},
+        {"$set": doc}, upsert=True)
+    await audit(None, user["id"], "admin.usage.override.set", {"feature": body.feature,
+                "scope_type": body.scope_type, "scope_id": body.scope_id, "mode": body.mode, "limit": lim})
+    return {"ok": True, "override": doc}
+
+
+@platform_router.delete("/admin/control/usage/overrides/{oid}")
+async def usage_override_delete(oid: str, user: dict = Depends(current_user)):
+    _require_super(user)
+    ov = await db.usage_overrides.find_one({"id": oid}, {"_id": 0})
+    if not ov:
+        raise HTTPException(404, "Not found")
+    await db.usage_overrides.delete_one({"id": oid})
+    await audit(None, user["id"], "admin.usage.override.remove",
+                {"feature": ov.get("feature"), "scope_type": ov.get("scope_type"), "scope_id": ov.get("scope_id")})
+    return {"ok": True}
+
+
+async def _usage_agg(match: dict, group_field: str):
+    """Sum quantity + cost grouped by a field over usage_events (success only)."""
+    pipe = [{"$match": {**match, "result": "success"}},
+            {"$group": {"_id": f"${group_field}", "usage": {"$sum": "$quantity"}, "cost": {"$sum": "$cost"}}}]
+    rows = await db.usage_events.aggregate(pipe).to_list(10000)
+    return {r["_id"]: {"usage": r["usage"], "cost": round(r["cost"], 4)} for r in rows}
+
+
+@platform_router.get("/admin/control/usage/overview")
+async def usage_overview(start: str = None, end: str = None, plan: str = "", feature: str = "",
+                         workspace: str = "", user_id: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    today_i = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}}
+    if plan:
+        match["plan"] = plan
+    if feature:
+        match["feature"] = feature
+    if workspace:
+        match["workspace_id"] = workspace
+    if user_id:
+        match["user_id"] = user_id
+
+    by_feature = await _usage_agg(match, "feature")
+    by_feature_today = await _usage_agg({**match, "created_at": {"$gte": today_i, "$lte": end_i}}, "feature")
+    by_user = await _usage_agg(match, "user_id")
+    by_ws = await _usage_agg(match, "workspace_id")
+    by_plan = await _usage_agg(match, "plan")
+    ai_match = {**match, "category": "AI"}
+    by_feature_ai = await _usage_agg(ai_match, "feature")
+    ai_ops = sum(v["usage"] for v in by_feature_ai.values())
+    ai_cost = round(sum(v["cost"] for v in by_feature_ai.values()), 4)
+    total_cost = round(sum(v["cost"] for v in by_feature.values()), 4)
+    total_usage = sum(v["usage"] for v in by_feature.values())
+
+    cfg = await get_usage_config()
+    feats_cfg = cfg.get("features") or {}
+    # distinct active subjects in period
+    active_users = len([k for k in by_user.keys() if k])
+    active_ws = len([k for k in by_ws.keys() if k])
+
+    # highest-cost user / workspace (resolve names)
+    def _top(d):
+        items = [(k, v) for k, v in d.items() if k]
+        items.sort(key=lambda x: x[1]["cost"], reverse=True)
+        return items[:10]
+    top_users_raw = _top(by_user)
+    top_ws_raw = _top(by_ws)
+    top_users = []
+    for uid, v in top_users_raw:
+        u = await db.users.find_one({"id": uid}, {"_id": 0, "name": 1, "email": 1})
+        m = await db.memberships.find_one({"user_id": uid}, {"_id": 0, "workspace_id": 1})
+        ws = await db.workspaces.find_one({"id": (m or {}).get("workspace_id")}, {"_id": 0, "name": 1, "plan": 1, "subscription": 1}) if m else None
+        top_users.append({"id": uid, "name": (u or {}).get("name"), "email": (u or {}).get("email"),
+                          "workspace": (ws or {}).get("name"), "plan": display_plan(ws) if ws else None,
+                          "ai_ops": v["usage"], "cost": v["cost"]})
+    top_ws = []
+    for wid, v in top_ws_raw:
+        ws = await db.workspaces.find_one({"id": wid}, {"_id": 0, "name": 1, "plan": 1, "subscription": 1})
+        seats = ((ws or {}).get("subscription") or {}).get("seats")
+        badge = by_feature.get("event_badge_scan", {})  # platform-wide; per-ws detail in drilldown
+        top_ws.append({"id": wid, "name": (ws or {}).get("name"), "plan": display_plan(ws) if ws else None,
+                       "seats": seats, "ai_ops": v["usage"], "cost": v["cost"]})
+
+    # ---- feature table ----
+    rows = []
+    for f in USAGE_FEATURES:
+        k = f["key"]
+        fc = feats_cfg.get(k, {})
+        if f.get("metered"):
+            m_all = by_feature.get(k, {"usage": 0, "cost": 0})
+            m_today = by_feature_today.get(k, {"usage": 0, "cost": 0})
+            # per-feature user/ws breakdown for averages + highest
+            fu = await _usage_agg({**match, "feature": k}, "user_id")
+            fw = await _usage_agg({**match, "feature": k}, "workspace_id")
+            n_u = len([x for x in fu if x]) or 1
+            n_w = len([x for x in fw if x]) or 1
+            hi_u = max((v["usage"] for x, v in fu.items() if x), default=0)
+            hi_w = max((v["usage"] for x, v in fw.items() if x), default=0)
+            usage_month, usage_today, cost = m_all["usage"], m_today["usage"], m_all["cost"]
+            avg_u = round(m_all["usage"] / n_u, 2)
+            avg_w = round(m_all["usage"] / n_w, 2)
+        else:
+            # informational cheap features aggregated from source collections
+            agg = f.get("aggregate")
+            usage_month = usage_today = 0
+            hi_u = hi_w = 0
+            avg_u = avg_w = 0
+            if agg:
+                coll, typ = agg
+                q_month = {"created_at": {"$gte": start_i, "$lte": end_i}}
+                q_today = {"created_at": {"$gte": today_i, "$lte": end_i}}
+                if coll == "analytics_events":
+                    q_month["type"] = typ
+                    q_today["type"] = typ
+                usage_month = await db[coll].count_documents(q_month)
+                usage_today = await db[coll].count_documents(q_today)
+            unit = float(fc.get("unit_cost", 0.0))
+            cost = round(usage_month * unit, 4)
+        # limit summary (default plan limit view)
+        scope = fc.get("scope", "per_user")
+        pl = fc.get("plan_limits") or {}
+        enabled = bool(fc.get("enforcement_enabled"))
+        # status by highest utilisation vs the strictest enabled plan limit
+        status = "normal"
+        limit_label = "Unlimited"
+        if enabled:
+            modes = [pl.get(p, {}).get("mode", "unlimited") for p in USAGE_PLANS]
+            if any(m != "unlimited" for m in modes):
+                limit_label = "; ".join(f"{p}:{(pl.get(p, {}) or {}).get('mode')}"
+                                        + (f" {pl[p].get('limit')}" if pl.get(p, {}).get("limit") else "")
+                                        for p in USAGE_PLANS if pl.get(p, {}).get("mode", "unlimited") != "unlimited")
+        rows.append({
+            "key": k, "name": f["name"], "category": f["category"],
+            "metered": bool(f.get("metered")), "placeholder": bool(f.get("placeholder")),
+            "usage_today": usage_today, "usage_month": usage_month,
+            "avg_per_user": avg_u, "avg_per_workspace": avg_w,
+            "highest_user_usage": hi_u, "highest_workspace_usage": hi_w,
+            "unit_cost": float(fc.get("unit_cost", 0.0)), "currency": fc.get("currency", "USD"),
+            "estimated_total_cost": cost, "cost_unit": f.get("cost_unit"),
+            "scope": scope, "enforcement_enabled": enabled, "hard_behavior": fc.get("hard_behavior", "flag"),
+            "soft_pct": fc.get("soft_pct", 80), "limit_label": limit_label, "status": status,
+        })
+
+    kpis = {
+        "active_users": active_users, "active_workspaces": active_ws,
+        "total_tracked_usage": total_usage + sum(r["usage_month"] for r in rows if not r["metered"]),
+        "total_ai_operations": ai_ops, "estimated_ai_cost": ai_cost,
+        "estimated_total_cost": total_cost,
+        "avg_cost_per_user": round(total_cost / max(active_users, 1), 4),
+        "avg_cost_per_workspace": round(total_cost / max(active_ws, 1), 4),
+        "highest_cost_user": (top_users[0] if top_users else None),
+        "highest_cost_workspace": (top_ws[0] if top_ws else None),
+        "total_users": await db.users.count_documents({}),
+        "total_workspaces": await db.workspaces.count_documents({}),
+    }
+    return {"range": {"start": start_i, "end": end_i}, "kpis": kpis, "features": rows,
+            "top_users": top_users, "top_workspaces": top_ws,
+            "cost_by_plan": {k: v for k, v in by_plan.items() if k},
+            "cost_by_feature": {k: by_feature.get(k, {"usage": 0, "cost": 0}) for k in _USAGE_FEATURE_MAP},
+            "estimated": True}
+
+
+@platform_router.get("/admin/control/usage/detail")
+async def usage_detail(type: str, id: str, start: str = None, end: str = None, user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    if type not in ("user", "workspace"):
+        raise HTTPException(400, "type must be user|workspace")
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}, ("user_id" if type == "user" else "workspace_id"): id}
+    by_feature = await _usage_agg(match, "feature")
+    cfg = await get_usage_config()
+    feats_cfg = cfg.get("features") or {}
+    breakdown = []
+    total = 0.0
+    for f in USAGE_FEATURES:
+        v = by_feature.get(f["key"])
+        if not v:
+            continue
+        breakdown.append({"key": f["key"], "name": f["name"], "category": f["category"],
+                          "usage": v["usage"], "estimated_cost": v["cost"],
+                          "unit_cost": float((feats_cfg.get(f["key"]) or {}).get("unit_cost", 0.0))})
+        total += v["cost"]
+    header = {}
+    revenue = None
+    if type == "user":
+        u = await db.users.find_one({"id": id}, {"_id": 0, "name": 1, "email": 1, "role": 1})
+        m = await db.memberships.find_one({"user_id": id}, {"_id": 0, "workspace_id": 1})
+        ws = await db.workspaces.find_one({"id": (m or {}).get("workspace_id")}, {"_id": 0}) if m else None
+        header = {"name": (u or {}).get("name"), "email": (u or {}).get("email"),
+                  "plan": display_plan(ws) if ws else None, "workspace": (ws or {}).get("name")}
+    else:
+        ws = await db.workspaces.find_one({"id": id}, {"_id": 0})
+        header = {"name": (ws or {}).get("name"), "plan": display_plan(ws) if ws else None,
+                  "seats": ((ws or {}).get("subscription") or {}).get("seats")}
+        sub = (ws or {}).get("subscription") or {}
+        if is_real_paid(sub):
+            revenue = {"status": sub.get("status"), "interval": sub.get("interval"), "plan": sub.get("plan")}
+    ratio = None  # cost-to-revenue only when authoritative revenue is known (kept null otherwise)
+    return {"type": type, "id": id, "header": header, "breakdown": breakdown,
+            "total_estimated_cost": round(total, 4), "subscription_revenue": revenue,
+            "cost_to_revenue_ratio": ratio, "estimated": True}
+
+
+@platform_router.get("/admin/control/usage/timeseries")
+async def usage_timeseries(start: str = None, end: str = None, feature: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}, "result": "success"}
+    if feature:
+        match["feature"] = feature
+    pipe = [{"$match": match},
+            {"$group": {"_id": {"$substr": ["$created_at", 0, 10]},
+                        "usage": {"$sum": "$quantity"}, "cost": {"$sum": "$cost"},
+                        "ai": {"$sum": {"$cond": [{"$eq": ["$category", "AI"]}, "$quantity", 0]}}}},
+            {"$sort": {"_id": 1}}]
+    rows = await db.usage_events.aggregate(pipe).to_list(400)
+    return {"series": [{"date": r["_id"], "usage": r["usage"], "cost": round(r["cost"], 4), "ai": r["ai"]} for r in rows],
+            "estimated": True}
+
+
+@platform_router.get("/admin/control/usage/export.csv")
+async def usage_export_csv(start: str = None, end: str = None, feature: str = "",
+                           workspace: str = "", user_id: str = "", user: dict = Depends(current_user)):
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    match = {"created_at": {"$gte": start_i, "$lte": end_i}}
+    if feature:
+        match["feature"] = feature
+    if workspace:
+        match["workspace_id"] = workspace
+    if user_id:
+        match["user_id"] = user_id
+    rows = await db.usage_events.find(match, {"_id": 0}).sort("created_at", -1).to_list(50000)
+    ucache, wcache = {}, {}
+
+    async def _uemail(uid):
+        if uid not in ucache:
+            u = await db.users.find_one({"id": uid}, {"_id": 0, "email": 1})
+            ucache[uid] = (u or {}).get("email", "")
+        return ucache[uid]
+
+    async def _wname(wid):
+        if wid not in wcache:
+            w = await db.workspaces.find_one({"id": wid}, {"_id": 0, "name": 1})
+            wcache[wid] = (w or {}).get("name", "")
+        return wcache[wid]
+
+    buf = io.StringIO()
+    buf.write("\ufeff")
+    w = csv.writer(buf)
+    w.writerow(["Date", "Feature", "Category", "User", "Workspace", "Plan", "Usage",
+                "Unit Cost (USD)", "Estimated Cost (USD)", "Result", "Source", "Period"])
+    for r in rows:
+        w.writerow([r.get("created_at", ""), r.get("feature", ""), r.get("category", ""),
+                    await _uemail(r.get("user_id")) if r.get("user_id") else "",
+                    await _wname(r.get("workspace_id")) if r.get("workspace_id") else "",
+                    r.get("plan", ""), r.get("quantity", 0), r.get("unit_cost", 0),
+                    r.get("cost", 0), r.get("result", ""), r.get("source", ""), r.get("period", "")])
+    buf.seek(0)
+    return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
+                             headers={"Content-Disposition": "attachment; filename=usage_cost.csv"})
+
+
+@platform_router.get("/usage/me")
+async def usage_me(user: dict = Depends(current_user)):
+    """User-facing usage — ONLY features with an ACTIVE limit that applies to this account.
+    Returns an empty list when nothing is limited (no unnecessary counters for cheap/unlimited features)."""
+    ws_id = await _primary_ws_id(user)
+    ent = await resolve_entitlements(ws_id) if ws_id else {}
+    plan = ent.get("plan") if ent.get("plan") in USAGE_PLANS else None
+    cfg = await get_usage_config()
+    feats = cfg.get("features") or {}
+    out = []
+    for f in USAGE_FEATURES:
+        if not f.get("enforceable"):
+            continue
+        fc = feats.get(f["key"]) or {}
+        if not fc.get("enforcement_enabled"):
+            continue
+        scope = fc.get("scope", "per_user")
+        if scope == "unlimited":
+            continue
+        fc2 = dict(fc)
+        fc2["_key"] = f["key"]
+        if scope == "per_user":
+            scope_type, scope_id = "user", user["id"]
+        elif scope == "per_workspace":
+            scope_type, scope_id = "workspace", ws_id
+        else:
+            continue  # per_event not shown in the account-level panel
+        if not scope_id:
+            continue
+        limit, mode, is_ov = await _resolve_feature_limit(fc2, plan or "pro", scope_type, scope_id)
+        if mode == "unlimited" or limit is None:
+            continue
+        period = await _usage_period_for_ws(ws_id)
+        used = await db.usage_events.count_documents(
+            {"feature": f["key"], "result": "success", "period": period,
+             ("user_id" if scope_type == "user" else "workspace_id"): scope_id})
+        pct = round(used / limit * 100, 1) if limit else 0
+        out.append({"key": f["key"], "name": f["name"], "scope": scope,
+                    "scope_label": "Your monthly allowance" if scope_type == "user" else "Shared workspace allowance",
+                    "used": used, "limit": limit, "remaining": max(0, limit - used),
+                    "pct": pct, "soft_pct": fc.get("soft_pct", 80),
+                    "warning": pct >= fc.get("soft_pct", 80), "over": pct >= 100,
+                    "source": "override" if is_ov else "plan"})
+    return {"items": out}
+
+
+# ==================================================================
+# AI LEAD INSIGHTS + AI EVENT RECAP (on-demand, cached, metered) — reuses LlmChat (openai gpt-5.4),
+# usage_guard/meter_usage, ai_usage, and existing lead/event tenant permissions. NEVER auto-runs.
+# One structured provider call per generation. Viewing a cached result costs ZERO AI usage.
+# ==================================================================
+import hashlib
+
+_AI_MODEL = ("openai", "gpt-5.4")
+
+
+async def _llm_json(system: str, prompt: str, session_prefix: str) -> dict:
+    """One structured JSON completion via the shared Emergent LLM key. Raises on failure so the
+    caller can release the usage reservation (failed provider op must not consume allowance)."""
+    key = os.environ.get("EMERGENT_LLM_KEY", "").strip()
+    if not key:
+        raise HTTPException(503, "AI is not configured.")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    chat = LlmChat(api_key=key, session_id=f"{session_prefix}-{uuid.uuid4()}",
+                   system_message=system).with_model(*_AI_MODEL)
+    resp = await chat.send_message(UserMessage(text=prompt))
+    data = _parse_scan_json(str(resp))
+    if not data:
+        raise HTTPException(502, "The AI response could not be parsed. Please try again.")
+    return data
+
+
+def _lang_name(lang: str) -> str:
+    return {"ar": "Arabic", "es": "Spanish", "en": "English"}.get(_norm_lang(lang), "English")
+
+
+def _material_hash(obj: dict) -> str:
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+# ---- AI Lead Insights ----
+async def _lead_or_403(lead_id: str, user: dict):
+    lead = await db.leads.find_one({"id": lead_id}, {"_id": 0})
+    if not lead:
+        raise HTTPException(404, "Lead not found")
+    if user.get("role") != "SUPER_ADMIN":
+        slugs = await _owned_slugs(user)
+        if lead.get("cardSlug") not in slugs:
+            raise HTTPException(403, "Not your lead")
+    return lead
+
+
+async def _lead_insight_signature(lead: dict) -> dict:
+    """The material fields whose change should mark an insight stale (rules-based, no AI)."""
+    mc = await _active_meeting_count(lead["id"])
+    return {
+        "name": lead.get("name"), "company": lead.get("company"), "title": lead.get("title"),
+        "industry": lead.get("industry"), "source": lead.get("source"), "event_id": lead.get("event_id"),
+        "notes": lead.get("notes") or lead.get("message"), "tags": sorted(lead.get("tags") or []),
+        "status": lead.get("status"), "lead_score": lead.get("lead_score"),
+        "lead_temperature": lead.get("lead_temperature_override") or lead.get("lead_temperature"),
+        "phone": bool(lead.get("phone")), "email": bool(lead.get("email")),
+        "next_follow_up": lead.get("next_follow_up"), "follow_up_completed_at": lead.get("follow_up_completed_at"),
+        "opportunity_value": lead.get("opportunity_value"), "actual_revenue": lead.get("actual_revenue"),
+        "meetings": mc,
+    }
+
+
+def _lead_insight_context(lead: dict, sig: dict, event_name: str) -> str:
+    fields = {
+        "Name": lead.get("name"), "Company": lead.get("company"), "Job Title": lead.get("title"),
+        "Industry": lead.get("industry"), "Lead Source": lead.get("source"), "Event": event_name,
+        "Pipeline Stage": lead.get("status"), "Rules-based Lead Score (0-100)": lead.get("lead_score"),
+        "Lead Temperature": sig["lead_temperature"], "Tags": ", ".join(sig["tags"]),
+        "Notes": sig["notes"], "Has Phone": sig["phone"], "Has Email": sig["email"],
+        "Next Follow-up": lead.get("next_follow_up"), "Follow-up Completed": lead.get("follow_up_completed_at"),
+        "Active Meetings": sig["meetings"], "Opportunity Value": lead.get("opportunity_value"),
+        "Recorded Revenue": lead.get("actual_revenue"),
+    }
+    return "\n".join(f"{k}: {v}" for k, v in fields.items() if v not in (None, "", []))
+
+
+class LeadInsightIn(BaseModel):
+    regenerate: bool = False
+    language: str = "en"
+
+
+@platform_router.get("/crm/leads/{lead_id}/ai-insight")
+async def get_lead_insight(lead_id: str, user: dict = Depends(current_user)):
+    """Return the STORED insight (0 AI usage) + a stale flag if material lead data changed since."""
+    lead = await _lead_or_403(lead_id, user)
+    ins = lead.get("ai_insight")
+    if not ins:
+        return {"insight": None, "stale": False}
+    sig = await _lead_insight_signature(lead)
+    return {"insight": ins, "stale": ins.get("source_hash") != _material_hash(sig)}
+
+
+@platform_router.post("/crm/leads/{lead_id}/ai-insight")
+async def generate_lead_insight(lead_id: str, body: LeadInsightIn, request: Request,
+                                user: dict = Depends(current_user)):
+    lead = await _lead_or_403(lead_id, user)
+    ws_id = await _lead_workspace_id(lead)
+    sig = await _lead_insight_signature(lead)
+    cur_hash = _material_hash(sig)
+    existing = lead.get("ai_insight")
+    # Cached path — no new AI call unless regenerate is explicitly requested.
+    if existing and not body.regenerate:
+        return {"insight": existing, "stale": existing.get("source_hash") != cur_hash, "cached": True}
+    rate_limit(request, "ai_insight", 20, 60)
+    lang = _norm_lang(body.language)
+    ev_name = ""
+    if lead.get("event_id"):
+        ev = await db.events.find_one({"id": lead["event_id"]}, {"_id": 0, "name": 1})
+        ev_name = (ev or {}).get("name", "")
+    handle = await usage_guard("ai_lead_insight", user, ws_id)
+    system = (f"You are an elite B2B sales assistant. Analyze ONE lead using ONLY the provided TapPresence data "
+              f"(never invent facts or external data). Respond in {_lang_name(lang)}. "
+              f"Return ONLY a JSON object with keys: summary, opportunity_assessment, why_matters, "
+              f"recommended_next_action, followup_approach, signals_risks (array of short strings), "
+              f"priority (one of High, Medium, Low), timing (one of 'Follow up now','Today','Within 24 hours','This week','Low urgency'). "
+              f"Keep each field concise and actionable. Do not change or restate the numeric lead score.")
+    prompt = "Lead data:\n" + _lead_insight_context(lead, sig, ev_name)
+    try:
+        data = await _llm_json(system, prompt, "lead-insight")
+    except HTTPException:
+        await release_usage_handle(handle)
+        await meter_usage("ai_lead_insight", user_id=user["id"], workspace_id=ws_id,
+                          quantity=1, result="failed", source="lead_insight", paid=False)
+        raise
+    except Exception as e:
+        await release_usage_handle(handle)
+        await meter_usage("ai_lead_insight", user_id=user["id"], workspace_id=ws_id,
+                          quantity=1, result="failed", source="lead_insight", paid=False)
+        logger.warning(f"lead insight LLM error: {e}")
+        raise HTTPException(502, "Could not generate the insight. Please try again.")
+    insight = {"content": data, "generated_at": now_iso(), "generated_by": user["id"],
+               "provider": "openai:gpt-5.4", "language": lang, "source_hash": cur_hash}
+    await db.leads.update_one({"id": lead_id}, {"$set": {"ai_insight": insight}})
+    await db.ai_usage.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "provider": "openai:gpt-5.4",
+                                  "channel": "lead_insight", "tone": "insight", "language": lang, "created_at": now_iso()})
+    await meter_usage("ai_lead_insight", user_id=user["id"], workspace_id=ws_id,
+                      quantity=1, result="success", source="lead_insight", paid=True)
+    return {"insight": insight, "stale": False, "cached": False}
+
+
+# ---- AI Event Recap ----
+def _event_recap_signature(dash: dict) -> dict:
+    k = dash.get("kpis") or {}
+    f = dash.get("financials") or {}
+    return {"total_leads": k.get("total_leads"), "customers": k.get("customers"),
+            "meetings": k.get("meetings_booked"), "conversion": k.get("conversion_rate"),
+            "pipeline_value": f.get("pipeline_value"), "attributed_revenue": f.get("attributed_revenue"),
+            "roi": f.get("roi")}
+
+
+def _event_recap_context(dash: dict) -> str:
+    ev = dash.get("event") or {}
+    k = dash.get("kpis") or {}
+    q = dash.get("quality") or {}
+    fin = dash.get("financials") or {}
+    lb = [{"name": r.get("name"), "leads": r.get("leads"), "hot": r.get("hot_leads"),
+           "meetings": r.get("meetings"), "customers": r.get("customers")} for r in (dash.get("leaderboard") or [])[:5]]
+    topl = [{"name": l.get("name"), "company": l.get("company"), "title": l.get("title"),
+             "score": l.get("score"), "temp": l.get("temperature")} for l in (dash.get("top_leads") or [])[:5]]
+    topo = [{"name": l.get("name"), "company": l.get("company"), "value": l.get("opportunity_value"),
+             "stage": l.get("stage")} for l in (dash.get("top_opportunities") or [])[:5]]
+    ctx = {
+        "event_name": ev.get("name"), "reporting_currency": fin.get("currency"),
+        "kpis": k, "new_vs_returning": dash.get("new_vs_returning"),
+        "pipeline_stage_counts": dash.get("pipeline"), "capture_methods": dash.get("capture_methods"),
+        "lead_quality": q, "followups": dash.get("followups"),
+        "financials": {kk: fin.get(kk) for kk in ("pipeline_value", "open_opportunities", "attributed_revenue",
+                                                   "attributed_revenue_count", "event_cost", "roi", "revenue_cost_multiple")},
+        "team_top5": lb, "top_leads": topl, "top_opportunities": topo,
+    }
+    return json.dumps(ctx, ensure_ascii=False, default=str)
+
+
+class EventRecapIn(BaseModel):
+    regenerate: bool = False
+    language: str = "en"
+
+
+@platform_router.get("/events/{event_id}/ai-recap")
+async def get_event_recap(event_id: str, user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    rec = ev.get("ai_recap")
+    if not rec:
+        return {"recap": None, "stale": False}
+    dash = await event_dashboard(event_id, user)
+    return {"recap": rec, "stale": rec.get("source_hash") != _material_hash(_event_recap_signature(dash))}
+
+
+@platform_router.post("/events/{event_id}/ai-recap")
+async def generate_event_recap(event_id: str, body: EventRecapIn, request: Request,
+                               user: dict = Depends(current_user)):
+    ev = await _event_or_403(event_id, user)
+    ws_id = ev.get("workspace_id")
+    existing = ev.get("ai_recap")
+    # Aggregate ONCE (no per-lead AI). event_dashboard returns fully aggregated metrics.
+    dash = await event_dashboard(event_id, user)
+    cur_hash = _material_hash(_event_recap_signature(dash))
+    if existing and not body.regenerate:
+        return {"recap": existing, "stale": existing.get("source_hash") != cur_hash, "cached": True}
+    rate_limit(request, "ai_recap", 15, 60)
+    lang = _norm_lang(body.language)
+    handle = await usage_guard("ai_event_recap", user, ws_id, event_id=event_id)
+    system = (f"You are a sales operations analyst. Write a concise, executive AI recap for ONE event using ONLY the "
+              f"provided aggregated metrics (never invent numbers). Respond in {_lang_name(lang)}. "
+              f"Return ONLY a JSON object with keys: executive_summary, event_performance, lead_quality, "
+              f"strongest_opportunities, key_patterns, team_highlights, followup_priorities, "
+              f"next_actions (array of short strings), risks, conclusion. Keep it useful for a manager and not overly long.")
+    prompt = "Aggregated event data (JSON):\n" + _event_recap_context(dash)
+    try:
+        data = await _llm_json(system, prompt, "event-recap")
+    except HTTPException:
+        await release_usage_handle(handle)
+        await meter_usage("ai_event_recap", user_id=user["id"], workspace_id=ws_id, event_id=event_id,
+                          quantity=1, result="failed", source="event_recap", paid=False)
+        raise
+    except Exception as e:
+        await release_usage_handle(handle)
+        await meter_usage("ai_event_recap", user_id=user["id"], workspace_id=ws_id, event_id=event_id,
+                          quantity=1, result="failed", source="event_recap", paid=False)
+        logger.warning(f"event recap LLM error: {e}")
+        raise HTTPException(502, "Could not generate the recap. Please try again.")
+    recap = {"content": data, "generated_at": now_iso(), "generated_by": user["id"],
+             "provider": "openai:gpt-5.4", "language": lang, "source_hash": cur_hash}
+    await db.events.update_one({"id": event_id}, {"$set": {"ai_recap": recap}})
+    await db.ai_usage.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "provider": "openai:gpt-5.4",
+                                  "channel": "event_recap", "tone": "recap", "language": lang, "created_at": now_iso()})
+    await meter_usage("ai_event_recap", user_id=user["id"], workspace_id=ws_id, event_id=event_id,
+                      quantity=1, result="success", source="event_recap", paid=True)
+    return {"recap": recap, "stale": False, "cached": False}
+
+
+# ------------------------------------------------------------------ Super Admin: Tax & Global Revenue
+def _minor(v):
+    return int(v or 0)
+
+
+@platform_router.get("/admin/control/tax/overview")
+async def tax_overview(start: str = None, end: str = None, user: dict = Depends(current_user)):
+    """Global tax/revenue reporting from Stripe-authoritative billing_tax_records.
+    Collected sales-tax/VAT is reported SEPARATELY and never counted as TapPresence revenue.
+    Amounts are in Stripe minor units, grouped per currency (no cross-currency FX summing)."""
+    _require_super(user)
+    start_i, end_i = _usage_range(start, end)
+    q = {"created_at": {"$gte": start_i, "$lte": end_i}}
+    rows = await db.billing_tax_records.find(q, {"_id": 0}).sort("created_at", -1).to_list(20000)
+
+    def _acc():
+        return {"base_subscription": 0, "discount": 0, "tax_collected": 0, "total_charged": 0, "count": 0}
+
+    by_currency, by_country, by_state = {}, {}, {}
+    customers, countries, status_counts = set(), set(), {}
+    for r in rows:
+        cur = r.get("currency") or "USD"
+        base = _minor(r.get("base_amount"))
+        disc = _minor(r.get("discount_amount"))
+        tax = _minor(r.get("tax_amount"))
+        total = _minor(r.get("total_amount"))
+        c = by_currency.setdefault(cur, _acc())
+        c["base_subscription"] += base
+        c["discount"] += disc
+        c["tax_collected"] += tax
+        c["total_charged"] += total
+        c["count"] += 1
+        country = r.get("country") or "??"
+        ck = f"{country}|{cur}"
+        cc = by_country.setdefault(ck, {"country": country, "currency": cur, **_acc(), "customers": set()})
+        cc["base_subscription"] += base
+        cc["discount"] += disc
+        cc["tax_collected"] += tax
+        cc["total_charged"] += total
+        cc["count"] += 1
+        if r.get("workspace_id"):
+            cc["customers"].add(r["workspace_id"])
+            customers.add(r["workspace_id"])
+        if country and country != "??":
+            countries.add(country)
+        st = r.get("tax_status") or "unavailable"
+        status_counts[st] = status_counts.get(st, 0) + 1
+        if country == "US" and r.get("state"):
+            sk = f"{r['state']}|{cur}"
+            ss = by_state.setdefault(sk, {"state": r["state"], "currency": cur, "tax_collected": 0, "total_charged": 0, "count": 0})
+            ss["tax_collected"] += tax
+            ss["total_charged"] += total
+            ss["count"] += 1
+
+    by_country_out = []
+    for v in by_country.values():
+        v["customers"] = len(v["customers"])
+        v["net_subscription"] = v["total_charged"] - v["tax_collected"]
+        by_country_out.append(v)
+    by_country_out.sort(key=lambda x: x["total_charged"], reverse=True)
+    for cur, v in by_currency.items():
+        v["net_subscription"] = v["total_charged"] - v["tax_collected"]
+
+    transactions = [{
+        "workspace_id": r.get("workspace_id"), "country": r.get("country"), "state": r.get("state"),
+        "currency": r.get("currency"), "base_amount": _minor(r.get("base_amount")),
+        "discount_amount": _minor(r.get("discount_amount")), "tax_amount": _minor(r.get("tax_amount")),
+        "total_amount": _minor(r.get("total_amount")), "tax_status": r.get("tax_status"),
+        "tax_id_type": r.get("tax_id_type"), "tax_id_masked": r.get("tax_id_masked"),
+        "kind": r.get("kind"), "created_at": r.get("created_at"),
+    } for r in rows[:200]]
+
+    return {"range": {"start": start_i, "end": end_i},
+            "totals_by_currency": by_currency,
+            "paying_customers": len(customers), "countries": sorted(countries),
+            "country_count": len(countries), "by_country": by_country_out,
+            "by_state_us": sorted(by_state.values(), key=lambda x: x["total_charged"], reverse=True),
+            "tax_status_breakdown": status_counts, "transactions": transactions,
+            "note": "Collected tax is reported separately and is NOT TapPresence revenue. Estimated where Stripe status is not 'complete'."}
+
+
 # ------------------------------------------------------------------ migration
 async def run_migration():
     """Idempotent, non-destructive. Preserves existing users/cards/URLs."""
@@ -3273,8 +6308,52 @@ async def run_migration():
         await db.referral_reward_grants.create_index([("referrer_ws_id", 1), ("index", 1)], unique=True)
         await db.referrals.create_index("status")
         await db.billing_events.create_index("key", unique=True)
+        # Event Dashboard V1 — query patterns: leads by event, timeline event, meetings by lead
+        await db.events.create_index([("workspace_id", 1), ("created_at", -1)])
+        await db.leads.create_index("event_id")
+        await db.leads.create_index("timeline.event_id")
+        await db.meetings.create_index("lead_id")
+        # Pipeline Value / Revenue Attribution V1 — exclusive revenue lookup per event
+        await db.leads.create_index("revenue_attribution.event_id")
+        # CRM & Data Export Pack V1 — HubSpot connectors
+        await db.crm_connections.create_index([("workspace_id", 1), ("provider", 1)], unique=True)
+        await db.crm_oauth_states.create_index("state", unique=True)
+        # Usage & Cost Control V1 — metering + atomic reservation + overrides
+        await db.usage_events.create_index([("created_at", -1)])
+        await db.usage_events.create_index([("feature", 1), ("period", 1)])
+        await db.usage_events.create_index([("user_id", 1), ("period", 1)])
+        await db.usage_events.create_index([("workspace_id", 1), ("period", 1)])
+        await db.usage_meters.create_index(
+            [("feature", 1), ("scope_type", 1), ("scope_id", 1), ("period", 1)], unique=True)
+        await db.usage_overrides.create_index(
+            [("feature", 1), ("scope_type", 1), ("scope_id", 1)], unique=True)
+        # Global Tax Readiness — Stripe-authoritative tax/revenue records
+        await db.billing_tax_records.create_index("source_id", unique=True)
+        await db.billing_tax_records.create_index([("created_at", -1)])
+        await db.billing_tax_records.create_index([("country", 1)])
+        # Failed-payment recovery — webhook idempotency ledger
+        await db.stripe_events.create_index("id", unique=True)
     except Exception as e:
         logger.warning(f"platform index setup: {e}")
+
+    # Seed Usage & Cost Control config (idempotent; backfills newly added features)
+    try:
+        _ucfg = await get_usage_config()
+        # AI Event Recap default scope correction (per_event) — enforcement stays OFF, no behavior change.
+        _erf = (_ucfg.get("features") or {}).get("ai_event_recap") or {}
+        if _erf.get("scope") == "per_user" and not _erf.get("enforcement_enabled"):
+            await db.usage_config.update_one({"id": "global"},
+                {"$set": {"features.ai_event_recap.scope": "per_event"}})
+    except Exception as e:
+        logger.warning(f"usage config seed: {e}")
+
+    # Backfill lead scores for any leads not yet scored under the current version (safe, bounded, preview)
+    try:
+        cursor = db.leads.find({"lead_score_version": {"$ne": LEAD_SCORE_VERSION}}, {"_id": 0, "id": 1}).limit(20000)
+        async for l in cursor:
+            await recalc_lead_score(l["id"])
+    except Exception as e:
+        logger.warning(f"lead score backfill: {e}")
 
     # Seed plans + regional prices + markets
     for p in DEFAULT_PLANS:
@@ -3292,6 +6371,15 @@ async def run_migration():
         }})
     await db.users.update_many({"language": {"$exists": False}},
                                {"$set": {"language": "en", "locale": "en-US", "timezone": "America/New_York"}})
+
+    # Backfill event reporting currency (financial aggregation) — non-destructive
+    try:
+        async for ev in db.events.find({"currency": {"$exists": False}}, {"_id": 0, "id": 1, "event_cost_currency": 1, "workspace_id": 1}):
+            ws = await db.workspaces.find_one({"id": ev.get("workspace_id")}, {"_id": 0, "region": 1})
+            ccy = (ev.get("event_cost_currency") or ((ws or {}).get("region") or {}).get("default_currency") or "USD").upper()
+            await db.events.update_one({"id": ev["id"]}, {"$set": {"currency": ccy}})
+    except Exception as e:
+        logger.warning(f"event currency backfill: {e}")
 
     # Promote existing admin -> SUPER_ADMIN + ensure a workspace, attach existing cards.
     admin_email = os.environ.get("ADMIN_EMAIL", "").lower()

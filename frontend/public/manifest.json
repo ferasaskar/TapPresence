@@ -1,0 +1,22 @@
+{
+  "short_name": "TapPresence",
+  "name": "TapPresence — Digital Business Cards",
+  "description": "Premium digital business cards with NFC, QR, lead capture, meetings and analytics.",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0B0D12",
+  "background_color": "#0B0D12"
+}

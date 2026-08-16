@@ -1,0 +1,120 @@
+{
+  "summary": "Verified TapPresence SEO P0+P1 work in preview: new /event-lead-capture SEO landing, new company pages /about /contact /security, 4 competitor comparison pages, enrichment of 12 existing SEO money pages, homepage hero-purpose H2 + Company footer nav, sitemap/robots, RTL/i18n, mobile viewport, and signup regression. All PASS. No blocking issues found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "seo_verification": {
+    "event_lead_capture": {
+      "path": "/event-lead-capture",
+      "h1": "Event lead capture that fills your pipeline",
+      "h1_count": 1,
+      "title_contains_event_lead_capture": true,
+      "title": "Event Lead Capture App for Trade Shows & Conferences | TapPresence",
+      "canonical": "https://tappresence.com/event-lead-capture",
+      "robots_meta": null,
+      "indexable": true,
+      "jsonld_types": ["BreadcrumbList", "SoftwareApplication", "FAQPage"],
+      "jsonld_parse_ok": true,
+      "sections_present": true,
+      "section_count": 4,
+      "faq_present": true,
+      "related_links_count": 5,
+      "placeholder_hrefs": 0,
+      "status": "PASS"
+    },
+    "company_pages": {
+      "/about": {"h1": "About TapPresence", "h1_count": 1, "title": "About TapPresence — Digital Business Cards & Lead Capture", "canonical": "https://tappresence.com/about", "indexable": true, "breadcrumb_jsonld": true, "status": "PASS"},
+      "/contact": {"h1": "Contact TapPresence", "h1_count": 1, "canonical": "https://tappresence.com/contact", "indexable": true, "mailto_sales@tappresence.com": true, "contact-email_testid": true, "status": "PASS"},
+      "/security": {"h1": "Security at TapPresence", "h1_count": 1, "canonical": "https://tappresence.com/security", "indexable": true, "security_items": 5, "no_false_cert_claims": "verified in code+DOM (no SOC 2 / ISO 27001 / HIPAA / GDPR certified claims; only PCI-DSS via Stripe as fact)", "status": "PASS"}
+    },
+    "compare_pages": {
+      "all_4": {
+        "slugs": ["tappresence-vs-blinq", "tappresence-vs-hihello", "tappresence-vs-popl", "tappresence-vs-wave"],
+        "each_has_h1_TapPresence_vs_X": true,
+        "robots_noindex_follow": true,
+        "verify_note_present_and_no_fabricated_competitor_specs": true,
+        "TAPPRESENCE_FACTS_rows_15": true,
+        "unknown_slug_redirects_home": true,
+        "status": "PASS"
+      }
+    },
+    "enriched_seo_pages": {
+      "all_12_have_sections_and_single_h1_and_self_canonical": true,
+      "titles_unique_no_duplicates": true,
+      "digital-business-card_title_contains_for_Professionals_&_Teams": true,
+      "uae_title_contains_Digital_Business_Card_UAE": true,
+      "dubai_title_contains_Digital_Business_Card_Dubai": true,
+      "business-card-scanner_title_contains_App": true,
+      "nfc_page_has_physical_card_optional_faq": true,
+      "status": "PASS"
+    },
+    "homepage": {
+      "h1_preserved": "Your Professional Identity. Reinvented. (rendered across 3 spans)",
+      "hero_purpose_is_H2": true,
+      "footer_solutions_present": true,
+      "home_company_links_about_contact_security": [1, 1, 1],
+      "status": "PASS"
+    },
+    "internal_linking": {
+      "no_placeholder_href_hash_on_any_seo_or_company_or_compare_page": true,
+      "seo_footer_includes_event_lead_capture": true,
+      "seo_footer_includes_about_contact_security": true,
+      "status": "PASS"
+    },
+    "localization_rtl": {
+      "home_ar_dir": "rtl",
+      "digital-business-card_ar_dir": "rtl",
+      "ar_no_horizontal_overflow": true,
+      "es_renders_ltr": true,
+      "status": "PASS"
+    },
+    "sitemap": {
+      "url": "https://template-hub-184.preview.emergentagent.com/sitemap.xml",
+      "valid_xml": true,
+      "contains_event-lead-capture_about_contact_security": true,
+      "no_compare_urls": true,
+      "no_private_routes_dashboard_leads_billing_settings_admin_nfc": true,
+      "status": "PASS"
+    },
+    "robots": {
+      "url": "https://template-hub-184.preview.emergentagent.com/robots.txt",
+      "disallows_admin_dashboard_leads_meetings_settings_billing_nfc_referral": true,
+      "does_not_block_new_public_pages": true,
+      "sitemap_ref": "https://tappresence.com/sitemap.xml",
+      "status": "PASS"
+    },
+    "mobile_390x844": {
+      "event-lead-capture": "no_overflow",
+      "about": "no_overflow",
+      "compare_blinq": "no_overflow",
+      "status": "PASS"
+    },
+    "regression": {
+      "/login": "renders (title 'Sign in — TapPresence')",
+      "/register": "renders",
+      "/pricing": "renders config-driven",
+      "/dashboard_unauth_redirect": "-> /login PASS",
+      "/leads_unauth_redirect": "-> /login PASS",
+      "signup_flow": "ga-p1-1786794942@example.com / Test12345 -> /dashboard PASS",
+      "status": "PASS"
+    },
+    "console_errors": "no blocking errors; only benign Canvas2D willReadFrequently and framer-motion non-static-position warnings (pre-existing)"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "SeoLanding.jsx correctly composes BreadcrumbList + SoftwareApplication + FAQPage JSON-LD only when faq present — verified in DOM for all 13 SEO pages.",
+    "ComparePage.jsx correctly applies noindex=(!page||!page.verified) — all 4 competitor pages render 'noindex, follow' as required. Unknown slug renders Navigate to '/' (SPA client redirect) — works.",
+    "SeoLanding.jsx renders TWO possibly-clashing footer-link-* testids for e.g. /about because SEO_FOOTER_LINKS and COMPANY_FOOTER_LINKS share the same testid prefix pattern; not currently a collision since SEO_FOOTER_LINKS doesn't include /about,/contact,/security. Safe as-is but fragile — consider a distinct prefix like footer-company-link-* to prevent future duplicate testids.",
+    "CompanyPages.jsx About/Contact/Security have NO SoftwareApplication or FAQPage JSON-LD — only BreadcrumbList. That matches the review spec ('BreadcrumbList JSON-LD valid'), so PASS.",
+    "Security page correctly avoids compliance-certification claims; only cites PCI-DSS *via Stripe* as a factual statement about the payment processor. Good.",
+    "landingContent.js is 296 lines and getting content-heavy; still under the 700-line threshold. Not urgent to split."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only per request)", "frontend": "100%"},
+  "test_credentials": {"created_accounts": ["ga-p1-1786794942@example.com / Test12345 (individual, trial-active)"]},
+  "seed_data_creation": "1 throwaway account via /register form for signup regression.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All P0+P1 SEO work verified. Preview URL: https://template-hub-184.preview.emergentagent.com. Non-www https://tappresence.com is the intentional canonical target — do not flag. Comparison pages MUST remain noindex until competitor data is verified — do not flag. If future iterations add verified competitor data, comparison pages should flip to indexable and get added to sitemap.xml.",
+  "rca of the issue": "N/A — no bugs found."
+}

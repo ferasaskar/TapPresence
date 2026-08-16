@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { useSeo } from "@/lib/seo";
+import { trackEvent } from "@/lib/ga";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +15,7 @@ import { GoogleButton, AuthDivider } from "@/components/GoogleButton";
 const fmtErr = (d) => typeof d === "string" ? d : Array.isArray(d) ? d.map((e) => e?.msg || "").join(" ") : null;
 
 export default function Register() {
+  useSeo({ title: "Create your free TapPresence account", description: "Start your free 14-day TapPresence trial — create a digital business card, share via NFC & QR, capture leads and follow up with AI. No card required.", path: "/register" });
   const { register, applyData } = useAuth();
   const { t } = useLocale();
   const navigate = useNavigate();
@@ -30,13 +33,18 @@ export default function Register() {
   const [seats, setSeats] = useState(3);
 
   useEffect(() => {
-    api.get("/commercial/pricing").then(({ data }) => {
-      setPricing(data);
+    api.get("/commercial/pricing").then(({ data }) => {      setPricing(data);
       const min = data?.plans?.team?.min_seats || 3;
       setSeats((s) => Math.max(s, min));
       if (refCode && data?.referral?.enabled) setRefInfo({ pct: data.referral.referred_discount_month_pct });
     }).catch(() => {});
   }, [refCode]);
+
+  // Registration flow begins (once per session; StrictMode-safe via dedupe).
+  useEffect(() => {
+    trackEvent("sign_up_start", { method: googleMode ? "google" : "email" }, { dedupeKey: "flow" });
+    // eslint-disable-next-line
+  }, []);
 
   const minSeats = pricing?.plans?.team?.min_seats || 3;
   const p = pricing?.pricing || {};
@@ -59,6 +67,9 @@ export default function Register() {
         if (acct === "team") { body.company_name = f.company_name; body.seats = Math.max(seats, minSeats); body.billing_interval = interval; }
         const { data } = await api.post("/auth/google/complete", body);
         const u = applyData(data);
+        const uid = u?.id || "acct";
+        trackEvent("sign_up", { method: "google", account_type: acct }, { dedupeKey: uid, persist: true });
+        trackEvent("trial_started", { account_type: acct, plan: acct === "team" ? "team" : "individual" }, { dedupeKey: uid, persist: true });
         navigate(u?.role === "SUPER_ADMIN" ? "/control" : "/dashboard");
         return;
       }
@@ -66,6 +77,9 @@ export default function Register() {
       const payload = { ...f, timezone: tz, account_type: acct };
       if (acct === "team") { payload.seats = Math.max(seats, minSeats); payload.billing_interval = interval; }
       const u = await register(payload);
+      const uid = u?.id || "acct";
+      trackEvent("sign_up", { method: "email", account_type: acct }, { dedupeKey: uid, persist: true });
+      trackEvent("trial_started", { account_type: acct, plan: acct === "team" ? "team" : "individual" }, { dedupeKey: uid, persist: true });
       navigate(u?.role === "SUPER_ADMIN" ? "/control" : "/dashboard");
     } catch (err) {
       setError(fmtErr(err.response?.data?.detail) || err.message || t("auth.genericError"));

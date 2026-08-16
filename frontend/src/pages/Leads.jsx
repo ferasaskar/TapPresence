@@ -5,10 +5,15 @@ import { OwnerNav } from "@/components/admin/OwnerNav";
 import { DateFilter } from "@/components/admin/DateFilter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Loader2, Search, Phone, Mail, MessageCircle, Sparkles, Trash2, User, CreditCard, Clock, Copy, X, ArrowLeft, CalendarDays, CalendarPlus, Bell, BellOff, Save, Building2, Globe, Tag } from "lucide-react";
+import { Loader2, Search, Phone, Mail, MessageCircle, Sparkles, Trash2, User, CreditCard, Clock, Copy, X, ArrowLeft, CalendarDays, CalendarPlus, Bell, BellOff, Save, Building2, Globe, Tag, Check, DollarSign, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/i18n/useLocale";
+import { useAuth } from "@/context/AuthContext";
 import { BookMeetingDialog } from "@/components/profile/BookMeetingDialog";
+import { LeadAIInsight } from "@/components/ai/AIPanels";
+
+const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR"];
+const money = (v, ccy) => { try { return `${ccy || ""} ${Number(v).toLocaleString()}`.trim(); } catch { return `${ccy || ""} ${v}`.trim(); } };
 
 const STAGES = ["new", "contacted", "qualified", "meeting", "opportunity", "customer", "not_interested"];
 
@@ -26,23 +31,39 @@ const MSTATUS_KEY = { requested: "requested", time_proposed: "time_proposed", sc
 
 
 const norm = (s) => { const v = (s || "new").toLowerCase(); return LEGACY_STAGE[v] || v; };
+const TEMP_BADGE = { hot: "text-red-300 border-red-400/40 bg-red-400/10", warm: "text-amber-300 border-amber-400/40 bg-amber-400/10", cold: "text-sky-300 border-sky-400/40 bg-sky-400/10" };
+const TEMP_ICON = { hot: "🔥", warm: "", cold: "" };
+const effTemp = (l) => { const o = l.lead_temperature_override; return (o === "hot" || o === "warm" || o === "cold") ? o : (l.lead_temperature || "cold"); };
 const digits = (p) => (p || "").replace(/[^\d+]/g, "").replace(/^\+/, "");
 const fmt = (iso) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export default function Leads() {
   const navigate = useNavigate();
   const { t } = useLocale();
+  const { user, memberships } = useAuth();
+  const canEditFin = (l) => {
+    if (!user) return false;
+    if (user.role === "SUPER_ADMIN") return true;
+    const wid = l?.workspace_id;
+    return (memberships || []).some((m) => (!wid || m.workspace_id === wid) && ["WORKSPACE_OWNER", "WORKSPACE_ADMIN"].includes(m.role));
+  };
   const sLabel = (st) => t(`leads.stage_${st}`, { defaultValue: st });
   const mLabel = (ms) => t(`leads.mstatus_${MSTATUS_KEY[ms] || "requested"}`, { defaultValue: ms });
   const evLabel = (e) => t(`leads.ev_${e}`, { defaultValue: e });
   const [params, setParams] = useSearchParams();
   const [leads, setLeads] = useState(null);
   const [cards, setCards] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [members, setMembers] = useState([]);
   const [mByLead, setMByLead] = useState({});
   const [tab, setTab] = useState("all");
   const [q, setQ] = useState("");
   const [source, setSource] = useState("all");
   const [card, setCard] = useState("all");
+  const [eventFilter, setEventFilter] = useState("all");
+  const [capturedBy, setCapturedBy] = useState("all");
+  const [temp, setTemp] = useState("all");
+  const [sortBy, setSortBy] = useState("recent");
   const [dateRange, setDateRange] = useState({ preset: "all", start: null, end: null });
   const [openLead, setOpenLead] = useState(null);
   const [draft, setDraft] = useState("");
@@ -53,10 +74,17 @@ export default function Leads() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [remindWhen, setRemindWhen] = useState("");
   const [savingRemind, setSavingRemind] = useState(false);
+  const [fin, setFin] = useState(null);
+  const [savingFin, setSavingFin] = useState(false);
+  const [hsConn, setHsConn] = useState(null);
+  const [syncingHs, setSyncingHs] = useState(false);
 
   const load = () => {
     api.get("/admin/leads").then(({ data }) => setLeads(data)).catch(() => setLeads([]));
     api.get("/admin/cards").then(({ data }) => setCards(data)).catch(() => {});
+    api.get("/events").then(({ data }) => setEvents(data || [])).catch(() => {});
+    api.get("/admin/team-members").then(({ data }) => setMembers(data || [])).catch(() => {});
+    api.get("/integrations/hubspot/status").then(({ data }) => setHsConn(data)).catch(() => setHsConn(null));
     Promise.all(["upcoming", "past", "cancelled"].map((f) => api.get("/admin/meetings", { params: { filter: f } }).then((r) => r.data).catch(() => [])))
       .then((lists) => {
         const map = {};
@@ -90,18 +118,36 @@ export default function Leads() {
     if (tab !== "all") list = list.filter((l) => stageOf(l) === tab);
     if (source !== "all") list = list.filter((l) => (l.source || "inquiry") === source);
     if (card !== "all") list = list.filter((l) => l.cardSlug === card);
+    if (eventFilter !== "all") list = list.filter((l) => (eventFilter === "__none" ? !l.event_id && !l.event : l.event_id === eventFilter));
+    if (capturedBy !== "all") list = list.filter((l) => (l.captured_by || "") === capturedBy);
+    if (temp !== "all") list = list.filter((l) => effTemp(l) === temp);
     if (dateRange?.start) {
       const s = new Date(dateRange.start).getTime();
       const e = new Date(dateRange.end).getTime();
       list = list.filter((l) => { const ts = new Date(l.created_at).getTime(); return ts >= s && ts <= e; });
     }
     if (q.trim()) { const s = q.toLowerCase(); list = list.filter((l) => [l.name, l.email, l.phone].some((v) => (v || "").toLowerCase().includes(s))); }
-    return [...list].sort((a, b) => new Date(b.last_activity || b.created_at) - new Date(a.last_activity || a.created_at));
-  }, [leads, tab, source, card, dateRange, q, mByLead]);
+    const arr = [...list];
+    if (sortBy === "score_desc") arr.sort((a, b) => (b.lead_score || 0) - (a.lead_score || 0));
+    else if (sortBy === "score_asc") arr.sort((a, b) => (a.lead_score || 0) - (b.lead_score || 0));
+    else if (sortBy === "followup") arr.sort((a, b) => (a.next_follow_up || "9999").localeCompare(b.next_follow_up || "9999"));
+    else arr.sort((a, b) => new Date(b.last_activity || b.created_at) - new Date(a.last_activity || a.created_at));
+    return arr;
+  }, [leads, tab, source, card, eventFilter, capturedBy, temp, sortBy, dateRange, q, mByLead]);
 
   const openDetail = async (l) => {
     setOpenLead(l); setDraft("");
     setEdit({ company: l.company || "", title: l.title || "", website: l.website || "", notes: l.notes || "", tags: (l.tags || []).join(", "), met_at: l.met_at || "", event: l.event || "" });
+    const att = l.revenue_attribution || {};
+    setFin({
+      opportunity_value: l.opportunity_value ?? "",
+      opportunity_currency: l.opportunity_currency || "AED",
+      expected_close_date: l.expected_close_date ? String(l.expected_close_date).slice(0, 10) : "",
+      actual_revenue: l.actual_revenue ?? "",
+      actual_revenue_currency: l.actual_revenue_currency || l.opportunity_currency || "AED",
+      revenue_recorded_at: l.revenue_recorded_at ? String(l.revenue_recorded_at).slice(0, 10) : "",
+      attribution: att.type === "event" && att.event_id ? att.event_id : (att.type === "other" ? "__other" : "__organic"),
+    });
     setRemindWhen(l.next_follow_up ? String(l.next_follow_up).slice(0, 16) : "");
     if (!l.read) { try { await api.patch(`/admin/leads/${l.id}`); setLeads((ls) => ls.map((x) => x.id === l.id ? { ...x, read: true } : x)); } catch (_) {} }
   };
@@ -129,6 +175,50 @@ export default function Leads() {
     setOpenLead((o) => o && o.id === id ? { ...o, ...patch } : o);
   };
 
+  const syncHubspot = async (l) => {
+    setSyncingHs(true);
+    try {
+      const { data } = await api.post(`/admin/leads/${l.id}/sync-hubspot`);
+      patchLeadLocal(l.id, { crm_sync: data.crm_sync });
+      toast.success(t("hubspot.synced"));
+    } catch (e) {
+      const cs = e?.response?.data?.detail?.crm_sync;
+      if (cs) patchLeadLocal(l.id, { crm_sync: cs });
+      toast.error(e?.response?.data?.detail?.detail || t("hubspot.syncFailed"));
+    } finally { setSyncingHs(false); }
+  };
+
+  const saveFinancials = async (l) => {
+    setSavingFin(true);
+    const payload = {
+      opportunity_value: fin.opportunity_value === "" ? null : Number(fin.opportunity_value),
+      opportunity_currency: fin.opportunity_currency,
+      expected_close_date: fin.expected_close_date || "",
+    };
+    if (fin.actual_revenue === "" || fin.actual_revenue === null) {
+      payload.actual_revenue = null;
+    } else {
+      payload.actual_revenue = Number(fin.actual_revenue);
+      payload.actual_revenue_currency = fin.actual_revenue_currency;
+      if (fin.revenue_recorded_at) payload.revenue_recorded_at = new Date(fin.revenue_recorded_at + "T00:00:00").toISOString();
+      if (fin.attribution === "__organic") { payload.revenue_attribution_type = "organic"; payload.revenue_attribution_event_id = null; }
+      else if (fin.attribution === "__other") { payload.revenue_attribution_type = "other"; payload.revenue_attribution_event_id = null; }
+      else { payload.revenue_attribution_type = "event"; payload.revenue_attribution_event_id = fin.attribution; }
+    }
+    try {
+      const { data } = await api.patch(`/admin/leads/${l.id}/financials`, payload);
+      patchLeadLocal(l.id, {
+        opportunity_value: data.opportunity_value, opportunity_currency: data.opportunity_currency,
+        expected_close_date: data.expected_close_date, actual_revenue: data.actual_revenue,
+        actual_revenue_currency: data.actual_revenue_currency, revenue_recorded_at: data.revenue_recorded_at,
+        revenue_attribution: data.revenue_attribution, timeline: data.timeline,
+      });
+      toast.success(t("leads.financialsSaved"));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t("leads.couldNotUpdate"));
+    } finally { setSavingFin(false); }
+  };
+
   const saveFields = async (l) => {
     setSavingEdit(true);
     const tags = edit.tags.split(",").map((s) => s.trim()).filter(Boolean);
@@ -149,6 +239,20 @@ export default function Leads() {
     setSavingRemind(true);
     try { await api.delete(`/admin/leads/${l.id}/remind`); setRemindWhen(""); patchLeadLocal(l.id, { next_follow_up: "" }); toast.success(t("leads.reminderCleared")); }
     catch { toast.error(t("leads.couldNotUpdate")); } finally { setSavingRemind(false); }
+  };
+
+  const completeFollowUp = async (l) => {
+    setSavingRemind(true);
+    try { const { data } = await api.post(`/admin/leads/${l.id}/complete-follow-up`); patchLeadLocal(l.id, { next_follow_up: "", follow_up_completed_at: data.follow_up_completed_at }); toast.success(t("leads.followUpDone")); }
+    catch { toast.error(t("leads.couldNotUpdate")); } finally { setSavingRemind(false); }
+  };
+
+  const setTemperature = async (l, temperature) => {
+    try {
+      const { data } = await api.post(`/admin/leads/${l.id}/temperature`, { temperature });
+      patchLeadLocal(l.id, { lead_temperature_override: data.lead_temperature_override, lead_score: data.lead_score, lead_temperature: data.lead_temperature });
+      toast.success(t("leads.qualityUpdated"));
+    } catch { toast.error(t("leads.couldNotUpdate")); }
   };
 
   const multiCard = cards.length > 1;
@@ -189,9 +293,13 @@ export default function Leads() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("leads.search")} className="h-9 w-full rounded-lg border border-white/12 bg-[#0A0B0D] pl-9 pr-3 text-sm text-white placeholder:text-white/30 focus:border-[#D6A653]/50 focus:outline-none" data-testid="leads-search" />
           </div>
-          <Select value={source} onValueChange={setSource}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-source"><SelectValue placeholder={t("leads.source")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allSources")}</SelectItem><SelectItem value="inquiry">{t("leads.inquiry")}</SelectItem><SelectItem value="meeting_booking">{t("leads.meetingBooking")}</SelectItem><SelectItem value="business_card_scan">{t("leads.sourceBusinessCard")}</SelectItem><SelectItem value="badge_scan">{t("leads.sourceBadge")}</SelectItem><SelectItem value="qr_scan">{t("leads.sourceQr")}</SelectItem></SelectContent></Select>
+          <Select value={source} onValueChange={setSource}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-source"><SelectValue placeholder={t("leads.source")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allSources")}</SelectItem><SelectItem value="inquiry">{t("leads.inquiry")}</SelectItem><SelectItem value="meeting_booking">{t("leads.meetingBooking")}</SelectItem><SelectItem value="event_badge_scan">{t("leads.sourceEventBadge")}</SelectItem><SelectItem value="business_card_scan">{t("leads.sourceBusinessCard")}</SelectItem><SelectItem value="badge_scan">{t("leads.sourceBadge")}</SelectItem><SelectItem value="qr_scan">{t("leads.sourceQr")}</SelectItem></SelectContent></Select>
+          <Select value={eventFilter} onValueChange={setEventFilter}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-event"><SelectValue placeholder={t("leads.eventFilter")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allEvents")}</SelectItem><SelectItem value="__none">{t("leads.noEvent")}</SelectItem>{events.map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}</SelectContent></Select>
+          {members.length > 1 ? <Select value={capturedBy} onValueChange={setCapturedBy}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-capturedby"><SelectValue placeholder={t("leads.capturedBy")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allMembers")}</SelectItem>{members.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent></Select> : null}
           {multiCard ? <Select value={card} onValueChange={setCard}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-card"><SelectValue placeholder={t("leads.card")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allCards")}</SelectItem>{cards.map((c) => <SelectItem key={c.slug} value={c.slug}>/{c.slug}</SelectItem>)}</SelectContent></Select> : null}
           <div className="col-span-2 sm:col-span-1" data-testid="leads-filter-date"><DateFilter value={dateRange} onChange={setDateRange} testId="leads-date-filter" allowAll /></div>
+          <Select value={temp} onValueChange={setTemp}><SelectTrigger className="h-9 text-xs" data-testid="leads-filter-temp"><SelectValue placeholder={t("leads.quality")} /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="all">{t("leads.allQuality")}</SelectItem><SelectItem value="hot">🔥 {t("leads.hot")}</SelectItem><SelectItem value="warm">{t("leads.warm")}</SelectItem><SelectItem value="cold">{t("leads.cold")}</SelectItem></SelectContent></Select>
+          <Select value={sortBy} onValueChange={setSortBy}><SelectTrigger className="h-9 text-xs" data-testid="leads-sort"><SelectValue /></SelectTrigger><SelectContent className="aria-pop"><SelectItem value="recent">{t("leads.sortRecent")}</SelectItem><SelectItem value="score_desc">{t("leads.sortScoreDesc")}</SelectItem><SelectItem value="score_asc">{t("leads.sortScoreAsc")}</SelectItem><SelectItem value="followup">{t("leads.sortFollowup")}</SelectItem></SelectContent></Select>
         </div>
 
         {leads === null ? (
@@ -212,7 +320,9 @@ export default function Leads() {
                         <span className="font-medium text-white">{l.name}</span>
                         {!l.read ? <span className="rounded-full bg-[#D6A653] px-1.5 py-0.5 text-[9px] font-semibold text-[#050607]">{t("leads.new")}</span> : null}
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${STAGE_BADGE[st]}`} data-testid={`lead-stage-${l.id}`}>{sLabel(st)}</span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${TEMP_BADGE[effTemp(l)]}`} data-testid={`lead-temp-${l.id}`}>{TEMP_ICON[effTemp(l)]}{t(`leads.${effTemp(l)}`)}{typeof l.lead_score === "number" ? ` ${l.lead_score}` : ""}{l.lead_temperature_override ? " ·M" : ""}</span>
                         {m ? <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-white/60">{mLabel(m.status)}</span> : null}
+                        {l.opportunity_value != null ? <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] text-emerald-300" data-testid={`lead-value-${l.id}`}>{money(l.opportunity_value, l.opportunity_currency)}</span> : null}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/50">
                         {l.company || l.title ? <span className="flex items-center gap-1 text-white/60"><Building2 className="h-3 w-3" />{[l.title, l.company].filter(Boolean).join(" · ")}</span> : null}
@@ -274,6 +384,9 @@ export default function Leads() {
                     {l.message ? <p className="mt-3 border-t border-white/8 pt-3 text-white/75">“{l.message}”</p> : null}
                   </div>
 
+                  {/* AI Lead Insight (on-demand, cached, metered) */}
+                  <LeadAIInsight leadId={l.id} />
+
                   {/* editable contact context */}
                   {edit ? (
                   <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-fields">
@@ -307,6 +420,83 @@ export default function Leads() {
                   </div>
                   ) : null}
 
+                  {/* Deal & Revenue (financials) */}
+                  {fin ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-financials">
+                    <p className="mb-3 flex items-center gap-1.5 text-xs uppercase tracking-wider text-[#D6A653]"><DollarSign className="h-3.5 w-3.5" /> {t("leads.financials")}</p>
+                    {canEditFin(l) ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="col-span-1 text-[11px] text-white/45">{t("leads.opportunityValue")}
+                            <input type="number" min="0" step="any" value={fin.opportunity_value} onChange={(e) => setFin((o) => ({ ...o, opportunity_value: e.target.value }))} placeholder="—" className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white placeholder:text-white/25 focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-opportunity-value" />
+                          </label>
+                          <label className="col-span-1 text-[11px] text-white/45">{t("leads.currency")}
+                            <select value={fin.opportunity_currency} onChange={(e) => setFin((o) => ({ ...o, opportunity_currency: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-opportunity-currency">
+                              {CURRENCIES.map((c) => <option key={c} value={c} className="bg-[#0A0B0D]">{c}</option>)}
+                            </select>
+                          </label>
+                          <label className="col-span-2 text-[11px] text-white/45">{t("leads.expectedClose")}
+                            <input type="date" value={fin.expected_close_date} onChange={(e) => setFin((o) => ({ ...o, expected_close_date: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-expected-close" />
+                          </label>
+                        </div>
+                        <div className="mt-3 border-t border-white/8 pt-3">
+                          <p className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/45"><TrendingUp className="h-3 w-3" /> {t("leads.recordRevenue")}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.actualRevenue")}
+                              <input type="number" min="0" step="any" value={fin.actual_revenue} onChange={(e) => setFin((o) => ({ ...o, actual_revenue: e.target.value }))} placeholder="—" className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white placeholder:text-white/25 focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-revenue-value" />
+                            </label>
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.currency")}
+                              <select value={fin.actual_revenue_currency} onChange={(e) => setFin((o) => ({ ...o, actual_revenue_currency: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-revenue-currency">
+                                {CURRENCIES.map((c) => <option key={c} value={c} className="bg-[#0A0B0D]">{c}</option>)}
+                              </select>
+                            </label>
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.revenueDate")}
+                              <input type="date" value={fin.revenue_recorded_at} onChange={(e) => setFin((o) => ({ ...o, revenue_recorded_at: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-revenue-date" />
+                            </label>
+                            <label className="col-span-1 text-[11px] text-white/45">{t("leads.attributeTo")}
+                              <select value={fin.attribution} onChange={(e) => setFin((o) => ({ ...o, attribution: e.target.value }))} className="mt-1 h-8 w-full rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="fin-attribution">
+                                <option value="__organic" className="bg-[#0A0B0D]">{t("leads.noEventOrganic")}</option>
+                                <option value="__other" className="bg-[#0A0B0D]">{t("leads.other")}</option>
+                                {events.map((e) => <option key={e.id} value={e.id} className="bg-[#0A0B0D]">{e.name}</option>)}
+                              </select>
+                            </label>
+                          </div>
+                        </div>
+                        <button onClick={() => saveFinancials(l)} disabled={savingFin} className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 px-3 py-1.5 text-xs font-medium text-[#D6A653] hover:bg-[#D6A653]/20 disabled:opacity-60" data-testid="fin-save">
+                          {savingFin ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} {t("leads.saveFinancials")}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-y-1 text-xs" data-testid="detail-financials-readonly">
+                        <span className="text-white/45">{t("leads.opportunityValue")}</span>
+                        <span className="text-right text-white/85">{l.opportunity_value != null ? money(l.opportunity_value, l.opportunity_currency) : t("leads.finNotSet")}</span>
+                        <span className="text-white/45">{t("leads.actualRevenue")}</span>
+                        <span className="text-right text-white/85">{l.actual_revenue != null ? money(l.actual_revenue, l.actual_revenue_currency) : t("leads.finNotSet")}</span>
+                        <p className="col-span-2 mt-2 text-[11px] text-white/35">{t("leads.finAdminOnly")}</p>
+                      </div>
+                    )}
+                  </div>
+                  ) : null}
+
+                  {/* HubSpot CRM sync */}
+                  {hsConn?.connected ? (() => {
+                    const cs = l.crm_sync || {}; const st = cs.status || "not_synced";
+                    const badge = { synced: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300", pending: "border-amber-400/30 bg-amber-400/10 text-amber-300", failed: "border-red-400/30 bg-red-400/10 text-red-300", not_synced: "border-white/15 bg-white/5 text-white/50" }[st];
+                    return (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-crm">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-wider text-[#D6A653]">HubSpot</p>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${badge}`} data-testid="crm-status">{t(`hubspot.state_${st}`)}</span>
+                      </div>
+                      {cs.last_synced_at ? <p className="mt-1 text-[11px] text-white/40" data-testid="crm-last-synced">{t("hubspot.lastSynced", { when: fmt(cs.last_synced_at) })}</p> : null}
+                      {st === "failed" && cs.last_error ? <p className="mt-1 text-[11px] text-red-300/70" data-testid="crm-error">{cs.last_error}</p> : null}
+                      <button onClick={() => syncHubspot(l)} disabled={syncingHs} className="mt-2 flex items-center gap-1.5 rounded-lg border border-[#D6A653]/50 bg-[#D6A653]/10 px-3 py-1.5 text-xs font-medium text-[#D6A653] hover:bg-[#D6A653]/20 disabled:opacity-60" data-testid="crm-sync-btn">
+                        {syncingHs ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <TrendingUp className="h-3.5 w-3.5" />} {st === "failed" ? t("hubspot.retrySync") : t("hubspot.syncToHubspot")}
+                      </button>
+                    </div>
+                    );
+                  })() : null}
+
                   {/* follow-up reminder */}
                   <div id="lead-remind-section" className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-reminder">
                     <p className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wider text-[#D6A653]"><Bell className="h-3.5 w-3.5" /> {t("leads.followUpReminder")}</p>
@@ -315,6 +505,32 @@ export default function Leads() {
                       <input type="datetime-local" value={remindWhen} onChange={(e) => setRemindWhen(e.target.value)} className="h-8 flex-1 rounded-lg border border-white/12 bg-[#0A0B0D] px-2 text-xs text-white focus:border-[#D6A653]/50 focus:outline-none" data-testid="reminder-input" />
                       <button onClick={() => saveReminder(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg bg-[#D6A653] px-3 py-1.5 text-xs font-medium text-[#050607] hover:bg-[#E8B764] disabled:opacity-60" data-testid="reminder-set">{savingRemind ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bell className="h-3.5 w-3.5" />} {t("leads.setReminder")}</button>
                       {l.next_follow_up ? <button onClick={() => clearReminder(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg border border-white/12 px-3 py-1.5 text-xs text-white/60 hover:text-white disabled:opacity-60" data-testid="reminder-clear"><BellOff className="h-3.5 w-3.5" /> {t("leads.clearReminder")}</button> : null}
+                      {l.next_follow_up && !l.follow_up_completed_at ? <button onClick={() => completeFollowUp(l)} disabled={savingRemind} className="flex items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300 hover:bg-emerald-400/20 disabled:opacity-60" data-testid="reminder-complete"><Check className="h-3.5 w-3.5" /> {t("leads.markFollowUpDone")}</button> : null}
+                      {l.follow_up_completed_at ? <span className="flex items-center gap-1 text-xs text-emerald-300" data-testid="reminder-done"><Check className="h-3.5 w-3.5" /> {t("leads.followUpDone")}</span> : null}
+                    </div>
+                  </div>
+
+                  {/* lead quality (score) */}
+                  <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4" data-testid="detail-quality">
+                    <div className="flex items-center justify-between">
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-medium uppercase tracking-wider ${TEMP_BADGE[effTemp(l)]}`} data-testid="detail-temp">{TEMP_ICON[effTemp(l)]}{t(`leads.${effTemp(l)}`)} — {l.lead_score ?? 0}/100</span>
+                      {l.lead_temperature_override ? <span className="text-[10px] uppercase tracking-wider text-white/45">{t("leads.manual")}</span> : <span className="text-[10px] uppercase tracking-wider text-white/35">{t("leads.automatic")}</span>}
+                    </div>
+                    {(l.lead_score_breakdown || []).length ? (
+                      <ul className="mt-3 space-y-1" data-testid="detail-quality-why">
+                        <li className="text-[11px] uppercase tracking-wider text-[#D6A653]">{t("leads.whyThisLead")}</li>
+                        {(l.lead_score_breakdown || []).map((b, i) => (
+                          <li key={i} className="flex items-center justify-between text-xs text-white/65"><span>{t(`leads.score_${b.code}`, { defaultValue: b.code.replace(/_/g, " ") })}</span><span className="text-white/80">+{b.points}</span></li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {["hot", "warm", "cold", "auto"].map((tt) => (
+                        <button key={tt} onClick={() => setTemperature(l, tt)} data-testid={`detail-temp-${tt}`}
+                          className={`rounded-lg border px-2.5 py-1 text-[11px] ${(tt === "auto" && !l.lead_temperature_override) || l.lead_temperature_override === tt ? "border-[#D6A653]/60 bg-[#D6A653]/15 text-[#D6A653]" : "border-white/12 text-white/60 hover:text-white"}`}>
+                          {tt === "auto" ? t("leads.useAutomatic") : t(`leads.${tt}`)}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
